@@ -33,6 +33,14 @@ Re-extract anytime: the font binaries live inside the .sketch zip under `fonts/`
 6. Recreate the 12 swatches as Figma color variables from [palette.json](palette.json) (~5 min by hand; the Sketch names were just numbered hexes, so assign semantic names — the three greens are the brand ramp). Treat palette.json as the seed for code tokens (Tailwind config) too — repo stays the source of truth.
 7. QA pass (see below), fixing text drift at the *style* level so it propagates.
 
+## Known import casualty: instance text overrides
+
+Confirmed post-import: Figma dropped symbol-instance overrides, so affected instances silently
+show the master's default text. The full recovery reference is [text-overrides.md](text-overrides.md)
+(392 real-content text overrides across 20 pages, extracted from the .sketch; complete JSON dump
+alongside, including the 146 symbol-swap and 113 style overrides). Personas were rebuilt as docs
+in [`../personas/`](../personas/).
+
 ## QA spot-check order
 
 1. `Style Guide` page — type + color at a glance
