@@ -4,6 +4,18 @@ node_modules/
 .env.*
 !.env.example
 
+# build output
+.next/
+.output/
+.nitro/
+.tanstack/
+.turbo/
+dist/
+*.tsbuildinfo
+
+# local sqlite
+.data/
+
 # Design binaries live in Figma cloud + Dropbox, not git
 *.sketch
 *.fig

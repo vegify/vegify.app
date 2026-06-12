@@ -1,0 +1,23 @@
+{
+  "name": "vegify",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss",
+      "@tailwindcss/oxide",
+      "sharp"
+    ]
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "db:push": "pnpm --filter @vegify/db push",
+    "db:seed": "pnpm --filter @vegify/db seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.18"
+  }
+}

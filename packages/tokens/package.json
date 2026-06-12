@@ -1,0 +1,12 @@
+{
+  "name": "@vegify/tokens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./theme.css": "./dist/theme.css"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

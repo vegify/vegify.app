@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@vegify/tokens/theme.css";
+@source "../../../../packages/ui/src";
+
+body {
+  background: #ffffff;
+  color: var(--color-gray-900);
+  font-family: var(--font-sans);
+}
