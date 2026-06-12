@@ -1,29 +1,37 @@
-# Figma plugin: restore Sketch text overrides
+# Figma plugin: audit & restore Sketch text overrides
 
-One-shot development plugin that repairs the text content Figma's `.sketch` import dropped
-(symbol-instance overrides). It replays all 392 real overrides from
-[`design/figma-import/text-overrides.json`](../../design/figma-import/text-overrides.json),
-inlined into `code.js` at build time.
+Development plugin that verifies (and where needed, repairs) the symbol-instance text content
+from `Vegify.sketch` against the imported Figma file, using
+[`design/figma-import/text-overrides.json`](../../design/figma-import/text-overrides.json)
+(inlined into `code.js` at build time).
+
+## Order of operations
+
+1. **Missing-font replacement first.** The importer writes PostScript family tokens
+   (`AvenirNext`, `ZapfDingbatsITC`, `SFProDisplay`, …) that don't match installed families, which
+   makes text invisible. In Figma run the missing-fonts replacement **across all pages** mapping
+   each token to its real family (`Avenir Next`, `Zapf Dingbats`, `SF Pro Display`, …).
+2. **Audit (read-only).** Classifies every expected override:
+   - `ok` — real content already present
+   - `showsDefault` — node still shows the master default (Restore candidate)
+   - `unknown` — shows neither (hand-edited or drifted; listed with current vs expected)
+   - `notFound` / `containerMissing` / `pageMissing` — usually pruned pages or renamed beyond recognition
+3. **Restore (writes)** — only touches nodes currently showing the recorded master default.
+   Idempotent; reruns converge to `ok`.
 
 ## Run it
 
-1. Open the Vegify file in the **Figma desktop app**.
-2. Menu → **Plugins → Development → Import plugin from manifest…** → select this folder's `manifest.json`.
-3. Run **Vegify — Restore Sketch Text Overrides** (Plugins → Development).
-4. Toast shows totals; **Plugins → Development → Show/Hide console** has the per-node detail,
-   including anything it deliberately left alone.
+1. Open the Vegify file in **Figma desktop**, in design mode (not Dev Mode).
+2. **Plugins → Development → Import plugin from manifest…** → this folder's `manifest.json`
+   (only needed once).
+3. Run the plugin; use the **Audit** button, read the panel/console, then **Restore** if needed.
 
-## Safety model
+## Matching model
 
-- A text node is written **only if** it currently shows the master default recorded at extraction
-  time (exact match, falling back to a trimmed match) — i.e. only import-damaged nodes.
-- Nodes already showing the target text are counted as `alreadyCorrect`, not rewritten.
-- Anything ambiguous (multiple matching nodes), hand-edited (matches neither default nor target),
-  or missing (e.g. on pages you pruned) is reported in the console and left untouched.
-- Idempotent — run it repeatedly; reruns converge to `alreadyCorrect`.
-
-Matching is by page name → artboard/frame name → instance name (disambiguated by component name)
-→ text-layer name, with the current-text-equals-default check as the final guard.
+Page name → artboard name → instance matched by **layer name OR component name** (the importer
+renames custom instance names to the component's name, and detaches some scaled instances to
+frames/groups), disambiguated by the instance's recorded canvas position from the .sketch, then
+text node by name with a current-text-equals-default guard before any write.
 
 ## Rebuild after data changes
 
@@ -31,5 +39,4 @@ Matching is by page name → artboard/frame name → instance name (disambiguate
 python3 tools/figma-restore-overrides/build.py
 ```
 
-Regenerates `code.js` from `plugin.src.js` + the JSON. Figma picks up the change on next run
-(no re-import needed).
+Figma re-reads `code.js` on each run; re-import is only needed if `manifest.json` changes.

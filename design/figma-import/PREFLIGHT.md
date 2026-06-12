@@ -33,13 +33,21 @@ Re-extract anytime: the font binaries live inside the .sketch zip under `fonts/`
 6. Recreate the 12 swatches as Figma color variables from [palette.json](palette.json) (~5 min by hand; the Sketch names were just numbered hexes, so assign semantic names — the three greens are the brand ramp). Treat palette.json as the seed for code tokens (Tailwind config) too — repo stays the source of truth.
 7. QA pass (see below), fixing text drift at the *style* level so it propagates.
 
-## Known import casualty: instance text overrides
+## What actually happens to text on import (learned empirically)
 
-Confirmed post-import: Figma dropped symbol-instance overrides, so affected instances silently
-show the master's default text. The full recovery reference is [text-overrides.md](text-overrides.md)
-(392 real-content text overrides across 20 pages, extracted from the .sketch; complete JSON dump
-alongside, including the 146 symbol-swap and 113 style overrides). Personas were rebuilt as docs
-in [`../personas/`](../personas/).
+1. **Missing-font tokens hide text.** The importer writes Sketch's PostScript family tokens
+   (`AvenirNext`, `ZapfDingbatsITC`, `SFProDisplay`, …) which don't match installed family names
+   (`Avenir Next`, …). Affected text — *including instance overrides* — imports intact but renders
+   invisible until Figma's missing-fonts replacement maps each token to the real family.
+   **Run the replacement across all pages, not "This page",** before judging anything as lost.
+2. **Instance layers are renamed** to their component's name (custom names like `field Copy 3`
+   are gone) and some scaled instances are detached into frames/groups.
+3. Whether any override values were truly dropped is an empirical question: run the **Audit**
+   (read-only) mode of [`tools/figma-restore-overrides/`](../../tools/figma-restore-overrides/)
+   after the font replacement; only nodes still showing master defaults are Restore candidates.
+
+Reference data: [text-overrides.md](text-overrides.md) (392 real-content text overrides across
+20 pages) + complete JSON dump alongside. Personas live as docs in [`../personas/`](../personas/).
 
 ## QA spot-check order
 

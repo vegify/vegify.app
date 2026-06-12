@@ -1,8 +1,9 @@
 # Text overrides in Vegify.sketch
 
 Every symbol-instance **text override** in the file whose value differs from the symbol
-master's default text. Figma's .sketch import drops instance overrides, so in Figma these
-instances silently show the *default* text — the real content is the **override** value here.
+master's default text. Post-import, an instance can show the default (or nothing — see the
+missing-font note in [PREFLIGHT.md](PREFLIGHT.md)); wherever that happens, the real content is
+the **override** value recorded here.
 
 Extracted from `Vegify.sketch`: 433 instances carry overrides (399 text overrides, of which 392 differ from the default; 267 are listed below — the 74 Site Map entries live as a diagram in [../site-map.md](../site-map.md) and the 51 User Personas entries as docs in [../personas/](../personas/) — plus 6 image, 146 symbol-swap, and 113 style overrides).
 Full machine-readable dump incl. promoted pages and no-op overrides: [text-overrides.json](text-overrides.json).

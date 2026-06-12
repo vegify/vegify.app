@@ -7,7 +7,7 @@ data_path = here.parents[1] / "design" / "figma-import" / "text-overrides.json"
 
 records = json.loads(data_path.read_text())
 payload = [
-    {k: r[k] for k in ("page", "container", "instance", "master", "textOverrides")}
+    {k: r[k] for k in ("page", "container", "instance", "master", "x", "y", "textOverrides")}
     for r in records
     if any(o["value"] != o["default"] for o in r["textOverrides"])
 ]

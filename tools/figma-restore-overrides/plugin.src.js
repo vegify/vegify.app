@@ -1,30 +1,58 @@
-// Restores symbol-instance text overrides dropped by Figma's .sketch import.
+// Audits & restores symbol-instance text-override content after Figma's .sketch import.
 // Data is inlined at build time from design/figma-import/text-overrides.json (see build.py).
 //
-// Safety model: a node is only written if its current text equals the recorded master
-// default (exactly, or after trimming) — i.e. only nodes still showing import-damaged
-// text are touched. Nodes already showing the target value count as already-correct.
-// Everything else (missing, ambiguous, hand-edited) is reported, never written.
-// Idempotent: safe to run repeatedly.
+// What actually happens on import (learned empirically):
+//   1. Text imports with Sketch PostScript family tokens ("AvenirNext") that don't match real
+//      family names ("Avenir Next") — the text exists but renders invisible until Figma's
+//      missing-font replacement is run across the whole file. DO THAT FIRST.
+//   2. Custom instance layer names ("field Copy 3") are renamed to the component's name, and
+//      some scaled instances are detached to frames/groups — so matching here is by component
+//      name OR layer name, disambiguated by the instance's recorded canvas position.
+//
+// Audit (read-only) classifies every expected override: ok / showsDefault / unknown / notFound.
+// Restore writes ONLY nodes currently showing the recorded master default. Idempotent.
 
 const DATA = /*__DATA__*/;
 
-async function run() {
-  if (figma.editorType === "dev") {
-    figma.notify("Dev Mode is read-only for plugins — switch to design mode (the </> toggle, Shift+D) and run again.", { timeout: 8000 });
-    figma.closePlugin();
-    return;
+const TYPES = ["INSTANCE", "FRAME", "GROUP", "COMPONENT"];
+const collapse = (s) => (s == null ? "" : String(s)).replace(/\s+/g, " ").trim();
+
+function candidatesIn(scope, rec) {
+  if (scope.type === "INSTANCE" || scope.type === "COMPONENT") return [scope];
+  const out = [];
+  const seen = new Set();
+  for (const n of scope.findAll((n) => TYPES.includes(n.type))) {
+    let hit = n.name === rec.instance || (rec.master && n.name === rec.master);
+    if (!hit && rec.master && n.type === "INSTANCE" && n.mainComponent) {
+      const mc = n.mainComponent;
+      hit = mc.name === rec.master ||
+        (mc.parent && mc.parent.type === "COMPONENT_SET" && mc.parent.name === rec.master);
+    }
+    if (hit && !seen.has(n.id)) {
+      seen.add(n.id);
+      out.push(n);
+    }
   }
+  // Disambiguate same-component siblings (e.g. six form fields) by canvas position.
+  if (out.length > 1 && typeof rec.x === "number") {
+    const scored = out
+      .map((n) => {
+        const bb = n.absoluteBoundingBox;
+        return { d: bb ? Math.max(Math.abs(bb.x - rec.x), Math.abs(bb.y - rec.y)) : Infinity, n };
+      })
+      .sort((a, b) => a.d - b.d);
+    if (scored[0].d <= 30) {
+      const cut = Math.max(scored[0].d + 2, 4);
+      return scored.filter((s) => s.d <= cut).map((s) => s.n);
+    }
+  }
+  return out;
+}
+
+async function run(write) {
   const stats = {
-    restored: 0,
-    restoredInDetached: 0,
-    alreadyCorrect: 0,
-    pageMissing: 0,
-    containerMissing: 0,
-    instanceMissing: 0,
-    noMatchingNode: 0,
-    ambiguous: 0,
-    errors: 0,
+    ok: 0, restored: 0, showsDefault: 0, unknown: 0, notFound: 0,
+    ambiguous: 0, pageMissing: 0, containerMissing: 0, errors: 0,
   };
   const problems = [];
 
@@ -36,10 +64,8 @@ async function run() {
     const page = figma.root.children.find((p) => p.name === rec.page);
     if (!page) {
       stats.pageMissing += targets.length;
-      problems.push(`page missing (ok if pruned): ${rec.page}`);
       continue;
     }
-
     let scope = page;
     if (rec.container && rec.container !== "(page root)") {
       const cname = rec.container.replace(/^Symbol master: /, "");
@@ -52,63 +78,54 @@ async function run() {
       scope = c;
     }
 
-    // The importer detached some instances (notably scaled ones) into frames/groups
-    // with the same name, so accept those as containers too; prefer real instances.
-    let containers;
-    let viaDetached = false;
-    if (scope.type === "INSTANCE" || scope.type === "COMPONENT") {
-      containers = [scope];
-    } else {
-      const named = scope.findAll(
-        (n) => n.name === rec.instance && ["INSTANCE", "FRAME", "GROUP", "COMPONENT"].includes(n.type)
-      );
-      let insts = named.filter((n) => n.type === "INSTANCE");
-      if (rec.master && insts.length > 1) {
-        const byMaster = insts.filter((i) => i.mainComponent && i.mainComponent.name === rec.master);
-        if (byMaster.length) insts = byMaster;
-      }
-      containers = insts.length ? insts : named;
-      viaDetached = !insts.length && named.length > 0;
-    }
+    const containers = candidatesIn(scope, rec);
     if (!containers.length) {
-      stats.instanceMissing += targets.length;
-      problems.push(`instance missing (no node of any type with this name): ${where}`);
+      stats.notFound += targets.length;
+      problems.push(`not found by name or component: ${where}`);
       continue;
     }
 
-    const collapse = (s) => (s == null ? "" : String(s)).replace(/\s+/g, " ").trim();
-
     for (const t of targets) {
       const leafName = t.layerPath.split(" > ").pop();
-      const cands = [];
+      let cands = [];
       for (const c of containers) {
-        for (const n of c.findAll((n) => n.type === "TEXT" && n.name === leafName)) cands.push(n);
+        for (const n of c.findAll((x) => x.type === "TEXT" && x.name === leafName)) cands.push(n);
+      }
+      if (!cands.length) {
+        for (const c of containers) {
+          for (const n of c.findAll((x) => x.type === "TEXT")) cands.push(n);
+        }
       }
       const label = `${where} » ${leafName}`;
-
-      if (cands.some((n) => n.characters === t.value || collapse(n.characters) === collapse(t.value))) {
-        stats.alreadyCorrect++;
+      if (!cands.length) {
+        stats.notFound++;
+        problems.push(`no text nodes found: ${label}`);
+        continue;
+      }
+      if (cands.some((n) => collapse(n.characters) === collapse(t.value))) {
+        stats.ok++;
         continue;
       }
       let pick = cands.filter((n) => n.characters === t.default);
       if (!pick.length && t.default != null) {
-        pick = cands.filter((n) => n.characters.trim() === t.default.trim());
-      }
-      if (!pick.length && t.default != null) {
         pick = cands.filter((n) => collapse(n.characters) === collapse(t.default));
       }
       if (!pick.length) {
-        stats.noMatchingNode++;
-        const seen = cands.slice(0, 2).map((n) => JSON.stringify(n.characters.slice(0, 60))).join(" | ");
+        stats.unknown++;
+        const cur = cands.slice(0, 2).map((n) => JSON.stringify(collapse(n.characters).slice(0, 50))).join(" | ");
         problems.push(
-          `no node showing the expected default (${cands.length} candidates, left untouched): ${label}` +
-          (cands.length ? ` — current: ${seen}, expected default: ${JSON.stringify((t.default || "").slice(0, 60))}` : "")
+          `neither target nor default: ${label} — current ${cur}; ` +
+          `default ${JSON.stringify(collapse(t.default).slice(0, 50))}; target ${JSON.stringify(collapse(t.value).slice(0, 50))}`
         );
+        continue;
+      }
+      if (!write) {
+        stats.showsDefault++;
         continue;
       }
       if (pick.length > 1) {
         stats.ambiguous++;
-        problems.push(`ambiguous — ${pick.length} nodes match the default, none written: ${label}`);
+        problems.push(`ambiguous (${pick.length} default-matching nodes, none written): ${label}`);
         continue;
       }
       try {
@@ -119,25 +136,49 @@ async function run() {
         for (const f of fonts) await figma.loadFontAsync(f);
         node.characters = t.value;
         stats.restored++;
-        if (viaDetached) stats.restoredInDetached++;
       } catch (e) {
         stats.errors++;
-        problems.push(`error writing ${label}: ${e}`);
+        problems.push(`error (font not replaced yet?): ${label}: ${e}`);
       }
     }
   }
-
-  console.log("=== Vegify override restore ===");
-  console.log(stats);
-  for (const p of problems) console.log("  - " + p);
-  const attention =
-    stats.noMatchingNode + stats.ambiguous + stats.instanceMissing +
-    stats.containerMissing + stats.pageMissing + stats.errors;
-  figma.notify(
-    `Restored ${stats.restored} · already correct ${stats.alreadyCorrect} · needs attention ${attention} (console has details)`,
-    { timeout: 12000 }
-  );
-  figma.closePlugin();
+  return { stats, problems };
 }
 
-run();
+if (figma.editorType === "dev") {
+  figma.notify("Dev Mode is read-only for plugins — switch to design mode (Shift+D) and run again.", { timeout: 8000 });
+  figma.closePlugin();
+} else {
+  figma.showUI(
+    `<style>
+       body{font:12px -apple-system,sans-serif;margin:12px;color:#eee;background:#2c2c2c}
+       button{margin:0 8px 8px 0;padding:6px 12px;border-radius:6px;border:0;cursor:pointer}
+       #a{background:#4c9638;color:#fff} #f{background:#fbb040}
+       pre{white-space:pre-wrap;font-size:11px;max-height:190px;overflow:auto;background:#1e1e1e;padding:8px;border-radius:6px}
+     </style>
+     <div style="margin-bottom:8px"><b>Sketch text overrides</b></div>
+     <button id="a">Audit (read-only)</button>
+     <button id="f">Restore (writes)</button>
+     <pre id="out">Run the missing-font replacement (all pages) first, then Audit.
+Restore only writes nodes still showing the master default.</pre>
+     <script>
+       document.getElementById('a').onclick = () => parent.postMessage({pluginMessage:{cmd:'run',write:false}}, '*');
+       document.getElementById('f').onclick = () => parent.postMessage({pluginMessage:{cmd:'run',write:true}}, '*');
+       onmessage = (e) => { const m = e.data.pluginMessage; if (m && m.cmd === 'result') document.getElementById('out').textContent = m.text; };
+     </script>`,
+    { width: 400, height: 320 }
+  );
+  figma.ui.onmessage = async (msg) => {
+    if (!msg || msg.cmd !== "run") return;
+    const { stats, problems } = await run(msg.write);
+    console.log(`=== Vegify override ${msg.write ? "restore" : "audit"} ===`);
+    console.log(stats);
+    for (const p of problems) console.log("  - " + p);
+    const text =
+      JSON.stringify(stats, null, 1) + "\n\n" +
+      problems.slice(0, 40).join("\n") +
+      (problems.length > 40 ? `\n…and ${problems.length - 40} more (see console)` : "");
+    figma.ui.postMessage({ cmd: "result", text });
+    figma.notify(`${msg.write ? "Restore" : "Audit"} done — details in panel/console`, { timeout: 6000 });
+  };
+}
