@@ -12,6 +12,7 @@ const DATA = [{"page": "Site Map", "container": "Site Map", "instance": "Inbox",
 async function run() {
   const stats = {
     restored: 0,
+    restoredInDetached: 0,
     alreadyCorrect: 0,
     pageMissing: 0,
     containerMissing: 0,
@@ -46,29 +47,41 @@ async function run() {
       scope = c;
     }
 
-    let instances =
-      scope.type === "INSTANCE" || scope.type === "COMPONENT"
-        ? [scope]
-        : scope.findAll((n) => n.type === "INSTANCE" && n.name === rec.instance);
-    if (rec.master && instances.length > 1) {
-      const byMaster = instances.filter((i) => i.mainComponent && i.mainComponent.name === rec.master);
-      if (byMaster.length) instances = byMaster;
+    // The importer detached some instances (notably scaled ones) into frames/groups
+    // with the same name, so accept those as containers too; prefer real instances.
+    let containers;
+    let viaDetached = false;
+    if (scope.type === "INSTANCE" || scope.type === "COMPONENT") {
+      containers = [scope];
+    } else {
+      const named = scope.findAll(
+        (n) => n.name === rec.instance && ["INSTANCE", "FRAME", "GROUP", "COMPONENT"].includes(n.type)
+      );
+      let insts = named.filter((n) => n.type === "INSTANCE");
+      if (rec.master && insts.length > 1) {
+        const byMaster = insts.filter((i) => i.mainComponent && i.mainComponent.name === rec.master);
+        if (byMaster.length) insts = byMaster;
+      }
+      containers = insts.length ? insts : named;
+      viaDetached = !insts.length && named.length > 0;
     }
-    if (!instances.length) {
+    if (!containers.length) {
       stats.instanceMissing += targets.length;
-      problems.push(`instance missing: ${where}`);
+      problems.push(`instance missing (no node of any type with this name): ${where}`);
       continue;
     }
+
+    const collapse = (s) => (s == null ? "" : String(s)).replace(/\s+/g, " ").trim();
 
     for (const t of targets) {
       const leafName = t.layerPath.split(" > ").pop();
       const cands = [];
-      for (const inst of instances) {
-        for (const n of inst.findAll((n) => n.type === "TEXT" && n.name === leafName)) cands.push(n);
+      for (const c of containers) {
+        for (const n of c.findAll((n) => n.type === "TEXT" && n.name === leafName)) cands.push(n);
       }
       const label = `${where} » ${leafName}`;
 
-      if (cands.some((n) => n.characters === t.value)) {
+      if (cands.some((n) => n.characters === t.value || collapse(n.characters) === collapse(t.value))) {
         stats.alreadyCorrect++;
         continue;
       }
@@ -76,9 +89,16 @@ async function run() {
       if (!pick.length && t.default != null) {
         pick = cands.filter((n) => n.characters.trim() === t.default.trim());
       }
+      if (!pick.length && t.default != null) {
+        pick = cands.filter((n) => collapse(n.characters) === collapse(t.default));
+      }
       if (!pick.length) {
         stats.noMatchingNode++;
-        problems.push(`no node showing the expected default (${cands.length} candidates, left untouched): ${label}`);
+        const seen = cands.slice(0, 2).map((n) => JSON.stringify(n.characters.slice(0, 60))).join(" | ");
+        problems.push(
+          `no node showing the expected default (${cands.length} candidates, left untouched): ${label}` +
+          (cands.length ? ` — current: ${seen}, expected default: ${JSON.stringify((t.default || "").slice(0, 60))}` : "")
+        );
         continue;
       }
       if (pick.length > 1) {
@@ -94,6 +114,7 @@ async function run() {
         for (const f of fonts) await figma.loadFontAsync(f);
         node.characters = t.value;
         stats.restored++;
+        if (viaDetached) stats.restoredInDetached++;
       } catch (e) {
         stats.errors++;
         problems.push(`error writing ${label}: ${e}`);
