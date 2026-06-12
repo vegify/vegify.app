@@ -10,6 +10,11 @@
 const DATA = /*__DATA__*/;
 
 async function run() {
+  if (figma.editorType === "dev") {
+    figma.notify("Dev Mode is read-only for plugins — switch to design mode (the </> toggle, Shift+D) and run again.", { timeout: 8000 });
+    figma.closePlugin();
+    return;
+  }
   const stats = {
     restored: 0,
     restoredInDetached: 0,
