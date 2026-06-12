@@ -1,0 +1,272 @@
+{
+  "typography": {
+    "desktop-hd-heading-heading-1": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "48px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.99px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Heading / Heading 1' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-heading-heading-2": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "36px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.74px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Heading / Heading 2' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-heading-heading-3": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "28px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.58px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Heading / Heading 3' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-heading-heading-4": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "18px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.37px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Heading / Heading 4' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 500,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Body' (AvenirNext-Medium)"
+    },
+    "desktop-hd-body-bold": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 700,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Body / Bold' (AvenirNext-Bold)"
+    },
+    "button-text-white": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "16px",
+        "lineHeight": "19px",
+        "letterSpacing": "0.33px",
+        "textTransform": "uppercase"
+      },
+      "$description": "Sketch text style 'Button Text White' (AvenirNext-DemiBold)"
+    },
+    "page-title-2": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "SF Pro Display",
+        "fontWeight": 700,
+        "fontSize": "28px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.34px"
+      },
+      "$description": "Sketch text style 'Page Title 2' (SFProDisplay-Bold)"
+    },
+    "node": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "SF Pro Display",
+        "fontWeight": 800,
+        "fontSize": "24px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.29px"
+      },
+      "$description": "Sketch text style 'Node' (SFProDisplay-Heavy)"
+    },
+    "annotation": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "SF Pro Display",
+        "fontWeight": 800,
+        "fontSize": "24px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.29px"
+      },
+      "$description": "Sketch text style 'Annotation' (SFProDisplay-Heavy)"
+    },
+    "label": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "SF Pro Display",
+        "fontWeight": 600,
+        "fontSize": "17px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.2px"
+      },
+      "$description": "Sketch text style 'Label' (SFProDisplay-Semibold)"
+    },
+    "page-title": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "SF Pro Display",
+        "fontWeight": 700,
+        "fontSize": "34px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.41px"
+      },
+      "$description": "Sketch text style 'Page Title' (SFProDisplay-Bold)"
+    },
+    "subheading-1": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 200,
+        "fontSize": "32px",
+        "lineHeight": "auto",
+        "letterSpacing": "4.1px",
+        "textTransform": "uppercase"
+      },
+      "$description": "Sketch text style 'Subheading/1' (AvenirNext-UltraLight)"
+    },
+    "desktop-hd-nav": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "30px",
+        "lineHeight": "48px",
+        "letterSpacing": "0.62px"
+      },
+      "$description": "Sketch text style 'Desktop HD/Nav' (AvenirNext-DemiBold)"
+    },
+    "form-placeholder-text": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "30px",
+        "lineHeight": "48px",
+        "letterSpacing": "0.62px"
+      },
+      "$description": "Sketch text style 'Form/Placeholder Text' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-body-2": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 500,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD / Body 2' (AvenirNext-Medium)"
+    },
+    "subheading-3": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 200,
+        "fontSize": "19px",
+        "lineHeight": "auto",
+        "letterSpacing": "2.44px",
+        "textTransform": "uppercase"
+      },
+      "$description": "Sketch text style 'Subheading/3' (AvenirNext-UltraLight)"
+    },
+    "subheading-light-2": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 200,
+        "fontSize": "21px",
+        "lineHeight": "auto",
+        "letterSpacing": "2.69px",
+        "textTransform": "uppercase"
+      },
+      "$description": "Sketch text style 'Subheading/Light/2' (AvenirNext-UltraLight)"
+    },
+    "body-bright": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "26.6px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.55px"
+      },
+      "$description": "Sketch text style 'Body/Bright' (AvenirNext-DemiBold)"
+    },
+    "wireframe-annotation": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 400,
+        "fontSize": "18px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.37px"
+      },
+      "$description": "Sketch text style 'Wireframe/Annotation' (AvenirNext-Regular)"
+    },
+    "desktop-hd-body-light": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 500,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD/Body/Light' (AvenirNext-Medium)"
+    },
+    "desktop-hd-heading-light-heading-5": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 600,
+        "fontSize": "28px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.58px"
+      },
+      "$description": "Sketch text style 'Desktop HD/Heading/Light/Heading 5' (AvenirNext-DemiBold)"
+    },
+    "desktop-hd-body-list": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 500,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD/Body/List' (AvenirNext-Medium)"
+    },
+    "desktop-hd-body-list-light": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Avenir Next",
+        "fontWeight": 500,
+        "fontSize": "16px",
+        "lineHeight": "auto",
+        "letterSpacing": "0.33px"
+      },
+      "$description": "Sketch text style 'Desktop HD/Body/List/Light' (AvenirNext-Medium)"
+    }
+  }
+}

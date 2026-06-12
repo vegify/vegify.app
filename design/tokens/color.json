@@ -1,0 +1,64 @@
+{
+  "color": {
+    "yellow": {
+      "$type": "color",
+      "$value": "#FFD400",
+      "$description": "Sketch swatch '1. #FFD400'"
+    },
+    "orange": {
+      "$type": "color",
+      "$value": "#FBB040",
+      "$description": "Sketch swatch '2. #FBB040'"
+    },
+    "green-light": {
+      "$type": "color",
+      "$value": "#65A73E",
+      "$description": "Sketch swatch '3. #65A73E'"
+    },
+    "green": {
+      "$type": "color",
+      "$value": "#4C9638",
+      "$description": "Sketch swatch '4. #4C9638'"
+    },
+    "green-dark": {
+      "$type": "color",
+      "$value": "#328432",
+      "$description": "Sketch swatch '5. #328432'"
+    },
+    "purple": {
+      "$type": "color",
+      "$value": "#CA5FFF",
+      "$description": "Sketch swatch '6. #CA5FFF'"
+    },
+    "violet": {
+      "$type": "color",
+      "$value": "#7F5FFB",
+      "$description": "Sketch swatch '7. #7F5FFB'"
+    },
+    "red": {
+      "$type": "color",
+      "$value": "#FB4040",
+      "$description": "Sketch swatch '8. #FB4040'"
+    },
+    "magenta": {
+      "$type": "color",
+      "$value": "#FF005E",
+      "$description": "Sketch swatch '9. #FF005E'"
+    },
+    "gray-100": {
+      "$type": "color",
+      "$value": "#F1F1F1",
+      "$description": "Sketch swatch '10. #F1F1F1'"
+    },
+    "gray-500": {
+      "$type": "color",
+      "$value": "#8A8B8A",
+      "$description": "Sketch swatch '11. #8A8B8A'"
+    },
+    "gray-900": {
+      "$type": "color",
+      "$value": "#2B2B2B",
+      "$description": "Sketch swatch '12. #2B2B2B'"
+    }
+  }
+}

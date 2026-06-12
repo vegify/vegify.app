@@ -1,0 +1,175 @@
+== ZIP ==
+entries=74 images=29 (192.8 MB uncompressed)
+pages=35 largest page json=5.9 MB
+
+== META ==
+saved with Sketch 99.5 (build 178873), created with 99.5
+doc format version=146 compat=99 variant=NONAPPSTORE
+meta.fonts: []
+pages (35):
+  - 'Site Map': 1 artboards
+  - 'Scraps': 4 artboards
+  - 'Page/3.Recipes/2.Add/1.0.Add Ingredient': 2 artboards
+  - 'Style Guide': 2 artboards
+  - 'Page/3.Recipes/2.Add/3.Ingredient/1.Search': 2 artboards
+  - 'Video Graphics - 2020-11 Corn Chowder': 14 artboards
+  - 'User Personas': 1 artboards
+  - 'Page/3.Recipes/2.Add/3.Create or Update Ingredient': 2 artboards
+  - '🌐 Symbols': 19 artboards
+  - 'Brand Symbols': 10 artboards
+  - 'Page/5.Social/1.Profile/0.View Profile': 2 artboards
+  - 'Page/3.Recipes/2.0.Create or Edit Recipe': 4 artboards
+  - 'Page Instances': 0 artboards
+  - 'Symbols': 9 artboards
+  - 'Video Graphics - 2021-01-19 Super Bowl Snack': 15 artboards
+  - 'Sample Profile - Jordan': 2 artboards
+  - 'Page/1.Home/1.0.Welcome /0. Logged Out': 7 artboards
+  - 'Page/3.Recipes/2.Add/3.Ingredient/2.Results': 2 artboards
+  - 'xxx Page/1.Home/3.0.Log In or Sign Up': 2 artboards
+  - 'Page/1.Home/1.0.Welcome /4. Newsfeed': 3 artboards
+  - 'Patreon Tiers': 6 artboards
+  - 'Page/Template': 2 artboards
+  - 'Page/2.Search/1.0.Search': 3 artboards
+  - 'UI Symbols': 16 artboards
+  - 'Video Graphics - 2020-12 Flour Tortillas': 15 artboards
+  - 'User Flows': 1 artboards
+  - '⚛️ Symbols': 187 artboards
+  - 'Social Media': 9 artboards
+  - 'Page/3.Recipes/1.0.View Recipe': 5 artboards
+  - 'UX Symbols': 1 artboards
+  - 'Old Video Graphics': 21 artboards
+  - 'Page/3.Recipes/2.Add/2.Scan Label': 2 artboards
+  - 'Page/3.Recipes/3.0.View Ingredient': 2 artboards
+  - 'Page/1.Home/3.0.Add or Update Profile': 2 artboards
+  - 'Page/2.Search/1.1.Results': 2 artboards
+
+== DOCUMENT ==
+colorSpace: sRGB
+foreignSymbols: 0
+foreignLayerStyles: 0
+foreignTextStyles: 0
+foreignSwatches: 0
+shared layerStyles: 21  textStyles: 24  color swatches: 12
+  text styles: ['Desktop HD / Heading / Heading 1', 'Desktop HD / Heading / Heading 2', 'Desktop HD / Heading / Heading 3', 'Desktop HD / Heading / Heading 4', 'Desktop HD / Body', 'Desktop HD / Body / Bold', 'Button Text White', 'Page Title 2', 'Node', 'Annotation', 'Label', 'Page Title', 'Subheading/1', 'Desktop HD/Nav', 'Form/Placeholder Text', 'Desktop HD / Body 2', 'Subheading/3', 'Subheading/Light/2', 'Body/Bright', 'Wireframe/Annotation', 'Desktop HD/Body/Light', 'Desktop HD/Heading/Light/Heading 5', 'Desktop HD/Body/List', 'Desktop HD/Body/List/Light']
+  layer styles: ['Connection/Line Dotted', 'Element/Highlight', 'UI Element/Light', 'Element/Error', 'UI Element/Border', 'Element/Annotation', 'Connection/Line Solid', 'UI Element/Dark', 'Element/Label', 'Element/Success', 'Point', 'Element/Node', 'UI Element/Mid', 'Fill / Accent 6', 'Fill / Accent 1', 'Shadow / Shadow 2', 'UI/Dark Green Fill', 'UI/Yellow Orange Fill', 'UI/Night/Light BG', 'UI/Night/Dark BG', 'Transparent']
+  swatches:
+    1. #FFD400: #FFD400
+    2. #FBB040: #FBB040
+    3. #65A73E: #65A73E
+    4. #4C9638: #4C9638
+    5. #328432: #328432
+    6. #CA5FFF: #CA5FFF
+    7. #7F5FFB: #7F5FFB
+    8. #FB4040: #FB4040
+    9. #FF005E: #FF005E
+    10. #F1F1F1: #F1F1F1
+    11. #8A8B8A: #8A8B8A
+    12. #2B2B2B: #2B2B2B
+embedded fontReferences: 49
+  - family=Lato ps=['Lato-Bold'] embedded=True
+  - family=SF Pro Display ps=['SFProDisplay-Heavy'] embedded=True
+  - family=SF Pro Display ps=['SFProDisplay-BlackItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Medium'] embedded=False
+  - family=Lato ps=['Lato-BlackItalic'] embedded=False
+  - family=Adelle ps=['Adelle-SemiBoldItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Italic'] embedded=False
+  - family=Lato ps=['Lato-Regular'] embedded=True
+  - family=Adelle ps=['Adelle-Italic'] embedded=False
+  - family=Adelle ps=['Adelle-ExtraBoldItalic'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Bold'] embedded=False
+  - family=Lato ps=['Lato-BoldItalic'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Regular'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Semibold'] embedded=True
+  - family=SF Compact Display ps=['SFCompactDisplay-Light'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Black'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Thin'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Bold'] embedded=True
+  - family=SF Pro Display ps=['SFProDisplay-Light'] embedded=False
+  - family=Lato ps=['Lato-HairlineItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-LightItalic'] embedded=False
+  - family=Adelle ps=['Adelle-Regular'] embedded=True
+  - family=SF Pro Display ps=['SFProDisplay-SemiboldItalic'] embedded=False
+  - family=Adelle ps=['Adelle-LightItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-UltralightItalic'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Medium'] embedded=False
+  - family=Adelle ps=['Adelle-BoldItalic'] embedded=False
+  - family=Lato ps=['Lato-Black'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Regular'] embedded=False
+  - family=Adelle ps=['Adelle-Light'] embedded=False
+  - family=Lato ps=['Lato-Hairline'] embedded=False
+  - family=Lato ps=['Lato-Italic'] embedded=False
+  - family=Adelle ps=['Adelle-Heavy'] embedded=False
+  - family=Adelle ps=['Adelle-SemiBold'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Heavy'] embedded=False
+  - family=Adelle ps=['Adelle-ExtraBold'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Thin'] embedded=False
+  - family=Adelle ps=['Adelle-HeavyItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-ThinItalic'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Ultralight'] embedded=False
+  - family=SF Compact Display ps=['SFCompactDisplay-Semibold'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Ultralight'] embedded=False
+  - family=Lato ps=['Lato-LightItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-HeavyItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-MediumItalic'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-BoldItalic'] embedded=False
+  - family=Lato ps=['Lato-Light'] embedded=False
+  - family=Adelle ps=['Adelle-Bold'] embedded=False
+  - family=SF Pro Display ps=['SFProDisplay-Black'] embedded=False
+
+== LAYERS (all pages) ==
+  rectangle: 1382
+  symbolInstance: 983
+  text: 836
+  group: 822
+  shapePath: 805
+  symbolMaster: 245
+  bitmap: 151
+  artboard: 132
+  shapeGroup: 113
+  oval: 87
+  page: 35
+  star: 15
+  triangle: 4
+  MSImmutableHotspotLayer: 2
+  slice: 1
+
+symbol masters: 245 | instances: 983
+  masters by page: {'⚛️ Symbols': 187, 'UI Symbols': 16, 'Brand Symbols': 10, '🌐 Symbols': 19, 'Social Media': 1, 'Symbols': 9, 'UX Symbols': 1, 'xxx Page/1.Home/3.0.Log In or Sign Up': 2}
+
+== FONTS ACTUALLY USED (postscript, by text-run count) ==
+  AvenirNext-Regular: 322
+  AvenirNext-DemiBold: 214
+  AvenirNext-Medium: 210
+  AvenirNext-Bold: 188
+  AvenirNext-UltraLight: 52
+  Adelle-Regular: 25
+  Lato-Bold: 20
+  AvenirNext-Italic: 12
+  Lato-Regular: 8
+  SFProDisplay-Heavy: 6
+  SFProDisplay-Bold: 5
+  ZapfDingbatsITC: 2
+  SFCompactDisplay-Regular: 2
+  SFProDisplay-Semibold: 1
+  Helvetica: 1
+
+text runs: auto line-height=938  fixed line-height=130
+
+== FEATURE FLAGS ==
+  letter-spacing: 975
+  boolean op: 813
+  instance w/ overrides: 433
+  scaled instance: 220
+  export settings: 199
+  text-transform: 169
+  prototype link: 145
+  multi-fill: 78
+  clipping mask: 72
+  rotated layer: 58
+  dashed border: 27
+  image fill (tile): 6
+  image fill (fill): 1
+blurs: {'gaussian': 8}
+gradients: {'linear': 94, 'radial': 2}
+
+palette written to /tmp/vegify_palette.json

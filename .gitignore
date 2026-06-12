@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Design binaries live in Figma cloud + Dropbox, not git
+*.sketch
+*.fig
+*.psd
+
+CLAUDE.md
+CLAUDE.local.md
+.claude/
