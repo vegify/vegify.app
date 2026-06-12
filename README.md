@@ -10,3 +10,4 @@ The living design lives in Figma, binary archives live in Dropbox, and this repo
 - **Figma import runbook:** [`design/figma-import/PREFLIGHT.md`](design/figma-import/PREFLIGHT.md)
 - **Text-override reference:** [`design/figma-import/text-overrides.md`](design/figma-import/text-overrides.md) — the real text content of every symbol instance; the Figma import dropped these overrides, so affected instances show master defaults until fixed
 - **Personas:** [`design/personas/`](design/personas/)
+- **Site map:** [`design/site-map.md`](design/site-map.md) — mermaid diagram reconstructed from the Sketch `Site Map` page, numbering preserved
