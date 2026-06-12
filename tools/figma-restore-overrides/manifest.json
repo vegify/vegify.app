@@ -1,0 +1,6 @@
+{
+  "name": "Vegify — Restore Sketch Text Overrides",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"]
+}
