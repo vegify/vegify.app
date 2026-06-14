@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "@vegify/tokens/theme.css";
 @source "../../../../packages/ui/src";
 

@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@vegify/db";
-import { Card, CardDescription, CardTitle } from "@vegify/ui";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@vegify/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -33,22 +39,26 @@ export default async function RecipePage({
       </h1>
       <p className="mb-8 text-gray-500">{recipe.subtitle}</p>
       <Card>
-        <CardTitle className="mb-3">Ingredients</CardTitle>
-        <ul className="flex flex-col gap-2">
-          {recipe.items.map((item) => (
-            <li key={item.id} className="flex justify-between border-b border-gray-100 pb-2 text-sm">
-              <span>{item.ingredient?.name ?? "(unknown)"}</span>
-              <span className="text-gray-500">
-                {item.amount.amount} {item.amount.unit} · {item.amount.grams} g
-              </span>
-            </li>
-          ))}
-        </ul>
-        {recipe.asIngredient.description ? (
-          <CardDescription className="mt-4">
-            {recipe.asIngredient.description}
-          </CardDescription>
-        ) : null}
+        <CardHeader>
+          <CardTitle>Ingredients</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="flex flex-col gap-2">
+            {recipe.items.map((item) => (
+              <li key={item.id} className="flex justify-between border-b border-gray-100 pb-2 text-sm">
+                <span>{item.ingredient?.name ?? "(unknown)"}</span>
+                <span className="text-gray-500">
+                  {item.amount.amount} {item.amount.unit} · {item.amount.grams} g
+                </span>
+              </li>
+            ))}
+          </ul>
+          {recipe.asIngredient.description ? (
+            <CardDescription className="mt-4">
+              {recipe.asIngredient.description}
+            </CardDescription>
+          ) : null}
+        </CardContent>
       </Card>
     </main>
   );
