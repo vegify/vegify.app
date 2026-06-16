@@ -7,6 +7,13 @@ export {
   type AppShellNavItem,
 } from "./app-shell";
 export { VegifyLogo } from "./vegify-logo";
+export { DetailHero } from "./detail-hero";
+export {
+  NutritionFacts,
+  type NutritionFactsData,
+  type NutritionReading,
+} from "./nutrition-facts";
+export { NutritionFactsFab } from "./nutrition-facts-fab";
 
 export {
   Button,

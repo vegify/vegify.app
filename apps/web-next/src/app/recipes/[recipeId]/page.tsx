@@ -46,7 +46,16 @@ export default async function RecipePage({
           <ul className="flex flex-col gap-2">
             {recipe.items.map((item) => (
               <li key={item.id} className="flex justify-between border-b border-gray-100 pb-2 text-sm">
-                <span>{item.ingredient?.name ?? "(unknown)"}</span>
+                {item.ingredient ? (
+                  <Link
+                    href={`/ingredients/${item.ingredient.id}`}
+                    className="hover:text-primary hover:underline"
+                  >
+                    {item.ingredient.name}
+                  </Link>
+                ) : (
+                  <span>(unknown)</span>
+                )}
                 <span className="text-gray-500">
                   {item.amount.amount} {item.amount.unit} · {item.amount.grams} g
                 </span>
