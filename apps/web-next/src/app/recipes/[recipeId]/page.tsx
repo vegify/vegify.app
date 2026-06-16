@@ -69,7 +69,11 @@ export default async function RecipePage({
             </BreadcrumbList>
           </Breadcrumb>
 
-          <DetailHero label="Recipe Image" className="mt-4" />
+          <DetailHero
+            label="Recipe Image"
+            editHref={`/recipes/${recipe.id}/edit`}
+            className="mt-4"
+          />
 
           <h1 className="mt-10 text-center text-4xl font-bold text-primary-dark">
             {recipe.asIngredient.name}
@@ -98,7 +102,7 @@ export default async function RecipePage({
 
           <h2 className="mt-8 text-center text-xl font-bold">Directions</h2>
           <p className="mt-3 text-muted-foreground">
-            {recipe.asIngredient.description ?? "No directions yet."}
+            {recipe.directions ?? "No directions yet."}
           </p>
         </div>
       </div>

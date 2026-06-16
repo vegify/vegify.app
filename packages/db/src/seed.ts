@@ -123,6 +123,8 @@ async function main() {
     .values({
       asIngredientId: bigaIngredient.id,
       subtitle: "Italian pre-ferment",
+      directions:
+        "Stir the yeast into the water, then mix in the flour until shaggy. Cover and ferment at room temperature for 12–16 hours, until bubbly and risen.",
       prepMinutes: 10,
       totalTime: 970,
     })
@@ -155,6 +157,8 @@ async function main() {
     .values({
       asIngredientId: doughIngredient.id,
       subtitle: "Built on the biga",
+      directions:
+        "Dissolve the biga and salt into the water, then work in the flour and knead to a smooth dough. Cold-ferment 24 hours, divide into balls, and proof before stretching.",
       prepMinutes: 30,
       totalTime: 1440,
     })

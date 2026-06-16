@@ -19,6 +19,12 @@ export {
   type IngredientFormInput,
   type IngredientFormDefaults,
 } from "./ingredient-form";
+export {
+  RecipeForm,
+  type RecipeFormInput,
+  type RecipeFormDefaults,
+  type IngredientSearchItem,
+} from "./recipe-form";
 
 export {
   Button,

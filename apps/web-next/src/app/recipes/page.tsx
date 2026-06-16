@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@vegify/db";
-import { Card, CardDescription, CardHeader, CardTitle } from "@vegify/ui";
+import { buttonClasses, Card, CardDescription, CardHeader, CardTitle } from "@vegify/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,15 @@ export default async function RecipesPage() {
 
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 text-4xl font-bold text-primary-dark">Recipes</h1>
-      <p className="mb-8 text-gray-500">{recipes.length} recipes</p>
+      <div className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-4xl font-bold text-primary-dark">Recipes</h1>
+          <p className="text-gray-500">{recipes.length} recipes</p>
+        </div>
+        <Link href="/recipes/new" className={buttonClasses({ size: "sm" })}>
+          + New recipe
+        </Link>
+      </div>
       <div className="flex flex-col gap-4">
         {recipes.map((r) => (
           <Link key={r.id} href={`/recipes/${r.id}`}>

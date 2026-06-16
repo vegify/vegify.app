@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
+import { Route as RecipesNewRouteImport } from './routes/recipes.new'
 import { Route as IngredientsNewRouteImport } from './routes/ingredients.new'
 import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$recipeId.index'
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
+import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
 import { Route as IngredientsIngredientIdEditRouteImport } from './routes/ingredients.$ingredientId.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const RecipesIndexRoute = RecipesIndexRouteImport.update({
   id: '/recipes/',
   path: '/recipes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecipesNewRoute = RecipesNewRouteImport.update({
+  id: '/recipes/new',
+  path: '/recipes/new',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IngredientsNewRoute = IngredientsNewRouteImport.update({
@@ -42,6 +49,11 @@ const IngredientsIngredientIdIndexRoute =
     path: '/ingredients/$ingredientId/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const RecipesRecipeIdEditRoute = RecipesRecipeIdEditRouteImport.update({
+  id: '/recipes/$recipeId/edit',
+  path: '/recipes/$recipeId/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IngredientsIngredientIdEditRoute =
   IngredientsIngredientIdEditRouteImport.update({
     id: '/ingredients/$ingredientId/edit',
@@ -52,16 +64,20 @@ const IngredientsIngredientIdEditRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/recipes/new': typeof RecipesNewRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
+  '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
   '/recipes/$recipeId/': typeof RecipesRecipeIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/recipes/new': typeof RecipesNewRoute
   '/recipes': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
+  '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId': typeof IngredientsIngredientIdIndexRoute
   '/recipes/$recipeId': typeof RecipesRecipeIdIndexRoute
 }
@@ -69,8 +85,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/recipes/new': typeof RecipesNewRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
+  '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
   '/recipes/$recipeId/': typeof RecipesRecipeIdIndexRoute
 }
@@ -79,24 +97,30 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/ingredients/new'
+    | '/recipes/new'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
+    | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
     | '/recipes/$recipeId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/ingredients/new'
+    | '/recipes/new'
     | '/recipes'
     | '/ingredients/$ingredientId/edit'
+    | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId'
     | '/recipes/$recipeId'
   id:
     | '__root__'
     | '/'
     | '/ingredients/new'
+    | '/recipes/new'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
+    | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
     | '/recipes/$recipeId/'
   fileRoutesById: FileRoutesById
@@ -104,8 +128,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
+  RecipesNewRoute: typeof RecipesNewRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
+  RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
   IngredientsIngredientIdIndexRoute: typeof IngredientsIngredientIdIndexRoute
   RecipesRecipeIdIndexRoute: typeof RecipesRecipeIdIndexRoute
 }
@@ -124,6 +150,13 @@ declare module '@tanstack/react-router' {
       path: '/recipes'
       fullPath: '/recipes/'
       preLoaderRoute: typeof RecipesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recipes/new': {
+      id: '/recipes/new'
+      path: '/recipes/new'
+      fullPath: '/recipes/new'
+      preLoaderRoute: typeof RecipesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ingredients/new': {
@@ -147,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IngredientsIngredientIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/recipes/$recipeId/edit': {
+      id: '/recipes/$recipeId/edit'
+      path: '/recipes/$recipeId/edit'
+      fullPath: '/recipes/$recipeId/edit'
+      preLoaderRoute: typeof RecipesRecipeIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ingredients/$ingredientId/edit': {
       id: '/ingredients/$ingredientId/edit'
       path: '/ingredients/$ingredientId/edit'
@@ -160,8 +200,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IngredientsNewRoute: IngredientsNewRoute,
+  RecipesNewRoute: RecipesNewRoute,
   RecipesIndexRoute: RecipesIndexRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
+  RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,
   IngredientsIngredientIdIndexRoute: IngredientsIngredientIdIndexRoute,
   RecipesRecipeIdIndexRoute: RecipesRecipeIdIndexRoute,
 }

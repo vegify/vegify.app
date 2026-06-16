@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Card, CardDescription, CardHeader, CardTitle } from '@vegify/ui'
+import { buttonClasses, Card, CardDescription, CardHeader, CardTitle } from '@vegify/ui'
 
 const getRecipes = createServerFn({ method: 'GET' }).handler(async () => {
   const { db } = await import('@vegify/db')
@@ -18,8 +18,15 @@ function RecipesPage() {
   const recipes = Route.useLoaderData()
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 text-4xl font-bold text-primary-dark">Recipes</h1>
-      <p className="mb-8 text-gray-500">{recipes.length} recipes</p>
+      <div className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-4xl font-bold text-primary-dark">Recipes</h1>
+          <p className="text-gray-500">{recipes.length} recipes</p>
+        </div>
+        <Link to="/recipes/new" className={buttonClasses({ size: 'sm' })}>
+          + New recipe
+        </Link>
+      </div>
       <div className="flex flex-col gap-4">
         {recipes.map((r) => (
           <Link

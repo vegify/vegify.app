@@ -75,12 +75,7 @@ async function per100gForIngredient(ingredientId: number, seen: Set<number>): Pr
   };
 }
 
-export async function getRecipeNutrition(recipeId: number): Promise<AggregatedNutrition> {
-  const recipe = await db.query.recipes.findFirst({
-    where: (r, { eq }) => eq(r.id, recipeId),
-  });
-  if (!recipe) return { caloriesPer100g: null, readings: [] };
-  const agg = await per100gForIngredient(recipe.asIngredientId, new Set());
+function toAggregated(agg: Acc): AggregatedNutrition {
   return {
     caloriesPer100g: agg.calKnown ? agg.cal : null,
     readings: [...agg.byNutrient].map(([name, { amt, unit }]) => ({
@@ -89,4 +84,43 @@ export async function getRecipeNutrition(recipeId: number): Promise<AggregatedNu
       unit,
     })),
   };
+}
+
+export async function getRecipeNutrition(recipeId: number): Promise<AggregatedNutrition> {
+  const recipe = await db.query.recipes.findFirst({
+    where: (r, { eq }) => eq(r.id, recipeId),
+  });
+  if (!recipe) return { caloriesPer100g: null, readings: [] };
+  return toAggregated(await per100gForIngredient(recipe.asIngredientId, new Set()));
+}
+
+/** Effective per-100g nutrition of any ingredient (leaf or recipe). */
+export async function getIngredientNutrition(ingredientId: number): Promise<AggregatedNutrition> {
+  return toAggregated(await per100gForIngredient(ingredientId, new Set()));
+}
+
+export type IngredientSearchResult = AggregatedNutrition & {
+  id: number;
+  name: string;
+  servingGrams: number | null;
+};
+
+/** Search ingredients by name, each with its effective per-100g nutrition (for live recipe aggregation). */
+export async function searchIngredients(
+  query: string,
+  limit = 12,
+): Promise<IngredientSearchResult[]> {
+  const q = query.trim();
+  const rows = await db.query.ingredients.findMany({
+    where: q ? (i, { like }) => like(i.name, `%${q}%`) : undefined,
+    with: { servingSize: true },
+    orderBy: (i, { asc }) => [asc(i.name)],
+    limit,
+  });
+  const out: IngredientSearchResult[] = [];
+  for (const r of rows) {
+    const n = await getIngredientNutrition(r.id);
+    out.push({ id: r.id, name: r.name, servingGrams: r.servingSize?.grams ?? null, ...n });
+  }
+  return out;
 }

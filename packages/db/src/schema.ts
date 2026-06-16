@@ -78,6 +78,7 @@ export const recipes = sqliteTable(
       .notNull()
       .references(() => ingredients.id, { onDelete: "cascade" }),
     subtitle: text("subtitle"),
+    directions: text("directions"),
     prepMinutes: real("prep_minutes"),
     cookMinutes: real("cook_minutes"),
     totalTime: real("total_time"),
