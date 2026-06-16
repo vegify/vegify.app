@@ -1,0 +1,21 @@
+[package]
+name = "web-fast"
+version = "0.0.0"
+edition = "2021"
+description = "The fastest vegify: Rust + Axum + rusqlite, nutrition via one recursive CTE."
+
+[[bin]]
+name = "web-fast"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
