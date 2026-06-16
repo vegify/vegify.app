@@ -30,7 +30,7 @@ const getIngredient = createServerFn({ method: 'GET' })
     return ingredient
   })
 
-export const Route = createFileRoute('/ingredients/$ingredientId')({
+export const Route = createFileRoute('/ingredients/$ingredientId/')({
   loader: ({ params }) => getIngredient({ data: params.ingredientId }),
   component: IngredientPage,
 })
