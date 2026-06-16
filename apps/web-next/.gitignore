@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# opennext (AWS build output)
+/.open-next/
+
 # production
 /build
 

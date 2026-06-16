@@ -40,4 +40,5 @@ set `DATABASE_URL` (+ `DATABASE_AUTH_TOKEN`); same client. The schema stays port
 if the site ever outgrows SQLite-class infra.
 
 Hosting: **AWS only, via AWS CDK** — web-next through OpenNext (Lambda + CloudFront + S3),
-web-start through a Nitro aws-lambda preset (Lambda + CloudFront + S3). No Vercel, no Cloudflare.
+web-start through a small Lambda adapter over its WinterCG fetch handler (Lambda + CloudFront + S3).
+Self-hosted libSQL (sqld) on ECS Fargate + EBS. No Vercel, no Cloudflare. See `infra/`.

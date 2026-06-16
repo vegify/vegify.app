@@ -74,9 +74,9 @@ plus the framework's self-reported "ready" time.
 
 - Small app, sparse seed data — absolute numbers are tiny; treat as *ratios and shape*, not gospel.
 - Local, no network — TTFB reflects server compute only; real-world is dominated by latency + CDN.
-- web-start's prod numbers come through a bridge, not its real target (**AWS Lambda** via a Nitro
-  aws-lambda preset + CloudFront — all deploys are AWS/CDK). Re-measure against the actual deploy
-  when Item 4 lands.
+- web-start's prod numbers come through a bridge, not its real target (**AWS Lambda** via a small
+  adapter over its WinterCG handler + CloudFront — all deploys are AWS/CDK). The local bridge that
+  produced these numbers is essentially that adapter; re-measure against the real deploy in Item 4.
 - First-load JS is uncompressed; gzip-equiv estimates use each app's measured total-bundle ratio
   (next 0.30, start 0.32).
 - Revisit as the app grows: web-next's per-route JS rises as client components are added; web-start's
