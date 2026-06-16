@@ -97,6 +97,40 @@ TTFB /recipes (median of 8):      web-next 4.2 ms    web-start 6.8 ms (via bridg
 dev boot / first page:            web-next 243 ms / 2698 ms   web-start 416 ms / 1474 ms
 ```
 
+## Throughput across all four implementations (oha, 2026-06-16)
+
+Two more implementations were added to find vegify's speed ceiling (TechEmpower R23: Rust tops the
+DB-backed tests, Node/Next near the bottom): **web-leptos** (Rust + Leptos, React-like components,
+SSR) and **web-fast** (Rust + Axum + rusqlite, templated). Both read the same `.data/vegify.db` and
+compute nutrition with **one recursive CTE** (vs the JS apps' N+1 recursion). Load: `oha --no-tui
+-z 5s -c 50` (via `127.0.0.1` — `localhost` resolves to IPv6 first and the servers bind IPv4) on a
+simple recipe (4 ingredients, nested biga) and a complex one (20 ingredients, full panel). 100% success.
+
+| impl | simple req/s | simple p50 | complex req/s | complex p50 |
+|---|--:|--:|--:|--:|
+| web-next (Next 16 / RSC) | 139 | 352 ms | 66 | 769 ms |
+| web-start (TanStack Start) | 146 | 228 ms | 73 | 342 ms |
+| **web-leptos** (Rust + Leptos SSR) | **1742** | **14 ms** | **1523** | **12 ms** |
+| **web-fast** (Rust + Axum) | **1703** | **12 ms** | **1472** | **11 ms** |
+
+- **Rust ≈ 12–25× the JS shells' throughput**, ~25–60× lower p50.
+- **Leptos ≈ raw Rust** — the React-like component model (`#[component]` + `view!`) has no meaningful
+  perf cost. "Good DX" and "fastest" coexist in Rust.
+- **Complexity exposes the algorithm:** web-next 139→66 req/s (4→20 ingredients) because nutrition is
+  N+1 (~40 round-trips); the Rust apps stay ~flat (1742→1523) — the single recursive CTE costs about
+  the same for 20 ingredients as for 4. **Query pattern matters as much as language** — backporting
+  the CTE to `packages/db` would materially speed the JS apps (likely narrowing the gap to ~5–10×).
+
+Caveats: local macOS, oha shares the CPU, single run — indicative not authoritative. JS apps use N+1
++ libSQL client; Rust apps use the CTE + direct rusqlite (gap is part-algorithm, part-runtime).
+`force-dynamic` (no caching) is the fair "compute per request" setting for the JS apps.
+
+### IDE / tooling for the Rust + Leptos path
+rust-analyzer (the LSP all major IDEs use) expands the `view!` proc-macro → type errors, hover,
+go-to-def, and typed-prop autocomplete work inside it; `clippy` lints the macro code cleanly;
+`leptosfmt` formats inside `view!` (rustfmt can't). Thinner than TS/JSX for HTML-attribute
+autocomplete and occasionally cryptic macro errors — but fully lintable/navigable, not "unlintable."
+
 ## Reproduce
 
 ```sh

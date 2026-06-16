@@ -180,6 +180,78 @@ async function main() {
     });
   }
 
+  // A complex DIY meal-replacement recipe (Soylent-style) to stress nutrition aggregation:
+  // 20 ingredients × a full micronutrient panel. This is where the recursive-CTE (1 query)
+  // vs ORM N+1 (~40 queries) difference and raw framework speed actually show.
+  const extraNutrients = await db
+    .insert(nutrients)
+    .values(
+      [
+        "Total Fat",
+        "Total Carbohydrates",
+        "Calcium",
+        "Magnesium",
+        "Potassium",
+        "Sodium",
+        "Zinc",
+        "Vitamin C",
+        "Vitamin D",
+        "Vitamin A",
+      ].map((name) => ({ name })),
+    )
+    .returning();
+  const panel = [protein, iron, b12, ...extraNutrients];
+  const unitFor = (name: string) =>
+    ["Vitamin B12", "Vitamin D", "Vitamin A"].includes(name)
+      ? "µg"
+      : ["Total Fat", "Total Carbohydrates", "Protein"].includes(name)
+        ? "g"
+        : "mg";
+
+  const shakeItems: [number, string, number, number][] = [];
+  for (let k = 0; k < 20; k++) {
+    const ing = await ingredient({
+      name: `Shake Ingredient ${k + 1}`,
+      serving: ["g", 10, 10],
+      caloriesPer100g: 180 + k * 12,
+    });
+    const rows = panel
+      .map((nut, j) => ({
+        ingredientId: ing.id,
+        nutrientId: nut.id,
+        amountPer100g: ((k * 7 + j * 5) % 60) + 1, // deterministic, varied
+        unit: unitFor(nut.name),
+      }))
+      .filter((_, j) => (k + j) % 4 !== 0); // each ingredient carries most (not all) nutrients
+    await db.insert(ingredientNutrient).values(rows);
+    shakeItems.push([ing.id, "g", 20 + k, 20 + k]);
+  }
+  const shakeIngredient = await ingredient({
+    name: "Complete Shake (20-ingredient)",
+    description:
+      "DIY meal-replacement shake — 20 ingredients with a full micronutrient panel. Exercises nutrition aggregation at scale.",
+    serving: ["scoop", 1, 100],
+    batch: ["batch", 1, shakeItems.reduce((s, [, , , g]) => s + g, 0)],
+  });
+  const [shake] = await db
+    .insert(recipes)
+    .values({
+      asIngredientId: shakeIngredient.id,
+      subtitle: "20 ingredients · full micronutrient panel",
+      directions: "Combine all ingredients, blend with water, and shake well.",
+    })
+    .returning();
+  order = 0;
+  for (const [ingredientId, unit, qty, grams] of shakeItems) {
+    const a = await amount(unit, qty, grams);
+    await db.insert(ingredientInRecipe).values({
+      order: order++,
+      recipeId: shake.id,
+      ingredientId,
+      amountId: a.id,
+    });
+  }
+
   const counts = {
     users: 1,
     ingredients: (await db.select().from(ingredients)).length,
