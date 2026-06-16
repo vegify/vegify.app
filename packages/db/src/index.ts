@@ -12,3 +12,4 @@ export const db = drizzle(client, { schema });
 
 export * from "./schema";
 export * as schema from "./schema";
+export * from "./mutations";

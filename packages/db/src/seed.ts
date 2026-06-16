@@ -41,6 +41,8 @@ async function main() {
     description?: string;
     serving: [string, number, number];
     batch?: [string, number, number];
+    price?: number; // cents
+    caloriesPer100g?: number;
   }) => {
     const serving = await amount(...opts.serving);
     const batch = opts.batch ? await amount(...opts.batch) : null;
@@ -52,6 +54,8 @@ async function main() {
           name: opts.name,
           description: opts.description,
           isVegan: true,
+          price: opts.price,
+          caloriesPer100g: opts.caloriesPer100g,
           servingSizeId: serving.id,
           batchSizeId: batch?.id,
         })
@@ -65,6 +69,8 @@ async function main() {
       "Professional flour; this 100% wheat flour is a culinary essential, perfect for long fermentation baking.",
     serving: ["cup", 0.25, 30],
     batch: ["servings", 166, 500],
+    price: 599,
+    caloriesPer100g: 364,
   });
   const water = await ingredient({
     name: "Water",
@@ -82,6 +88,8 @@ async function main() {
     name: "Black Beans",
     description: "Cooked black beans.",
     serving: ["cup", 0.5, 130],
+    price: 199,
+    caloriesPer100g: 132,
   });
 
   const [iron, b12, protein] = await db

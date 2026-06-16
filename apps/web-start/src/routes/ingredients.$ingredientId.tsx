@@ -40,6 +40,11 @@ function IngredientPage() {
 
   const nutrition: NutritionFactsData = {
     heading: 'This Ingredient',
+    caloriesPerServing:
+      ingredient.caloriesPer100g != null
+        ? ingredient.caloriesPer100g *
+          (ingredient.servingSize?.grams ? ingredient.servingSize.grams / 100 : 1)
+        : null,
     serving: ingredient.servingSize
       ? {
           amount: ingredient.servingSize.amount,
@@ -74,7 +79,11 @@ function IngredientPage() {
             </BreadcrumbList>
           </Breadcrumb>
 
-          <DetailHero label="Ingredient Image" className="mt-4" />
+          <DetailHero
+            label="Ingredient Image"
+            editHref={`/ingredients/${ingredient.id}/edit`}
+            className="mt-4"
+          />
 
           <h1 className="mt-10 text-center text-4xl font-bold text-primary-dark">
             {ingredient.name}

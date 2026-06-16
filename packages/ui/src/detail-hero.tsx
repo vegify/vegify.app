@@ -9,9 +9,12 @@ import { cn } from "./cn";
  */
 export function DetailHero({
   label,
+  editHref,
   className,
 }: {
   label: string;
+  /** When set, the edit FAB becomes a link to this route (plain <a>, framework-agnostic). */
+  editHref?: string;
   className?: string;
 }) {
   return (
@@ -30,13 +33,23 @@ export function DetailHero({
         >
           <SaveIcon className="size-5" />
         </button>
-        <button
-          type="button"
-          aria-label="Edit"
-          className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
-        >
-          <PencilIcon className="size-5" />
-        </button>
+        {editHref ? (
+          <a
+            href={editHref}
+            aria-label="Edit"
+            className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
+          >
+            <PencilIcon className="size-5" />
+          </a>
+        ) : (
+          <button
+            type="button"
+            aria-label="Edit"
+            className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
+          >
+            <PencilIcon className="size-5" />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -34,7 +34,7 @@ export type AppShellNavItem = {
 export const APP_NAV: AppShellNavItem[] = [
   { key: "home", label: "Home", icon: House, href: "/", inMobileBar: true },
   { key: "explore", label: "Explore", icon: Search, href: "/recipes", inMobileBar: true },
-  { key: "add", label: "Add Food", icon: Carrot, inMobileBar: true },
+  { key: "add", label: "Add Food", icon: Carrot, href: "/ingredients/new", inMobileBar: true },
   { key: "notifications", label: "Notifications", icon: Bell, inMobileBar: true },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
   { key: "inbox", label: "Inbox", icon: Mail },

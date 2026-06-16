@@ -14,6 +14,11 @@ export {
   type NutritionReading,
 } from "./nutrition-facts";
 export { NutritionFactsFab } from "./nutrition-facts-fab";
+export {
+  IngredientForm,
+  type IngredientFormInput,
+  type IngredientFormDefaults,
+} from "./ingredient-form";
 
 export {
   Button,

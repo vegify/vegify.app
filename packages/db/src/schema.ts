@@ -47,6 +47,8 @@ export const ingredients = sqliteTable(
     name: text("name").notNull(),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),
+    price: integer("price"), // cents (USD)
+    caloriesPer100g: real("calories_per_100g"),
     servingSizeId: integer("serving_size_id").references(() => amounts.id, {
       onDelete: "cascade",
     }),
