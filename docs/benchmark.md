@@ -31,6 +31,10 @@ CRUD with the computed Nutrition Facts panel).
 (`tools`-less, see Methodology); it adds a little overhead vs a native runtime, so treat its TTFB as
 an upper bound.
 
+> **Note:** the React Compiler is now enabled in both apps (see *React Compiler*, below). The build
+> figures in this section are the compiler-off baseline; with it on they rise ~20–25% (web-next ~5.6 s,
+> web-start ~1.7 s). Read throughput is unchanged.
+
 ## The interesting nuance (total bundle vs first-load)
 
 The two flip depending on what you measure:
@@ -149,6 +153,30 @@ through the shared package, so the benchmark stays fair. Re-measured (oha, `-c 5
 - **A local Postgres would not help here** (and would likely be slightly slower): the CTE already runs
   in-process against SQLite with zero IPC; Postgres adds a socket round-trip per query. The lever was
   the query *shape*, not the engine.
+
+### React Compiler — enabled in both JS apps (2026-06-16)
+
+The React Compiler (stable in Next 16 via `reactCompiler: true`; in web-start via
+`babel-plugin-react-compiler` inside `@vitejs/plugin-react`) is now on in both apps — fairly, so the
+framework stays the only variable. It auto-memoizes components to cut **client-side re-renders**.
+Verified active: both builds emit `react/compiler-runtime` + `useMemoCache` in our client components.
+Effect on what this benchmark measures:
+
+| metric | web-next (off → on) | web-start (off → on) |
+|---|--:|--:|
+| read throughput, simple req/s | 233 → 235 | 286 → 286 |
+| read throughput, complex req/s | 209 → 211 | 233 → 236 |
+| cold build (wall) | 4.5 → 5.6 s | 1.4 → 1.7 s |
+
+- **Throughput is unchanged** (within run-to-run noise). Expected: the compiler optimizes *client*
+  re-renders, but the read benchmark is SSR — one render pass per request, no component tree persisting
+  across requests, so there is nothing for cross-render memoization to save.
+- **Build time rose ~20–25%** — the Babel pass. Turbopack runs an SWC pre-check (`isReactCompilerRequired`)
+  so only files that need it are transformed; there is no webpack fallback. This is the one metric it
+  moved, and the wrong way.
+- **Where it pays off is client interactivity** (re-renders on input, navigation) as the UI grows —
+  orthogonal to everything measured here (the client metrics were already ~1 ms). Kept on as a
+  production-realistic default; it neither flatters nor distorts the throughput story.
 
 ### IDE / tooling for the Rust + Leptos path
 rust-analyzer (the LSP all major IDEs use) expands the `view!` proc-macro → type errors, hover,

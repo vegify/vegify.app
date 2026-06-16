@@ -10,7 +10,13 @@ const config = defineConfig({
   resolve: { tsconfigPaths: true },
   // native sqlite client can't live inside the SSR bundle
   ssr: { external: ['@libsql/client'] },
-  plugins: [devtools(), tailwindcss(), tanstackStart(), viteReact()],
+  // React Compiler runs as a Babel plugin inside @vitejs/plugin-react (target React 19 → no runtime dep).
+  plugins: [
+    devtools(),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact({ babel: { plugins: [['babel-plugin-react-compiler', { target: '19' }]] } }),
+  ],
 })
 
 export default config

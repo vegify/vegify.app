@@ -89,3 +89,8 @@ the app — the high-leverage move, versus a Rust rewrite that would forfeit all
 
 **Build & bundle:** web-start builds ~3.2× faster (1.4 s vs 4.5 s) with a smaller total bundle;
 web-next ships ~half the per-route first-load JS (RSC keeps read pages off the client).
+
+**React Compiler:** enabled in both apps (Next `reactCompiler`, Vite `babel-plugin-react-compiler`).
+It's **throughput-neutral** here — the read path is SSR, which has no cross-render memoization to gain —
+and adds ~20–25% to build time (the figures above are compiler-off). Its win is client-render
+performance as the UI grows, orthogonal to these server metrics.
