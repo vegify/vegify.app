@@ -1,8 +1,19 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import {
+  HeadContent,
+  Link,
+  Scripts,
+  createRootRoute,
+  useRouterState,
+} from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { AppShell, type AppShellLinkProps } from '@vegify/ui'
 
 import appCss from '../styles.css?url'
+
+function LinkAdapter({ href, ...props }: AppShellLinkProps) {
+  return <Link to={href} {...props} />
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -29,13 +40,16 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
   return (
     <html lang="en">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <AppShell currentPath={pathname} LinkComponent={LinkAdapter}>
+          {children}
+        </AppShell>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

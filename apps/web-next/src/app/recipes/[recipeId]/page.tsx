@@ -30,7 +30,7 @@ export default async function RecipePage({
   if (!recipe) notFound();
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <div className="mx-auto max-w-3xl p-8">
       <Link href="/recipes" className="text-sm text-primary hover:underline">
         ← Recipes
       </Link>
@@ -60,6 +60,6 @@ export default async function RecipePage({
           ) : null}
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }

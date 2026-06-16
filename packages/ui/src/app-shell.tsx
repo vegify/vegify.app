@@ -1,0 +1,198 @@
+import type { ComponentType, ReactNode } from "react";
+import { Bell, Carrot, House, Mail, Search, Settings, User } from "lucide-react";
+import { cn } from "./cn";
+import { VegifyLogo } from "./vegify-logo";
+
+type IconType = ComponentType<{ className?: string; strokeWidth?: number }>;
+
+/**
+ * Link primitive each app injects (next/link or @tanstack/react-router Link)
+ * so the shell JSX stays shared and the framework is the only variable.
+ */
+export type AppShellLinkProps = {
+  href: string;
+  className?: string;
+  "aria-current"?: "page";
+  children: ReactNode;
+};
+
+export type AppShellNavItem = {
+  key: string;
+  label: string;
+  icon: IconType;
+  /** Live route. Absent => rendered as a disabled "soon" item. */
+  href?: string;
+  /** Appears in the mobile bottom tab bar (icon-only). */
+  inMobileBar?: boolean;
+};
+
+/**
+ * Nav destinations, transcribed from the Sketch "Desktop HD" sidebar comp:
+ * Home · Explore · Add Food · Notifications · Profile · Inbox · Settings.
+ * The five `inMobileBar` items are the mobile bottom tab bar.
+ */
+export const APP_NAV: AppShellNavItem[] = [
+  { key: "home", label: "Home", icon: House, href: "/", inMobileBar: true },
+  { key: "explore", label: "Explore", icon: Search, href: "/recipes", inMobileBar: true },
+  { key: "add", label: "Add Food", icon: Carrot, inMobileBar: true },
+  { key: "notifications", label: "Notifications", icon: Bell, inMobileBar: true },
+  { key: "profile", label: "Profile", icon: User, inMobileBar: true },
+  { key: "inbox", label: "Inbox", icon: Mail },
+  { key: "settings", label: "Settings", icon: Settings },
+];
+
+function pathIsActive(currentPath: string, href?: string) {
+  if (!href) return false;
+  if (href === "/") return currentPath === "/";
+  return currentPath === href || currentPath.startsWith(href + "/");
+}
+
+export function AppShell({
+  currentPath,
+  LinkComponent,
+  children,
+}: {
+  currentPath: string;
+  LinkComponent: ComponentType<AppShellLinkProps>;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col bg-background text-foreground lg:flex-row">
+      {/* ===== Desktop sidebar ===== */}
+      <aside className="hidden bg-green-dark text-white lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:sticky lg:top-0">
+        <LinkComponent href="/" className="flex items-center px-6 py-7">
+          <VegifyLogo className="h-10 w-auto" />
+        </LinkComponent>
+        <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+          {APP_NAV.map((item) => (
+            <NavRow
+              key={item.key}
+              item={item}
+              active={pathIsActive(currentPath, item.href)}
+              LinkComponent={LinkComponent}
+            />
+          ))}
+        </nav>
+      </aside>
+
+      {/* ===== Mobile top bar ===== */}
+      <header className="flex h-14 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
+        <Settings className="size-6" aria-label="Settings" />
+        <VegifyLogo className="h-6 w-auto" />
+        <Mail className="size-6" aria-label="Inbox" />
+      </header>
+
+      {/* ===== Content ===== */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="hidden items-center px-8 py-4 lg:flex">
+          <div className="relative mx-auto w-full max-w-xl">
+            <input
+              type="search"
+              aria-label="Search"
+              placeholder="Search…"
+              className="h-11 w-full rounded-full border border-input bg-card pl-5 pr-12 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+            />
+            <span className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Search className="size-4" />
+            </span>
+          </div>
+        </div>
+        <main className="min-w-0 flex-1 pb-24 lg:pb-8">{children}</main>
+      </div>
+
+      {/* ===== Mobile bottom tab bar ===== */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-center justify-around bg-green-dark text-white lg:hidden">
+        {APP_NAV.filter((item) => item.inMobileBar).map((item) => (
+          <TabItem
+            key={item.key}
+            item={item}
+            active={pathIsActive(currentPath, item.href)}
+            LinkComponent={LinkComponent}
+          />
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function NavRow({
+  item,
+  active,
+  LinkComponent,
+}: {
+  item: AppShellNavItem;
+  active: boolean;
+  LinkComponent: ComponentType<AppShellLinkProps>;
+}) {
+  const Icon = item.icon;
+  const base =
+    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-2xl font-semibold transition";
+  const inner = (
+    <>
+      <Icon className="size-6 shrink-0" strokeWidth={2} />
+      <span>{item.label}</span>
+      {!item.href && (
+        <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">
+          soon
+        </span>
+      )}
+    </>
+  );
+  if (!item.href) {
+    return (
+      <span aria-disabled className={cn(base, "cursor-not-allowed text-white/55")}>
+        {inner}
+      </span>
+    );
+  }
+  return (
+    <LinkComponent
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        base,
+        active ? "bg-white/15 text-white" : "text-white/85 hover:bg-white/10 hover:text-white",
+      )}
+    >
+      {inner}
+    </LinkComponent>
+  );
+}
+
+function TabItem({
+  item,
+  active,
+  LinkComponent,
+}: {
+  item: AppShellNavItem;
+  active: boolean;
+  LinkComponent: ComponentType<AppShellLinkProps>;
+}) {
+  const Icon = item.icon;
+  const inner = (
+    <span
+      className={cn(
+        "flex size-11 items-center justify-center rounded-2xl transition",
+        active ? "bg-orange text-white" : "text-white/85",
+      )}
+    >
+      <Icon className="size-6" />
+    </span>
+  );
+  if (!item.href) {
+    return (
+      <span aria-disabled className="flex items-center justify-center opacity-55">
+        {inner}
+      </span>
+    );
+  }
+  return (
+    <LinkComponent
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className="flex items-center justify-center"
+    >
+      {inner}
+    </LinkComponent>
+  );
+}

@@ -10,7 +10,7 @@ export default async function RecipesPage() {
   });
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <div className="mx-auto max-w-3xl p-8">
       <h1 className="mb-1 text-4xl font-bold text-primary-dark">Recipes</h1>
       <p className="mb-8 text-gray-500">{recipes.length} recipes</p>
       <div className="flex flex-col gap-4">
@@ -30,6 +30,6 @@ export default async function RecipesPage() {
           </Link>
         ))}
       </div>
-    </main>
+    </div>
   );
 }

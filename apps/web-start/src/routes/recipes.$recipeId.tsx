@@ -34,7 +34,7 @@ export const Route = createFileRoute('/recipes/$recipeId')({
 function RecipePage() {
   const recipe = Route.useLoaderData()
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <div className="mx-auto max-w-3xl p-8">
       <Link to="/recipes" className="text-sm text-primary hover:underline">
         ← Recipes
       </Link>
@@ -67,6 +67,6 @@ function RecipePage() {
           ) : null}
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }

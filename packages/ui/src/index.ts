@@ -1,6 +1,14 @@
 export { cn } from "./cn";
 
 export {
+  AppShell,
+  APP_NAV,
+  type AppShellLinkProps,
+  type AppShellNavItem,
+} from "./app-shell";
+export { VegifyLogo } from "./vegify-logo";
+
+export {
   Button,
   buttonClasses,
   buttonVariants,
