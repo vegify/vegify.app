@@ -131,6 +131,63 @@ go-to-def, and typed-prop autocomplete work inside it; `clippy` lints the macro 
 `leptosfmt` formats inside `view!` (rustfmt can't). Thinner than TS/JSX for HTML-attribute
 autocomplete and occasionally cryptic macro errors — but fully lintable/navigable, not "unlintable."
 
+## Operation-level latency: navigation, save, reactivity (CDP, 2026-06-16)
+
+Throughput (above) is the read-serving ceiling. To back it up with the operations a user actually
+performs, these are measured in headless Chrome via the DevTools Protocol (median of N, local prod
+servers, 1280×900). The two Rust apps are **read-only SSR spikes** — no client router, no hydration —
+so client-nav, save, and reactive updates are a Next-vs-Start comparison (the apps that implement
+them); full-page load and reads are where all four compete.
+
+### Navigation (median of 9)
+
+| impl | full page load → `/recipes/16` | in-app client nav (list → detail) |
+|---|--:|--:|
+| web-next | 91 ms | **21 ms** (fresh RSC fetch each nav) |
+| web-start | 112 ms | **3 ms** (loader data cached/reused) |
+| web-leptos | **55 ms** | — full reload only (no client router) |
+| web-fast | **52 ms** | — full reload only (no client router) |
+
+Two regimes. **Cold load — and *every* navigation on the Rust apps** (no client router, so each nav is
+a fresh document): Rust ~52–55 ms vs JS ~91–112 ms — ~2× faster, with no JS bundle to ship, parse, or
+hydrate. **Warm in-app nav (JS SPAs only):** web-next does a fresh server RSC round-trip per nav (21 ms,
+always-current data); web-start reuses cached loader data (3 ms, feels instant). The SPA payoff is real
+but needs a client runtime the SSR-only Rust spikes don't have.
+
+### Save & reactivity (JS apps only; Rust spikes are read-only)
+
+| impl | recipe save round-trip (click Save → detail rendered) | reactive rescale (servings → Nutrition panel) |
+|---|--:|--:|
+| web-next | **28 ms** | **1 ms** |
+| web-start | 62 ms | **1 ms** |
+| web-leptos / web-fast | n/a (read-only spike) | n/a (SSR-only, no hydration) |
+
+- **Save** is a real server mutation + redirect + re-render. web-next (server action → RSC redirect)
+  ~28 ms; web-start (server fn → loader invalidation → client nav) ~62 ms *through the local bridge*
+  (treat as an upper bound).
+- **Reactive update** is a pure client re-render — the Nutrition Facts panel recomputes per-serving
+  values with no server call — 1 ms in both. The Rust spikes have no hydration, so they have no client
+  reactivity at all; an equivalent needs `cargo-leptos` + a wasm island build (the documented follow-up).
+
+### What the operation numbers say about the throughput
+
+- **Reads back up the headline.** Under load (`-c 50`) the Rust p50 stays ~10–12 ms while the JS apps'
+  balloons to 220–755 ms; web-fast's **data-only JSON ≈ its full HTML** (~1765 vs ~1791–1854 req/s), so
+  HTML render is nearly free and the recursive-CTE compute (~0.5 ms) is the whole cost.
+- **But the throughput win doesn't transfer to the whole app.** A real vegify needs the writes and
+  interactivity the SSR-only Rust spikes skip: instant client nav (3–21 ms), 1 ms reactive panels, and
+  actual saving (28–62 ms) — all JS-app properties today. Rust owns raw read-serving and cold load;
+  React owns interactivity. Fair read of all the numbers: the ~12–25× is real **for the read path**, and
+  is the argument for backporting the recursive CTE into `@vegify/db` (which would close most of the gap
+  for the JS apps) rather than rewriting the app in Rust.
+
+Methodology: client-nav, save and reactive deltas are in-page `performance.now()` (precise, survive SPA
+nav); full-page load is CDP wall-clock `Page.navigate → Page.loadEventFired` (≈1 ms command overhead,
+uniform across apps). Scripts: `/tmp/nav-bench.mjs`, `/tmp/save-react-bench.mjs`, `/tmp/fetch-bench.sh`.
+The save script creates one throwaway recipe, measures edit-save, then deletes it; cleanup verified
+(GET → 404, DB orphan-checked). Same caveats as above: local, single run, small N — ratios and shape,
+not gospel.
+
 ## Reproduce
 
 ```sh
