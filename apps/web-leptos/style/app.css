@@ -1,0 +1,6 @@
+/* Same design system as the React apps: Tailwind v4 + the @vegify/tokens theme.
+   @source scans the Rust .rs files so Tailwind generates the utility classes used in view!.
+   Build: pnpm dlx (or node_modules/.bin/)tailwindcss -i style/app.css -o style/out.css --minify */
+@import "tailwindcss";
+@import "../../../packages/tokens/dist/theme.css";
+@source "../src/**/*.rs";

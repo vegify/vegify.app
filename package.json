@@ -18,6 +18,7 @@
     "db:seed": "pnpm --filter @vegify/db seed"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.1",
     "turbo": "^2.9.18"
   }
 }

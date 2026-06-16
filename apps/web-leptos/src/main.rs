@@ -104,6 +104,8 @@ fn fmt(n: f64) -> String { let r = (n*10.0).round()/10.0; if r.fract()==0.0 { fo
 
 // ---------- components (the DX showcase: composable #[component] + view!) ----------
 
+// Same shadcn/brand Tailwind classes as packages/ui/src/nutrition-facts.tsx — the design
+// system (tokens → CSS) transfers verbatim; only the authoring (view!) is Rust.
 #[component]
 fn NutritionFacts(
     servings: f64,
@@ -112,62 +114,74 @@ fn NutritionFacts(
     rows: Vec<NutRow>,
 ) -> impl IntoView {
     view! {
-        <aside class="panel">
-            <h2 class="nf">"Nutrition Facts"</h2>
-            <p class="muted">
-                "This Recipe" <br/>
-                {format!("{} servings per batch", fmt(servings))} <br/>
-                {format!("Serving size {} g", fmt(serving_grams))}
+        <div class="text-sm text-foreground">
+            <div class="flex items-center justify-between border-b-4 border-foreground pb-1">
+                <h2 class="text-2xl font-extrabold tracking-tight">"Nutrition Facts"</h2>
+            </div>
+            <p class="mt-2 text-lg font-semibold">"This Recipe"</p>
+            <p>{format!("{} servings per batch", fmt(servings))}</p>
+            <p class="font-semibold">{format!("Serving size {} g", fmt(serving_grams))}</p>
+            <div class="mt-1 border-t-8 border-foreground"></div>
+            <p class="pt-1 text-xs font-semibold">"Amount per serving"</p>
+            <div class="flex items-end justify-between border-b-4 border-foreground pb-1">
+                <span class="text-3xl font-extrabold">"Calories"</span>
+                <span class="text-3xl font-extrabold">{fmt(calories)}</span>
+            </div>
+            <p class="mt-1 border-b border-foreground pb-0.5 text-right text-xs font-bold">
+                "% Daily Value*"
             </p>
-            <div class="cal"><span>"Calories"</span><span>{fmt(calories)}</span></div>
-            <table>
+            <div>
                 {rows.into_iter().map(|r| view! {
-                    <tr>
-                        <td><b>{r.name}</b></td>
-                        <td class="r">{format!("{}{}", fmt(r.per_serving), r.unit)}</td>
-                        <td class="r">{r.pct.map(|p| format!("{p}%")).unwrap_or_else(|| "—".into())}</td>
-                    </tr>
+                    <div class="flex items-baseline justify-between border-b border-foreground/15 py-0.5">
+                        <span><b>{r.name}</b>" "{format!("{}{}", fmt(r.per_serving), r.unit)}</span>
+                        <span class="font-bold">
+                            {r.pct.map(|p| format!("{p}%")).unwrap_or_else(|| "—".into())}
+                        </span>
+                    </div>
                 }).collect_view()}
-            </table>
-        </aside>
+            </div>
+            <p class="mt-2 border-t border-foreground pt-1 text-[10px] leading-tight text-muted-foreground">
+                "* Percent Daily Values are based on a 2,000 calorie diet."
+            </p>
+        </div>
     }
 }
 
 #[component]
 fn RecipeView(page: Page) -> impl IntoView {
     view! {
-        <header class="hdr">"🌱 vegify · leptos (React-like components in Rust, SSR)"</header>
-        <main class="grid">
+        <header class="flex items-center gap-2 bg-green-dark px-6 py-3.5 text-white">
+            <span class="text-2xl font-semibold lowercase tracking-tight">"vegify"</span>
+            <span class="text-sm opacity-80">"· leptos (Rust components, SSR, real shadcn theme)"</span>
+        </header>
+        <main class="mx-auto grid max-w-4xl gap-8 p-6 lg:grid-cols-[1fr_320px] lg:p-8">
             <section>
-                <h1 class="title">{page.name}</h1>
-                {page.subtitle.map(|s| view! { <p class="sub">{s}</p> })}
-                <h2 class="ctr">"Ingredients"</h2>
-                <ul class="ings">
+                <h1 class="mt-2 text-center text-4xl font-bold text-primary-dark">{page.name}</h1>
+                {page.subtitle.map(|s| view! {
+                    <p class="mt-1 text-center text-muted-foreground">{s}</p>
+                })}
+                <h2 class="mt-8 text-center text-xl font-bold">"Ingredients"</h2>
+                <ul class="mx-auto mt-4 grid max-w-2xl list-disc grid-cols-1 gap-x-8 gap-y-1.5 pl-5 marker:text-primary sm:grid-cols-2 lg:grid-cols-3">
                     {page.ingredients.into_iter().map(|i| view! { <li>{i}</li> }).collect_view()}
                 </ul>
-                <h2 class="ctr">"Directions"</h2>
-                <p>{page.directions}</p>
+                <h2 class="mt-8 text-center text-xl font-bold">"Directions"</h2>
+                <p class="mt-3 text-muted-foreground">{page.directions}</p>
             </section>
-            <NutritionFacts
-                servings=page.servings
-                serving_grams=page.serving_grams
-                calories=page.calories
-                rows=page.rows
-            />
+            <aside class="lg:border-l lg:border-border lg:pl-6">
+                <NutritionFacts
+                    servings=page.servings
+                    serving_grams=page.serving_grams
+                    calories=page.calories
+                    rows=page.rows
+                />
+            </aside>
         </main>
     }
 }
 
-const STYLE: &str = "
-:root{font-family:'Avenir Next',system-ui,sans-serif;color:#2B2B2B}
-body{margin:0}.hdr{background:#328432;color:#F1F1F1;padding:14px 24px;font-weight:700}
-.grid{max-width:900px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1fr 320px;gap:32px}
-.title{color:#328432;text-align:center}.ctr{text-align:center}.sub{text-align:center;color:#8A8B8A}
-.ings{columns:2;list-style:disc;padding-left:20px}.muted{color:#8A8B8A}
-.panel{border:1px solid #eee;border-radius:12px;padding:16px}.nf{border-bottom:4px solid #2B2B2B}
-table{width:100%;border-collapse:collapse;font-size:14px}td{border-bottom:1px solid #f1f1f1;padding:2px 0}
-.r{text-align:right}.cal{font-size:28px;font-weight:800;display:flex;justify-content:space-between;border-bottom:4px solid #2B2B2B}
-@media(max-width:700px){.grid{grid-template-columns:1fr}}";
+// The real design system: Tailwind v4 + @vegify/tokens, compiled from style/app.css by scanning
+// these .rs files for class names. Embedded at compile time (run `build:css` before `cargo build`).
+const CSS: &str = include_str!("../style/out.css");
 
 async fn recipe(Path(id): Path<i64>) -> Response {
     match tokio::task::spawn_blocking(move || query_page(id)).await {
@@ -178,7 +192,7 @@ async fn recipe(Path(id): Path<i64>) -> Response {
             Html(format!(
                 "<!doctype html><html lang=en><head><meta charset=utf-8>\
                  <meta name=viewport content=\"width=device-width,initial-scale=1\">\
-                 <style>{STYLE}</style></head><body>{body}</body></html>"
+                 <style>{CSS}</style></head><body class=\"bg-background text-foreground antialiased\">{body}</body></html>"
             )).into_response()
         }
         Ok(Ok(None)) => (StatusCode::NOT_FOUND, "recipe not found").into_response(),
