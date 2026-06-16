@@ -105,6 +105,9 @@ async function main() {
     { ingredientId: blackBeans.id, nutrientId: iron.id, amountPer100g: 2.1, unit: "mg" },
     { ingredientId: blackBeans.id, nutrientId: protein.id, amountPer100g: 8.9, unit: "g" },
     { ingredientId: blackBeans.id, nutrientId: b12.id, amountPer100g: 0, unit: "µg" },
+    // Flour carries protein + iron so the Biga/Dough recipes show aggregated micros.
+    { ingredientId: flour.id, nutrientId: protein.id, amountPer100g: 10, unit: "g" },
+    { ingredientId: flour.id, nutrientId: iron.id, amountPer100g: 1.2, unit: "mg" },
   ]);
 
   // Biga — recipe that is itself an ingredient

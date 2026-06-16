@@ -1,6 +1,5 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { db, getRecipeNutrition } from "@vegify/db";
+import { Link, createFileRoute, notFound } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,33 +11,38 @@ import {
   NutritionFacts,
   NutritionFactsFab,
   type NutritionFactsData,
-} from "@vegify/ui";
+} from '@vegify/ui'
 
-export const dynamic = "force-dynamic";
-
-export default async function RecipePage({
-  params,
-}: {
-  params: Promise<{ recipeId: string }>;
-}) {
-  const { recipeId } = await params;
-  const id = Number(recipeId);
-  const recipe = await db.query.recipes.findFirst({
-    where: (r, { eq }) => eq(r.id, id),
-    with: {
-      asIngredient: { with: { creator: true, servingSize: true, batchSize: true } },
-      items: {
-        orderBy: (iir, { asc }) => [asc(iir.order)],
-        with: { ingredient: true, amount: true },
+const getRecipe = createServerFn({ method: 'GET' })
+  .validator((recipeId: string) => recipeId)
+  .handler(async ({ data }) => {
+    const { db, getRecipeNutrition } = await import('@vegify/db')
+    const id = Number(data)
+    const recipe = await db.query.recipes.findFirst({
+      where: (r, { eq }) => eq(r.id, id),
+      with: {
+        asIngredient: { with: { creator: true, servingSize: true, batchSize: true } },
+        items: {
+          orderBy: (iir, { asc }) => [asc(iir.order)],
+          with: { ingredient: true, amount: true },
+        },
       },
-    },
-  });
-  if (!recipe) notFound();
+    })
+    if (!recipe) throw notFound()
+    const nutrition = await getRecipeNutrition(id)
+    return { recipe, nutrition }
+  })
 
-  const agg = await getRecipeNutrition(id);
-  const serving = recipe.asIngredient.servingSize;
+export const Route = createFileRoute('/recipes/$recipeId/')({
+  loader: ({ params }) => getRecipe({ data: params.recipeId }),
+  component: RecipePage,
+})
+
+function RecipePage() {
+  const { recipe, nutrition: agg } = Route.useLoaderData()
+  const serving = recipe.asIngredient.servingSize
   const nutrition: NutritionFactsData = {
-    heading: "This Recipe",
+    heading: 'This Recipe',
     serving: serving
       ? { amount: serving.amount, unit: serving.unit, grams: serving.grams }
       : null,
@@ -51,7 +55,7 @@ export default async function RecipePage({
         ? (agg.caloriesPer100g * serving.grams) / 100
         : agg.caloriesPer100g,
     readings: agg.readings,
-  };
+  }
 
   return (
     <div className="flex">
@@ -60,7 +64,7 @@ export default async function RecipePage({
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink>@{recipe.asIngredient.creator?.name ?? "user"}</BreadcrumbLink>
+                <BreadcrumbLink>@{recipe.asIngredient.creator?.name ?? 'user'}</BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
@@ -84,7 +88,8 @@ export default async function RecipePage({
               <li key={item.id}>
                 {item.ingredient ? (
                   <Link
-                    href={`/ingredients/${item.ingredient.id}`}
+                    to="/ingredients/$ingredientId"
+                    params={{ ingredientId: String(item.ingredient.id) }}
                     className="hover:text-primary hover:underline"
                   >
                     {item.amount?.amount} {item.amount?.unit} {item.ingredient.name}
@@ -98,7 +103,7 @@ export default async function RecipePage({
 
           <h2 className="mt-8 text-center text-xl font-bold">Directions</h2>
           <p className="mt-3 text-muted-foreground">
-            {recipe.asIngredient.description ?? "No directions yet."}
+            {recipe.asIngredient.description ?? 'No directions yet.'}
           </p>
         </div>
       </div>
@@ -111,5 +116,5 @@ export default async function RecipePage({
 
       <NutritionFactsFab data={nutrition} />
     </div>
-  );
+  )
 }
