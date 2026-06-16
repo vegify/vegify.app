@@ -121,9 +121,34 @@ simple recipe (4 ingredients, nested biga) and a complex one (20 ingredients, fu
   the same for 20 ingredients as for 4. **Query pattern matters as much as language** — backporting
   the CTE to `packages/db` would materially speed the JS apps (likely narrowing the gap to ~5–10×).
 
-Caveats: local macOS, oha shares the CPU, single run — indicative not authoritative. JS apps use N+1
-+ libSQL client; Rust apps use the CTE + direct rusqlite (gap is part-algorithm, part-runtime).
-`force-dynamic` (no caching) is the fair "compute per request" setting for the JS apps.
+Caveats: local macOS, oha shares the CPU, single run — indicative not authoritative. JS apps here
+originally used N+1 + the async libSQL client; Rust apps use the CTE + direct rusqlite (gap is
+part-algorithm, part-runtime). The N+1 half was then removed — see below. `force-dynamic` (no caching)
+is the fair "compute per request" setting for the JS apps.
+
+### Backporting the recursive CTE to the JS apps (2026-06-16)
+
+The gap above was **part algorithm, part runtime**. To separate them, the per-ingredient N+1 recursion
+in `packages/db/nutrition.ts` was replaced with the **same single recursive CTE** the Rust apps use
+(one in-DB graph walk, against the same SQLite — no schema or app change; the `AggregatedNutrition`
+contract is byte-identical, verified equal to the Rust reference to 3 decimals). Both JS apps pick it up
+through the shared package, so the benchmark stays fair. Re-measured (oha, `-c 50`):
+
+| impl | simple req/s · p50 | complex req/s · p50 |
+|---|--:|--:|
+| web-next  N+1 → **CTE** | 137 → **233** · 364 → 208 ms | 67 → **209** · 755 → 236 ms |
+| web-start N+1 → **CTE** | 150 → **286** · 223 → 137 ms | 74 → **233** · 343 → 169 ms |
+| web-fast (Rust, ref) | 1712 · 13 ms | 1734 · 16 ms |
+
+- **Complex recipes got the big win: ~3.1× throughput** (web-next 67→209, web-start 74→233) with p50
+  cut ~⅔. The curve **flattened** — complex is now ≈ simple (web-next 233→209, web-start 286→233), just
+  like the Rust apps. The old N+1 penalty for 20 ingredients is gone; nutrition is one query at any depth.
+- **The Rust gap closed from ~12–25× to ~6–8×.** What remains is genuinely *runtime* (Node + RSC/SSR
+  render + the async libSQL client vs Rust + in-process rusqlite), not the algorithm — the algorithm is
+  now identical. That ~6–8× is the honest ceiling for the JS stack on this workload.
+- **A local Postgres would not help here** (and would likely be slightly slower): the CTE already runs
+  in-process against SQLite with zero IPC; Postgres adds a socket round-trip per query. The lever was
+  the query *shape*, not the engine.
 
 ### IDE / tooling for the Rust + Leptos path
 rust-analyzer (the LSP all major IDEs use) expands the `view!` proc-macro → type errors, hover,

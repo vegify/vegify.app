@@ -57,15 +57,19 @@ shape, not absolutes.
 
 | impl | simple req/s · p50 | complex req/s · p50 |
 |---|--:|--:|
-| web-next (Next 16 / RSC) | 137 · 364 ms | 67 · 755 ms |
-| web-start (TanStack Start) | 150 · 223 ms | 74 · 343 ms |
+| web-next (Next 16 / RSC) | 233 · 208 ms | 209 · 236 ms |
+| web-start (TanStack Start) | 286 · 137 ms | 233 · 169 ms |
 | **web-leptos** (Rust + Leptos) | **1819 · 12 ms** | **1806 · 11 ms** |
 | **web-fast** (Rust + Axum) | **1854 · 10 ms** | **1791 · 11 ms** |
 
-Rust serves reads ~12–25× faster and stays flat as recipes get complex — the JS apps' N+1 nutrition
-recursion degrades from 4→20 ingredients where the Rust apps run one recursive CTE. The component
-model (Leptos) costs nothing vs raw Axum, and web-fast's data-only JSON ≈ its full HTML, so HTML
-render is nearly free — the CTE compute (~0.5 ms) is the whole cost.
+All four now run the **same single recursive CTE** for nutrition (one in-DB graph walk), so this is a
+*runtime* comparison, not an algorithm one. Backporting that CTE into the JS apps was a **3.1× throughput
+win on complex recipes** (web-next 67→209, web-start 74→233 req/s vs the former N+1 recursion) and
+flattened the curve — complex ≈ simple for everyone, where the JS apps used to halve from 4→20
+ingredients. Rust still serves reads ~6–8× faster (Node + RSC/SSR render + async libSQL client vs
+in-process rusqlite); web-fast's data-only JSON ≈ its full HTML, so HTML render is nearly free — the CTE
+compute (~0.5 ms) is the whole cost. (A local Postgres wouldn't help: the CTE already runs in-process
+against SQLite; Postgres adds a socket hop per query. The lever is the query shape, not the engine.)
 
 **Operation latency** (headless Chrome / CDP, median). Client nav, save, and reactivity are
 Next-vs-Start only — the Rust spikes are read-only SSR (no client router, no hydration):
@@ -79,8 +83,9 @@ Next-vs-Start only — the Rust spikes are read-only SSR (no client router, no h
 
 The throughput win is real **for the read path**, but it doesn't transfer to the whole app: a real
 vegify needs the writes and interactivity the SSR-only Rust spikes skip (instant client nav, 1 ms
-reactive panels, real saving). Rust owns raw read-serving and cold load; React owns interactivity —
-the argument for backporting the recursive CTE into `packages/db` rather than rewriting in Rust.
+reactive panels, real saving). Rust owns raw read-serving and cold load; React owns interactivity.
+Backporting the recursive CTE into `packages/db` (done) closed most of the read gap without touching
+the app — the high-leverage move, versus a Rust rewrite that would forfeit all that interactivity.
 
 **Build & bundle:** web-start builds ~3.2× faster (1.4 s vs 4.5 s) with a smaller total bundle;
 web-next ships ~half the per-route first-load JS (RSC keeps read pages off the client).
