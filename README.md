@@ -35,6 +35,9 @@ pnpm db:seed                         # Biga + Neapolitan pizza dough sample data
 pnpm dev                             # or build: pnpm build
 ```
 
-Database: local dev uses a SQLite file at `.data/vegify.db` (no daemon). Prod target is
-Turso/libSQL or Cloudflare D1 — set `DATABASE_URL` (+ `DATABASE_AUTH_TOKEN`); same client.
-The schema stays portable to Postgres if the site ever outgrows hobby infra.
+Database: local dev uses a SQLite file at `.data/vegify.db` (no daemon). Prod is libSQL —
+set `DATABASE_URL` (+ `DATABASE_AUTH_TOKEN`); same client. The schema stays portable to Postgres
+if the site ever outgrows SQLite-class infra.
+
+Hosting: **AWS only, via AWS CDK** — web-next through OpenNext (Lambda + CloudFront + S3),
+web-start through a Nitro aws-lambda preset (Lambda + CloudFront + S3). No Vercel, no Cloudflare.
