@@ -184,6 +184,43 @@ go-to-def, and typed-prop autocomplete work inside it; `clippy` lints the macro 
 `leptosfmt` formats inside `view!` (rustfmt can't). Thinner than TS/JSX for HTML-attribute
 autocomplete and occasionally cryptic macro errors — but fully lintable/navigable, not "unlintable."
 
+## Runtime: Node vs Bun for web-start (2026-06-18)
+
+With TanStack Start chosen as the surviving React shell, the open question was the server **runtime**: keep Node, or run the same build on **Bun**? Tested as a clean swap — same `vite build` output, same seeded SQLite, same URLs, served on each runtime idiomatically (Node via the `node:http`→`fetch` bridge `/tmp/start-prod.mjs`; Bun via native `Bun.serve` in `apps/web-start/serve-bun.mjs`). Load: `oha -z 5s -c 50` via `127.0.0.1`, 3 samples each, sequential (no CPU contention). `/recipes/16` = 4 ingredients (simple), `/recipes/17` = 20 ingredients (complex, stresses the recursive CTE). 100% success throughout.
+
+**Correctness first:** Bun loads the native `@libsql/client` binding without issue and serves **byte-identical SSR** (same sizes 41663/54270 B, correct aggregation — Calories 307.5 on the 20-ingredient shake). The only byte difference is a 4-byte SSR id, present Node-vs-Node too (request nondeterminism, not a Bun artifact).
+
+| metric (3-sample mean) | Node (V8) | Bun (JSC) | Δ |
+|---|--:|--:|:--|
+| throughput, simple req/s | 525 | **588** | +11.9% |
+| throughput, complex req/s | 428 | **466** | +8.8% |
+| p99, simple | 0.36–0.60 s | **0.12 s** | ~3–5× tighter |
+| p99.9, simple | 1.31–1.62 s | **0.14 s** | ~10× tighter |
+| p99.9, complex | 1.57–1.86 s | **0.12 s** | ~13× tighter |
+| worst case | up to ~2.0 s | ~0.12–0.25 s | — |
+
+Throughput gain is modest (~10%) as predicted — this path is DB+render-bound, so Bun's HTTP-layer edge only partly transfers. **The decisive win is tail latency:** under sustained concurrency Node throws multi-second stalls (event-loop/GC jitter + the bridge's per-request `Buffer` churn); Bun stays flat.
+
+### What drives the win — runtime, not native serving
+
+Decomposed by running the **same `node:http` bridge under Bun** (Bun implements `node:http`), giving a three-way:
+
+| config | simple req/s | complex req/s | simple p99.9 | complex p99.9 |
+|---|--:|--:|--:|--:|
+| Node + `node:http` (V8, bridged) | 546 | 446 | 1.38 s | 1.57 s |
+| Bun + `node:http` (JSC, *same bridge*) | 599 | 482 | 0.175 s | 0.200 s |
+| Bun + `Bun.serve` (JSC, native) | 595 | 478 | 0.137 s | 0.117 s |
+
+**The runtime is ~the entire win.** Swapping only V8→JSC under the identical bridge already captures the throughput bump and collapses the tail ~8–10×; native `Bun.serve` adds only a marginal further tail tightening. So you don't need native serving to benefit — any long-running Bun process does.
+
+### What this means for deployment (and why it gates the AWS shape)
+
+The tail win is a **sustained-concurrency-on-one-process** phenomenon (the long-running-server model). AWS **Lambda isolates requests** (one per instance), so that fat tail wouldn't appear there for *either* runtime — meaning Lambda can't showcase Bun's advantage, and Bun-on-Lambda would only offer a small per-request compute delta while adding container cold-starts. **To realize the Bun win, web-start must run as a long-running server (Fargate/ECS), not Lambda** — which also fits the architecture, since the DB (sqld) is already a long-running Fargate task. See `infra/README.md`.
+
+**Caveats:** Apple M-series, local, CPU-saturated at `-c 50` (these are *saturation* numbers — at low traffic both runtimes are fast; the tail behavior is what favors Bun under bursts). Order was always Node→Bun (the gap is too large/consistent to be order bias). Absolute req/s here (~525/428 Node) run higher than the 2026-06-16 figures above — different session/conditions; this A/B was measured fresh on both sides. Dev still runs on vite/Node (the Bun win is a production-serving property; `bun --bun vite dev` showed an empty-response cold-start issue and is not adopted).
+
+**Reproduce:** `pnpm --filter web-start build`, then `PORT=39003 DATABASE_URL="file:$PWD/.data/vegify.db" pnpm --filter web-start start:bun` (Bun) vs `node /tmp/start-prod.mjs apps/web-start/dist/server/server.js 39002` (Node bridge); load each with `oha -z 5s -c 50 http://127.0.0.1:PORT/recipes/{16,17}`. Three-way + orchestration: `/tmp/bench-3way.sh` (session-temporary).
+
 ## Operation-level latency: navigation, save, reactivity (CDP, 2026-06-16)
 
 Throughput (above) is the read-serving ceiling. To back it up with the operations a user actually

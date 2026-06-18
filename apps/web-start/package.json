@@ -10,6 +10,7 @@
     "generate-routes": "tsr generate",
     "build": "vite build",
     "build:aws": "vite build && node aws/assemble-bundle.mjs",
+    "start:bun": "bun serve-bun.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint",
