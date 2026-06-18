@@ -30,3 +30,4 @@ rusqlite = { version = "0.32", features = ["bundled", "session"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
 ulid = "1"
+rust-s3 = { version = "0.37.2", default-features = false, features = ["blocking", "tokio-rustls-tls"] }

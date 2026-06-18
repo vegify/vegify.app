@@ -448,6 +448,79 @@ impl BlobStore for LocalBlobStore {
     }
 }
 
+/// S3 blob store — changeset blobs as objects `<prefix><ulid>.cs` in a bucket. Self-hostable: works
+/// against any S3-compatible endpoint (real AWS S3, or MinIO for local dev — path-style addressing).
+/// Sync (blocking) client, matching the sync DAL. THIS is the production sync transport, scale-to-zero.
+pub struct S3BlobStore {
+    bucket: Box<s3::Bucket>,
+}
+
+impl S3BlobStore {
+    /// `endpoint` empty → real AWS (region-based); non-empty → S3-compatible (MinIO), path-style.
+    pub fn new(
+        bucket: &str,
+        region: &str,
+        endpoint: &str,
+        access_key: &str,
+        secret_key: &str,
+    ) -> Result<Self, DataError> {
+        let s3err = |e: s3::error::S3Error| DataError::Db(e.to_string());
+        let region = if endpoint.is_empty() {
+            region.parse().map_err(|_| DataError::Db(format!("bad region {region}")))?
+        } else {
+            s3::Region::Custom { region: region.to_string(), endpoint: endpoint.to_string() }
+        };
+        let creds = s3::creds::Credentials::new(Some(access_key), Some(secret_key), None, None, None)
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        let mut b = s3::Bucket::new(bucket, region, creds).map_err(s3err)?;
+        if !endpoint.is_empty() {
+            b = b.with_path_style();
+        }
+        Ok(Self { bucket: b })
+    }
+    fn key(id: &str) -> String {
+        format!("{id}.cs")
+    }
+}
+
+impl BlobStore for S3BlobStore {
+    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError> {
+        self.bucket
+            .put_object_blocking(Self::key(id), bytes)
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        Ok(())
+    }
+    fn list(&self) -> Result<Vec<String>, DataError> {
+        let pages = self
+            .bucket
+            .list_blocking(String::new(), None)
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        let mut ids = Vec::new();
+        for page in pages {
+            for obj in page.contents {
+                if let Some(stem) = obj.key.strip_suffix(".cs") {
+                    ids.push(stem.to_string());
+                }
+            }
+        }
+        ids.sort();
+        Ok(ids)
+    }
+    fn get(&self, id: &str) -> Result<Vec<u8>, DataError> {
+        let resp = self
+            .bucket
+            .get_object_blocking(Self::key(id))
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        Ok(resp.bytes().to_vec())
+    }
+    fn delete(&self, id: &str) -> Result<(), DataError> {
+        self.bucket
+            .delete_object_blocking(Self::key(id))
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        Ok(())
+    }
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
     blobs: Box<dyn BlobStore>,
@@ -799,5 +872,73 @@ mod tests {
         for name in made {
             assert!(names.contains(&name.to_string()), "C missing {name:?} after compacted sync");
         }
+    }
+
+    // Real S3 transport (the production sync path), verified against MinIO. #[ignore]'d so the
+    // default `cargo test` needs no Docker; run with MinIO up + bucket `vegify-sync`:
+    //   cargo test --lib s3_blob_store -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn s3_blob_store_syncs_and_compacts() {
+        let mk = || {
+            S3BlobStore::new("vegify-sync", "us-east-1", "http://127.0.0.1:9000", "minioadmin", "minioadmin")
+                .expect("s3 store")
+        };
+        // deterministic run: clear the bucket first
+        let cleaner = mk();
+        for id in cleaner.list().expect("list") {
+            cleaner.delete(&id).expect("delete");
+        }
+
+        let tmp = std::env::temp_dir();
+        let a_db = tmp.join("vegify-s3-A.db");
+        let b_db = tmp.join("vegify-s3-B.db");
+        let _ = fs::remove_file(&a_db);
+        let _ = fs::remove_file(&b_db);
+        fs::copy(crate::db_path(), &a_db).expect("seed A");
+        fs::copy(crate::db_path(), &b_db).expect("seed B");
+
+        let a = Db::open_with(a_db.to_str().unwrap(), Box::new(mk())).expect("open A");
+        let b = Db::open_with(b_db.to_str().unwrap(), Box::new(mk())).expect("open B");
+
+        let new_id = VegifyData::save_recipe(
+            &a,
+            SaveRecipeInput {
+                id: None,
+                name: "Synced via S3".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(200.0),
+                items: vec![],
+            },
+        )
+        .expect("A save -> S3");
+        assert_eq!(new_id.len(), 26);
+
+        VegifyData::sync(&b).expect("B sync from S3");
+        let names: Vec<String> =
+            VegifyData::list_recipes(&b).expect("B list").into_iter().map(|r| r.name).collect();
+        eprintln!("device B (via S3) recipes: {names:?}");
+        assert!(names.contains(&"Synced via S3".to_string()), "B should see A's S3-synced recipe");
+
+        // compaction works over S3 too: a 2nd write, then compact → one object remains.
+        VegifyData::save_recipe(
+            &a,
+            SaveRecipeInput {
+                id: None,
+                name: "S3 R2".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(50.0),
+                batch_grams: None,
+                items: vec![],
+            },
+        )
+        .expect("A save 2");
+        VegifyData::compact(&a).expect("compact over S3");
+        let remaining = mk().list().expect("list after compact").len();
+        eprintln!("S3 objects after compact: {remaining}");
+        assert_eq!(remaining, 1, "compaction should leave a single S3 object");
     }
 }
