@@ -1,0 +1,2 @@
+# local libsql embedded-replica file (synced from the sqld primary; never committed)
+.vegify-replica.db*

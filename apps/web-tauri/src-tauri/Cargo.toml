@@ -25,6 +25,6 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.2" }
 tauri-plugin-log = "2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+libsql = { version = "0.9.30", features = ["replication"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }

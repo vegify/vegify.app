@@ -1,14 +1,12 @@
-//! On-device data-access layer (DAL) for the Tauri desktop shell.
+//! On-device data-access layer (DAL) for the Tauri desktop shell — now an **embedded replica**.
 //!
-//! The `#[procedures]` trait below IS the typed contract; the same surface is implemented
-//! server-side in TypeScript (`@vegify/db`) for the web shell — two bindings of one interface.
-//! Backed by rusqlite (bundled SQLite, sync). Nutrition is ONE recursive CTE, ported verbatim
-//! from `packages/db/src/nutrition.ts` (normalized to per-100g), so the shared React
-//! `NutritionFacts` component consumes the result unchanged.
+//! The `#[procedures]` trait below IS the typed contract (same surface as @vegify/db on the web).
+//! Backed by the `libsql` crate as a **remote embedded replica**: a local SQLite file that syncs
+//! from a self-hosted sqld primary. Reads (incl. the recursive nutrition CTE, ported verbatim from
+//! packages/db/src/nutrition.ts) hit the local file — fast and OFFLINE. Writes are write-through to
+//! the primary (Stage 1); offline writes are a deferred fork. `sync()` reconciles with the primary.
 
-use std::sync::Mutex;
-
-use rusqlite::{Connection, OptionalExtension};
+use libsql::{Builder, Connection, Database};
 use serde::Serialize;
 use specta::Type;
 use ttipc::procedures;
@@ -79,15 +77,13 @@ impl std::fmt::Display for DataError {
     }
 }
 
-impl From<rusqlite::Error> for DataError {
-    fn from(e: rusqlite::Error) -> Self {
+impl From<libsql::Error> for DataError {
+    fn from(e: libsql::Error) -> Self {
         DataError::Db(e.to_string())
     }
 }
 
-/// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g: walk the
-/// recipe→ingredient graph from the target ingredient, carrying each leaf's effective grams
-/// within the batch (eff_grams) and the batch total (denom); per-100g = SUM(per100g·eff/denom).
+/// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g.
 const CTE: &str = "
 WITH RECURSIVE
 recipe_total AS (
@@ -125,71 +121,82 @@ GROUP BY n.id
 ORDER BY name";
 
 pub struct Db {
-    conn: Mutex<Connection>,
+    db: Database,
+    conn: Connection,
 }
 
 impl Db {
-    pub fn open(path: &str) -> rusqlite::Result<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
-            .ok();
-        Ok(Self { conn: Mutex::new(conn) })
+    /// Open an embedded replica at `path` that syncs from the remote primary `sync_url`.
+    pub async fn open(path: &str, sync_url: String, auth_token: String) -> Result<Self, DataError> {
+        let db = Builder::new_remote_replica(path, sync_url, auth_token)
+            .build()
+            .await?;
+        let conn = db.connect()?;
+        Ok(Self { db, conn })
     }
-}
 
-fn aggregate_per100g(conn: &Connection, ingredient_id: i64) -> Result<AggregatedNutrition, DataError> {
-    let mut stmt = conn.prepare(CTE)?;
-    let rows = stmt.query_map([ingredient_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<String>>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<f64>>(3)?,
-        ))
-    })?;
-    let mut calories_per_100g = None;
-    let mut readings = Vec::new();
-    for r in rows {
-        let (kind, name, unit, per100g) = r?;
-        match kind.as_str() {
-            "cal" => calories_per_100g = per100g,
-            "nut" => {
-                if let (Some(name), Some(unit), Some(v)) = (name, unit, per100g) {
-                    readings.push(Reading { name, amount_per_100g: v, unit });
-                }
-            }
-            _ => {}
-        }
+    /// Reconcile the local replica with the primary.
+    pub async fn sync(&self) -> Result<(), DataError> {
+        self.db.sync().await?;
+        Ok(())
     }
-    Ok(AggregatedNutrition { calories_per_100g, readings })
+
+    async fn aggregate_per100g(&self, ingredient_id: i64) -> Result<AggregatedNutrition, DataError> {
+        let mut rows = self.conn.query(CTE, libsql::params![ingredient_id]).await?;
+        let mut calories_per_100g = None;
+        let mut readings = Vec::new();
+        while let Some(row) = rows.next().await? {
+            let kind: String = row.get(0)?;
+            let name: Option<String> = row.get(1)?;
+            let unit: Option<String> = row.get(2)?;
+            let per100g: Option<f64> = row.get(3)?;
+            match kind.as_str() {
+                "cal" => calories_per_100g = per100g,
+                "nut" => {
+                    if let (Some(name), Some(unit), Some(v)) = (name, unit, per100g) {
+                        readings.push(Reading { name, amount_per_100g: v, unit });
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(AggregatedNutrition { calories_per_100g, readings })
+    }
 }
 
 #[procedures]
 pub trait VegifyData {
-    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
-    fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError>;
+    async fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
+    async fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError>;
+    async fn sync(&self) -> Result<(), DataError>;
 }
 
 impl VegifyData for Db {
-    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT r.id, i.name, r.subtitle
-             FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
-             ORDER BY i.name",
-        )?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
+    async fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT r.id, i.name, r.subtitle
+                 FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+                 ORDER BY i.name",
+                (),
+            )
+            .await?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next().await? {
+            out.push(RecipeCard {
+                id: row.get::<i64>(0)? as i32,
+                name: row.get(1)?,
+                subtitle: row.get(2)?,
+            });
+        }
+        Ok(out)
     }
 
-    fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError> {
-        let conn = self.conn.lock().unwrap();
-        let meta = conn
-            .query_row(
+    async fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError> {
+        let mut meta_rows = self
+            .conn
+            .query(
                 "SELECT i.id, i.name, r.subtitle, r.directions, u.name,
                         sa.amount, sa.unit, sa.grams, ba.grams
                  FROM recipes r
@@ -198,49 +205,47 @@ impl VegifyData for Db {
                  LEFT JOIN amounts sa ON sa.id = i.serving_size_id
                  LEFT JOIN amounts ba ON ba.id = i.batch_size_id
                  WHERE r.id = ?1",
-                [id],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, Option<f64>>(5)?,
-                        row.get::<_, Option<String>>(6)?,
-                        row.get::<_, Option<f64>>(7)?,
-                        row.get::<_, Option<f64>>(8)?,
-                    ))
-                },
+                libsql::params![id as i64],
             )
-            .optional()?;
-        let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams)) = meta
-        else {
+            .await?;
+        let Some(meta) = meta_rows.next().await? else {
             return Ok(None);
         };
+        let as_ing_id: i64 = meta.get(0)?;
+        let name: String = meta.get(1)?;
+        let subtitle: Option<String> = meta.get(2)?;
+        let directions: Option<String> = meta.get(3)?;
+        let creator: Option<String> = meta.get(4)?;
+        let s_amount: Option<f64> = meta.get(5)?;
+        let s_unit: Option<String> = meta.get(6)?;
+        let s_grams: Option<f64> = meta.get(7)?;
+        let batch_grams: Option<f64> = meta.get(8)?;
 
-        let mut istmt = conn.prepare(
-            "SELECT i.id, i.name, a.amount, a.unit, a.grams
-             FROM ingredient_in_recipe iir
-             JOIN ingredients i ON i.id = iir.ingredient_id
-             JOIN amounts a ON a.id = iir.amount_id
-             WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
-        )?;
-        let items = istmt
-            .query_map([id], |row| {
-                Ok(RecipeItem {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    amount: Amount {
-                        amount: row.get(2)?,
-                        unit: row.get(3)?,
-                        grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
-                    },
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut item_rows = self
+            .conn
+            .query(
+                "SELECT i.id, i.name, a.amount, a.unit, a.grams
+                 FROM ingredient_in_recipe iir
+                 JOIN ingredients i ON i.id = iir.ingredient_id
+                 JOIN amounts a ON a.id = iir.amount_id
+                 WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
+                libsql::params![id as i64],
+            )
+            .await?;
+        let mut items = Vec::new();
+        while let Some(row) = item_rows.next().await? {
+            items.push(RecipeItem {
+                id: row.get::<i64>(0)? as i32,
+                name: row.get(1)?,
+                amount: Amount {
+                    amount: row.get(2)?,
+                    unit: row.get(3)?,
+                    grams: row.get::<Option<f64>>(4)?.unwrap_or(0.0),
+                },
+            });
+        }
 
-        let nutrition = aggregate_per100g(&conn, as_ing_id)?;
+        let nutrition = self.aggregate_per100g(as_ing_id).await?;
         let serving = s_grams.map(|grams| Amount { amount: s_amount, unit: s_unit, grams });
 
         Ok(Some(RecipeView {
@@ -255,30 +260,42 @@ impl VegifyData for Db {
             nutrition,
         }))
     }
+
+    async fn sync(&self) -> Result<(), DataError> {
+        Db::sync(self).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Proves the on-device DAL: open the seeded SQLite, run the recursive CTE, and confirm the
-    // 20-ingredient Complete Shake (recipe 17) aggregates to ~307.5 cal/serving — no server.
+    // End-to-end Stage-1 proof: open an embedded replica against the running sqld primary
+    // (docker vegify-sqld on :8080), sync, then run the on-device CTE — recipe 17 must be the
+    // 307.5-cal shake that was seeded into the primary. Requires the primary up + seeded.
     #[test]
-    fn recipe_17_nutrition_on_device() {
-        let db = Db::open(&crate::db_path()).expect("open db");
-        let r = db.recipe(17).expect("query ok").expect("recipe 17 exists");
-        let cal100 = r.nutrition.calories_per_100g.expect("has calories");
-        let grams = r.serving.as_ref().expect("has serving").grams;
-        let per_serving = cal100 * grams / 100.0;
-        eprintln!(
-            "recipe 17 = {:?}: {:.1} cal/serving, {} nutrients",
-            r.name,
-            per_serving,
-            r.nutrition.readings.len()
-        );
-        assert!(
-            (per_serving - 307.5).abs() < 0.5,
-            "expected ~307.5 cal/serving, got {per_serving:.2}"
-        );
+    fn replica_syncs_and_computes_recipe_17() {
+        tauri::async_runtime::block_on(async {
+            let (path, url, token) = crate::db_config();
+            let db = Db::open(&path, url, token).await.expect("open replica");
+            db.sync().await.expect("initial sync from primary");
+            let r = VegifyData::recipe(&db, 17)
+                .await
+                .expect("query ok")
+                .expect("recipe 17 synced from primary");
+            let cal100 = r.nutrition.calories_per_100g.expect("has calories");
+            let grams = r.serving.as_ref().expect("has serving").grams;
+            let per_serving = cal100 * grams / 100.0;
+            eprintln!(
+                "replica recipe 17 = {:?}: {:.1} cal/serving, {} nutrients",
+                r.name,
+                per_serving,
+                r.nutrition.readings.len()
+            );
+            assert!(
+                (per_serving - 307.5).abs() < 0.5,
+                "expected ~307.5 cal/serving from the synced replica, got {per_serving:.2}"
+            );
+        });
     }
 }

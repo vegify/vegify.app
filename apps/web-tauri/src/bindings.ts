@@ -22,6 +22,11 @@ export const vegifyData = {
 } | null> {
     return invoke("recipe", { id });
   },
+
+  /** @throws {DataError} */
+  sync(): Promise<null> {
+    return invoke("sync");
+  },
 };
 
 export type DataError = { type: "db"; message: string };

@@ -4,7 +4,20 @@
 use app_lib::data::*;
 
 fn main() {
-    let db = Db::open(&app_lib::db_path()).expect("open vegify db");
+    let (path, sync_url, token) = app_lib::db_config();
+
+    // Open the embedded replica and bootstrap it from the primary before the window loads, so the
+    // first reads are local + instant (and keep working offline thereafter). libsql is async; the
+    // Tauri runtime drives the open + initial sync.
+    let db = tauri::async_runtime::block_on(async {
+        let db = Db::open(&path, sync_url, token)
+            .await
+            .expect("open embedded replica");
+        if let Err(e) = db.sync().await {
+            eprintln!("initial sync failed (continuing with local replica state): {e}");
+        }
+        db
+    });
 
     tauri::Builder::default()
         .setup(|app| {
