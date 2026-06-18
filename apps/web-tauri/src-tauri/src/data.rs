@@ -79,6 +79,16 @@ pub struct RecipeCard {
     pub subtitle: Option<String>,
 }
 
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IngredientSearchResult {
+    pub id: String,
+    pub name: String,
+    pub serving_grams: Option<f64>,
+    pub calories_per_100g: Option<f64>,
+    pub readings: Vec<Reading>,
+}
+
 // ---- write/input wire types (mirror @vegify/db mutation inputs) ----
 
 #[derive(Deserialize, Type)]
@@ -597,6 +607,7 @@ fn aggregate_per100g(conn: &Connection, ingredient_id: &str) -> Result<Aggregate
 pub trait VegifyData {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
+    fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
@@ -619,6 +630,35 @@ impl VegifyData for Db {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+
+    fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let like = format!("%{}%", query.replace('%', "").replace('_', ""));
+        let rows: Vec<(String, String, Option<f64>)> = {
+            let mut stmt = conn.prepare(
+                "SELECT i.id, i.name, sa.grams
+                 FROM ingredients i
+                 LEFT JOIN amounts sa ON sa.id = i.serving_size_id
+                 WHERE i.name LIKE ?1 ORDER BY i.name LIMIT 20",
+            )?;
+            let v = stmt
+                .query_map([&like], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            v
+        };
+        let mut out = Vec::new();
+        for (id, name, serving_grams) in rows {
+            let nut = aggregate_per100g(&conn, &id)?;
+            out.push(IngredientSearchResult {
+                id,
+                name,
+                serving_grams,
+                calories_per_100g: nut.calories_per_100g,
+                readings: nut.readings,
+            });
+        }
+        Ok(out)
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
@@ -817,6 +857,43 @@ mod tests {
             .collect();
         eprintln!("device B recipes after sync: {names:?}");
         assert!(names.contains(&"Synced New Recipe".to_string()), "B should see A's new recipe");
+    }
+
+    // The exact path the write UI drives: search an ingredient → save a recipe USING it as an item
+    // → read it back with items + aggregated nutrition. (Covers do_save_recipe's item INSERTs,
+    // which the empty-items sync test does not.)
+    #[test]
+    fn save_recipe_with_items_via_search_flow() {
+        let blobs = std::env::temp_dir().join("vegify-uiflow-blobs");
+        let db_path = std::env::temp_dir().join("vegify-uiflow.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+
+        let hits = VegifyData::search_ingredients(&db, "Flour".into()).expect("search");
+        let flour = hits.into_iter().find(|h| h.name.contains("Flour")).expect("a flour exists");
+
+        let id = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: None,
+                name: "UI Flow Bread".into(),
+                subtitle: None,
+                directions: Some("mix".into()),
+                serving_grams: Some(100.0),
+                batch_grams: Some(500.0),
+                items: vec![RecipeItemInput { ingredient_id: flour.id.clone(), grams: 500.0, unit: None }],
+            },
+        )
+        .expect("save recipe with an item");
+
+        let r = VegifyData::recipe(&db, id).expect("read").expect("exists");
+        assert_eq!(r.name, "UI Flow Bread");
+        assert_eq!(r.items.len(), 1, "the searched ingredient is attached as an item");
+        assert_eq!(r.items[0].name, flour.name);
+        assert!(r.nutrition.calories_per_100g.is_some(), "flour has calories → recipe aggregates them");
+        eprintln!("UI-flow recipe: {} item(s), {:?} cal/100g", r.items.len(), r.nutrition.calories_per_100g);
     }
 
     // Compaction bounds the blob count without losing data: 3 writes → 3 blobs → compact → 1 blob,

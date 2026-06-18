@@ -24,6 +24,11 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  searchIngredients(query: string): Promise<IngredientSearchResult[]> {
+    return invoke("search_ingredients", { query });
+  },
+
+  /** @throws {DataError} */
   saveIngredient(input: SaveIngredientInput): Promise<string> {
     return invoke("save_ingredient", { input });
   },
@@ -71,6 +76,14 @@ export type IngredientNutrientInput = {
 	name: string,
 	amountPer100g: number | null,
 	unit: string,
+};
+
+export type IngredientSearchResult = {
+	id: string,
+	name: string,
+	servingGrams: number | null,
+	caloriesPer100g: number | null,
+	readings: Reading[],
 };
 
 export type Reading = {
