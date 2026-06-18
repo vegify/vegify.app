@@ -3,12 +3,13 @@ import {
   IngredientForm,
   NutritionFacts,
   RecipeForm,
+  type IngredientFormDefaults,
   type IngredientFormInput,
   type NutritionFactsData,
   type RecipeFormDefaults,
   type RecipeFormInput,
 } from '@vegify/ui'
-import { vegifyData, type RecipeCard, type RecipeView } from './bindings'
+import { vegifyData, type IngredientCard, type RecipeCard, type RecipeView } from './bindings'
 
 // The SAME React shell + shared @vegify/ui forms the web app uses — but every read AND write goes
 // through the on-device Rust DAL over typed IPC (vegifyData), not a server. Edits work offline:
@@ -41,11 +42,26 @@ const saveRecipeFromForm = (input: RecipeFormInput) =>
     items: input.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams, unit: null })),
   })
 
+// Shared by create + edit: IngredientForm gives per-serving values already converted to per-100g.
+const saveIngredientFromForm = (input: IngredientFormInput) =>
+  vegifyData.saveIngredient({
+    id: input.id ?? null,
+    name: input.name,
+    description: input.description,
+    price: input.price,
+    caloriesPer100g: input.caloriesPer100g,
+    servingGrams: input.servingGrams,
+    packageGrams: input.packageGrams,
+    nutrients: input.nutrients,
+  })
+
 type View =
   | { mode: 'list' }
   | { mode: 'recipe'; id: string }
   | { mode: 'edit-recipe'; id: string }
   | { mode: 'new-recipe' }
+  | { mode: 'ingredients' }
+  | { mode: 'edit-ingredient'; id: string }
   | { mode: 'new-ingredient' }
 
 export function App() {
@@ -94,6 +110,7 @@ export function App() {
         <span className="text-xs text-muted-foreground">local-first · on-device</span>
         <div className="ml-auto flex items-center gap-2">
           {status ? <span className="text-xs text-muted-foreground">{status}</span> : null}
+          <HeaderButton onClick={() => setView({ mode: 'ingredients' })}>Ingredients</HeaderButton>
           <HeaderButton onClick={() => setView({ mode: 'new-recipe' })}>+ Recipe</HeaderButton>
           <HeaderButton onClick={() => setView({ mode: 'new-ingredient' })}>+ Ingredient</HeaderButton>
           <HeaderButton onClick={() => run('Sync', vegifyData.sync())}>Sync</HeaderButton>
@@ -140,22 +157,18 @@ export function App() {
           />
         </div>
       )}
+      {view.mode === 'ingredients' && (
+        <IngredientList onOpen={(id) => setView({ mode: 'edit-ingredient', id })} />
+      )}
+      {view.mode === 'edit-ingredient' && (
+        <EditIngredient id={view.id} onDone={() => setView({ mode: 'ingredients' })} />
+      )}
       {view.mode === 'new-ingredient' && (
         <div className="mx-auto max-w-3xl p-6">
           <IngredientForm
             onSave={async (input: IngredientFormInput) => {
-              await vegifyData.saveIngredient({
-                id: input.id ?? null,
-                name: input.name,
-                description: input.description,
-                price: input.price,
-                caloriesPer100g: input.caloriesPer100g,
-                servingGrams: input.servingGrams,
-                packageGrams: input.packageGrams,
-                nutrients: input.nutrients,
-              })
-              refresh()
-              setView({ mode: 'list' })
+              await saveIngredientFromForm(input)
+              setView({ mode: 'ingredients' })
             }}
           />
         </div>
@@ -356,6 +369,96 @@ function EditRecipe({
         onDelete={async () => {
           await vegifyData.deleteRecipe(id)
           onDeleted()
+        }}
+      />
+    </div>
+  )
+}
+
+function IngredientList({ onOpen }: { onOpen: (id: string) => void }) {
+  const [items, setItems] = useState<IngredientCard[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    vegifyData
+      .listIngredients()
+      .then(setItems)
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [])
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  return (
+    <div className="mx-auto max-w-2xl p-6">
+      <h1 className="mb-4 text-2xl font-bold text-primary-dark">Ingredients</h1>
+      {items.length === 0 ? (
+        <p className="text-muted-foreground">No ingredients yet — add one.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {items.map((i) => (
+            <li key={i.id}>
+              <button
+                className="flex w-full items-center justify-between py-3 text-left hover:text-primary"
+                onClick={() => onOpen(i.id)}
+              >
+                <span className="font-medium">{i.name}</span>
+                {i.caloriesPer100g != null ? (
+                  <span className="text-sm text-muted-foreground">
+                    {Math.round(i.caloriesPer100g)} cal/100g
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function EditIngredient({ id, onDone }: { id: string; onDone: () => void }) {
+  const [defaults, setDefaults] = useState<IngredientFormDefaults | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    vegifyData
+      .ingredientForEdit(id)
+      .then((d) => {
+        if (!d) {
+          setErr('ingredient not found')
+          return
+        }
+        // The form shows per-serving values; the DAL stores per-100g — scale across.
+        const scale = d.servingGrams ? d.servingGrams / 100 : 1
+        setDefaults({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          priceCents: d.price,
+          servingGrams: d.servingGrams,
+          packageGrams: d.packageGrams,
+          caloriesPerServing: d.caloriesPer100g != null ? d.caloriesPer100g * scale : null,
+          nutrients: d.nutrients.map((n) => ({
+            name: n.name,
+            amountPerServing: num(n.amountPer100g) * scale,
+            unit: n.unit,
+          })),
+        })
+      })
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [id])
+
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  if (!defaults) return <div className="p-8 text-muted-foreground">Loading…</div>
+
+  return (
+    <div className="mx-auto max-w-3xl p-6">
+      <IngredientForm
+        defaults={defaults}
+        onSave={async (input: IngredientFormInput) => {
+          await saveIngredientFromForm(input)
+          onDone()
+        }}
+        onDelete={async () => {
+          await vegifyData.deleteIngredient(id)
+          onDone()
         }}
       />
     </div>

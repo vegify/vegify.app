@@ -36,6 +36,25 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  listIngredients(): Promise<IngredientCard[]> {
+    return invoke("list_ingredients");
+  },
+
+  /** @throws {DataError} */
+  ingredientForEdit(id: string): Promise<{
+	id: string,
+	name: string,
+	description: string | null,
+	price: number | null,
+	caloriesPer100g: number | null,
+	servingGrams: number | null,
+	packageGrams: number | null,
+	nutrients: Reading[],
+} | null> {
+    return invoke("ingredient_for_edit", { id });
+  },
+
+  /** @throws {DataError} */
   searchIngredients(query: string): Promise<IngredientSearchResult[]> {
     return invoke("search_ingredients", { query });
   },
@@ -82,6 +101,25 @@ export type Amount = {
 	amount: number | null,
 	unit: string | null,
 	grams: number | null,
+};
+
+/**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
+export type IngredientCard = {
+	id: string,
+	name: string,
+	caloriesPer100g: number | null,
+};
+
+/**  IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving). */
+export type IngredientEditData = {
+	id: string,
+	name: string,
+	description: string | null,
+	price: number | null,
+	caloriesPer100g: number | null,
+	servingGrams: number | null,
+	packageGrams: number | null,
+	nutrients: Reading[],
 };
 
 export type IngredientNutrientInput = {

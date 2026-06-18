@@ -111,6 +111,29 @@ pub struct RecipeEditData {
     pub items: Vec<RecipeEditItem>,
 }
 
+/// Ingredient browser card (leaf ingredients — those not backing a recipe).
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IngredientCard {
+    pub id: String,
+    pub name: String,
+    pub calories_per_100g: Option<f64>,
+}
+
+/// IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving).
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IngredientEditData {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub price: Option<i32>,
+    pub calories_per_100g: Option<f64>,
+    pub serving_grams: Option<f64>,
+    pub package_grams: Option<f64>,
+    pub nutrients: Vec<Reading>,
+}
+
 // ---- write/input wire types (mirror @vegify/db mutation inputs) ----
 
 #[derive(Deserialize, Type)]
@@ -630,6 +653,8 @@ pub trait VegifyData {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
+    fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError>;
+    fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
@@ -741,6 +766,74 @@ impl VegifyData for Db {
             });
         }
         Ok(Some(RecipeEditData { id, name, subtitle, directions, servings, items }))
+    }
+
+    fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.name, i.calories_per_100g
+             FROM ingredients i
+             WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+             ORDER BY i.name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let meta = conn
+            .query_row(
+                "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams
+                 FROM ingredients i
+                 LEFT JOIN amounts sa ON sa.id = i.serving_size_id
+                 LEFT JOIN amounts ba ON ba.id = i.batch_size_id
+                 WHERE i.id = ?1",
+                [&id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<f64>>(3)?,
+                        row.get::<_, Option<f64>>(4)?,
+                        row.get::<_, Option<f64>>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((name, description, price, calories_per_100g, serving_grams, package_grams)) = meta
+        else {
+            return Ok(None);
+        };
+        let nutrients: Vec<Reading> = {
+            let mut stmt = conn.prepare(
+                "SELECT n.name, inu.amount_per_100g, inu.unit
+                 FROM ingredient_nutrient inu
+                 JOIN nutrients n ON n.id = inu.nutrient_id
+                 WHERE inu.ingredient_id = ?1 ORDER BY n.name",
+            )?;
+            let v = stmt
+                .query_map([&id], |r| {
+                    Ok(Reading { name: r.get(0)?, amount_per_100g: r.get(1)?, unit: r.get(2)? })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            v
+        };
+        Ok(Some(IngredientEditData {
+            id,
+            name,
+            description,
+            price: price.map(|p| p as i32),
+            calories_per_100g,
+            serving_grams,
+            package_grams,
+            nutrients,
+        }))
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
@@ -982,6 +1075,52 @@ mod tests {
         assert_eq!(edit.servings, Some(5.0));
         assert_eq!(edit.items.len(), 1);
         assert_eq!(edit.items[0].calories_per_100g, Some(364.0));
+    }
+
+    // Ingredient browser + edit: a saved ingredient is listed (leaf only, not recipe
+    // as-ingredients) and its edit defaults (per-100g + own nutrients) round-trip.
+    #[test]
+    fn ingredient_browser_and_edit_round_trip() {
+        let blobs = std::env::temp_dir().join("vegify-ing-blobs");
+        let db_path = std::env::temp_dir().join("vegify-ing.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+
+        let id = VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: None,
+                name: "Test Tofu".into(),
+                description: Some("firm".into()),
+                price: Some(250),
+                calories_per_100g: Some(144.0),
+                serving_grams: Some(85.0),
+                package_grams: Some(340.0),
+                nutrients: vec![IngredientNutrientInput {
+                    name: "Protein".into(),
+                    amount_per_100g: 17.3,
+                    unit: "g".into(),
+                }],
+            },
+        )
+        .expect("save ingredient");
+
+        let cards = VegifyData::list_ingredients(&db).expect("list");
+        assert!(cards.iter().any(|c| c.name == "Test Tofu"), "browser shows the new ingredient");
+        assert!(
+            !cards.iter().any(|c| c.name.contains("Complete Shake")),
+            "browser excludes recipe as-ingredients"
+        );
+
+        let e = VegifyData::ingredient_for_edit(&db, id).expect("edit").expect("exists");
+        assert_eq!(e.name, "Test Tofu");
+        assert_eq!(e.serving_grams, Some(85.0));
+        assert_eq!(e.calories_per_100g, Some(144.0));
+        assert_eq!(e.nutrients.len(), 1);
+        assert_eq!(e.nutrients[0].name, "Protein");
+        eprintln!("ingredient edit: {} nutrient(s), serving {:?}g", e.nutrients.len(), e.serving_grams);
     }
 
     // Compaction bounds the blob count without losing data: 3 writes → 3 blobs → compact → 1 blob,
