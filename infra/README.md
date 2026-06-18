@@ -7,6 +7,16 @@ All vegify hosting is **AWS, defined here in AWS CDK**. No Vercel, no Cloudflare
 > web-start). It has **not** been `cdk deploy`-ed — that needs your AWS account + the deploy-prep
 > steps below, and CDK infra always wants a round of `cdk diff`/iteration before it's real.
 
+## Decision (2026-06-18): runtime + hosting shape
+
+The framework bake-off resolved (see `docs/benchmark.md`): **TanStack Start (React) on the Bun runtime is the winner**; Next.js is eliminated, and the Rust spikes (web-fast/web-leptos) stay as perf references, not deploy targets. This supersedes parts of the scaffold below:
+
+- **web-start → a long-running Bun server on Fargate/ECS (NOT Lambda).** Bun's measured win (~+10% throughput, ~10× tighter p99.9 tail) is a *sustained-concurrency-on-one-process* property; Lambda isolates requests one-per-instance, so it cannot capture that tail win — and Lambda has no first-class Bun runtime anyway (it would mean a container image plus cold starts). A long-running Bun task realizes the win and fits the VPC where the DB already lives. Entry point: `apps/web-start/serve-bun.mjs` (`Bun.serve` over the WinterCG build), containerized from the `oven/bun` image; `@libsql/client` resolves natively (verified).
+- **`VegifyWebNext` is dead** — Next.js was eliminated; drop the stack (and OpenNext) when the CDK is reworked.
+- **DB shape, two options:** (i) keep the separate `sqld` Fargate task and have web-start reach it in-VPC (one in-cluster hop), or (ii) **collapse** — run libSQL embedded in-process inside the web-start Fargate task against a mounted EBS volume (no separate DB service, no socket hop). (ii) is fastest + simplest + cheapest (one task, not two; mirrors the proven web-fast in-process model) and single-writer is fine at this scale; (i) is the lower-risk increment from today's scaffold. **Target (ii).**
+
+**Implementation status:** decided + documented; the CDK below still reflects the old Lambda plan (`WebStartStack` packages `aws/lambda-handler.mjs`). Reworking `WebStartStack` into a Bun Fargate service (and folding in EBS for option ii) is the next infra task — gated on the same AWS creds as any deploy.
+
 ## Architecture
 
 ```
@@ -23,7 +33,7 @@ All vegify hosting is **AWS, defined here in AWS CDK**. No Vercel, no Cloudflare
   No NAT gateway. S3 via gateway endpoint; Secrets/Logs via interface endpoints.
 ```
 
-Stacks (`lib/`): `VegifyVpc` → `VegifyDb` → `VegifyWebNext`, `VegifyWebStart`.
+Stacks (`lib/`): `VegifyVpc` → `VegifyDb` → `VegifyWebNext`, `VegifyWebStart`. (Per the 2026-06-18 decision above, `VegifyWebNext` is to be dropped and `VegifyWebStart` reworked from Lambda to a long-running Bun Fargate service — the diagram below still shows the old Lambda shape.)
 
 ## Prerequisites
 
