@@ -1,12 +1,19 @@
-//! On-device data-access layer (DAL) for the Tauri desktop shell — now an **embedded replica**.
+//! On-device DAL + scale-to-zero changeset sync for the Tauri desktop shell.
 //!
-//! The `#[procedures]` trait below IS the typed contract (same surface as @vegify/db on the web).
-//! Backed by the `libsql` crate as a **remote embedded replica**: a local SQLite file that syncs
-//! from a self-hosted sqld primary. Reads (incl. the recursive nutrition CTE, ported verbatim from
-//! packages/db/src/nutrition.ts) hit the local file — fast and OFFLINE. Writes are write-through to
-//! the primary (Stage 1); offline writes are a deferred fork. `sync()` reconciles with the primary.
+//! The `#[procedures]` trait is the typed contract (same surface as @vegify/db on the web).
+//! Backed by rusqlite (bundled SQLite, sync); nutrition is ONE recursive CTE ported from
+//! packages/db/src/nutrition.ts (per-100g). WRITES are captured as SQLite **session changesets**
+//! and persisted to a blob store as immutable objects — the scale-to-zero sync unit. `sync()`
+//! pulls unseen blobs and applies them (LWW). A local dir stands in for S3 here; swapping it for
+//! an S3 bucket (+ optional scale-to-zero Lambda) is a transport change, not a logic change. No
+//! always-on server.
 
-use libsql::{Builder, Connection, Database};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use rusqlite::session::{ConflictAction, Session};
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use specta::Type;
 use ttipc::procedures;
@@ -77,10 +84,14 @@ impl std::fmt::Display for DataError {
     }
 }
 
-impl From<libsql::Error> for DataError {
-    fn from(e: libsql::Error) -> Self {
+impl From<rusqlite::Error> for DataError {
+    fn from(e: rusqlite::Error) -> Self {
         DataError::Db(e.to_string())
     }
+}
+
+fn io_err(e: std::io::Error) -> DataError {
+    DataError::Db(e.to_string())
 }
 
 /// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g.
@@ -121,92 +132,101 @@ GROUP BY n.id
 ORDER BY name";
 
 pub struct Db {
-    db: Database,
-    conn: Connection,
-    synced: bool,
+    conn: Mutex<Connection>,
+    blob_dir: PathBuf,
 }
 
 impl Db {
-    /// Open the on-device DB. Empty `sync_url` → a LOCAL-ONLY SQLite (no primary, $0, fully
-    /// offline — the free default). A non-empty `sync_url` → a remote embedded replica syncing
-    /// from that primary (the opt-in cloud-sync upgrade).
-    pub async fn open(path: &str, sync_url: String, auth_token: String) -> Result<Self, DataError> {
-        let synced = !sync_url.trim().is_empty();
-        let db = if synced {
-            Builder::new_remote_replica(path, sync_url, auth_token)
-                .build()
-                .await?
-        } else {
-            Builder::new_local(path).build().await?
-        };
-        let conn = db.connect()?;
-        Ok(Self { db, conn, synced })
+    /// Open the local DB and the changeset blob store (a local dir standing in for S3).
+    pub fn open(db_path: &str, blob_dir: &str) -> Result<Self, DataError> {
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
+            .ok();
+        // Local bookkeeping: which changeset blobs we've already applied (incl. our own writes).
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
+        let blob_dir = PathBuf::from(blob_dir);
+        fs::create_dir_all(&blob_dir).map_err(io_err)?;
+        Ok(Self { conn: Mutex::new(conn), blob_dir })
     }
 
-    /// Reconcile the local replica with the primary — a no-op in local-only mode.
-    pub async fn sync(&self) -> Result<(), DataError> {
-        if self.synced {
-            self.db.sync().await?;
+    /// Run a mutation while recording a session changeset, then persist that changeset as an
+    /// immutable blob (the S3-transportable unit) and mark it already-applied locally.
+    fn write_capture(
+        &self,
+        write: impl FnOnce(&Connection) -> Result<(), DataError>,
+    ) -> Result<(), DataError> {
+        let conn = self.conn.lock().unwrap();
+        let mut bytes = Vec::new();
+        {
+            let mut session = Session::new(&conn)?;
+            session.attach(None)?; // track all tables
+            write(&conn)?;
+            session.changeset_strm(&mut bytes)?;
+        }
+        if !bytes.is_empty() {
+            let id = ulid::Ulid::new().to_string(); // sortable, offline-generatable
+            fs::write(self.blob_dir.join(format!("{id}.cs")), &bytes).map_err(io_err)?;
+            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
         }
         Ok(())
     }
+}
 
-    async fn aggregate_per100g(&self, ingredient_id: i64) -> Result<AggregatedNutrition, DataError> {
-        let mut rows = self.conn.query(CTE, libsql::params![ingredient_id]).await?;
-        let mut calories_per_100g = None;
-        let mut readings = Vec::new();
-        while let Some(row) = rows.next().await? {
-            let kind: String = row.get(0)?;
-            let name: Option<String> = row.get(1)?;
-            let unit: Option<String> = row.get(2)?;
-            let per100g: Option<f64> = row.get(3)?;
-            match kind.as_str() {
-                "cal" => calories_per_100g = per100g,
-                "nut" => {
-                    if let (Some(name), Some(unit), Some(v)) = (name, unit, per100g) {
-                        readings.push(Reading { name, amount_per_100g: v, unit });
-                    }
+fn aggregate_per100g(conn: &Connection, ingredient_id: i64) -> Result<AggregatedNutrition, DataError> {
+    let mut stmt = conn.prepare(CTE)?;
+    let rows = stmt.query_map([ingredient_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<f64>>(3)?,
+        ))
+    })?;
+    let mut calories_per_100g = None;
+    let mut readings = Vec::new();
+    for r in rows {
+        let (kind, name, unit, per100g) = r?;
+        match kind.as_str() {
+            "cal" => calories_per_100g = per100g,
+            "nut" => {
+                if let (Some(name), Some(unit), Some(v)) = (name, unit, per100g) {
+                    readings.push(Reading { name, amount_per_100g: v, unit });
                 }
-                _ => {}
             }
+            _ => {}
         }
-        Ok(AggregatedNutrition { calories_per_100g, readings })
     }
+    Ok(AggregatedNutrition { calories_per_100g, readings })
 }
 
 #[procedures]
 pub trait VegifyData {
-    async fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
-    async fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError>;
-    async fn sync(&self) -> Result<(), DataError>;
+    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
+    fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError>;
+    fn rename_recipe(&self, id: i32, name: String) -> Result<(), DataError>;
+    fn sync(&self) -> Result<(), DataError>;
 }
 
 impl VegifyData for Db {
-    async fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
-        let mut rows = self
-            .conn
-            .query(
-                "SELECT r.id, i.name, r.subtitle
-                 FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
-                 ORDER BY i.name",
-                (),
-            )
-            .await?;
-        let mut out = Vec::new();
-        while let Some(row) = rows.next().await? {
-            out.push(RecipeCard {
-                id: row.get::<i64>(0)? as i32,
-                name: row.get(1)?,
-                subtitle: row.get(2)?,
-            });
-        }
-        Ok(out)
+    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT r.id, i.name, r.subtitle
+             FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+             ORDER BY i.name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
-    async fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError> {
-        let mut meta_rows = self
-            .conn
-            .query(
+    fn recipe(&self, id: i32) -> Result<Option<RecipeView>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let meta = conn
+            .query_row(
                 "SELECT i.id, i.name, r.subtitle, r.directions, u.name,
                         sa.amount, sa.unit, sa.grams, ba.grams
                  FROM recipes r
@@ -215,47 +235,49 @@ impl VegifyData for Db {
                  LEFT JOIN amounts sa ON sa.id = i.serving_size_id
                  LEFT JOIN amounts ba ON ba.id = i.batch_size_id
                  WHERE r.id = ?1",
-                libsql::params![id as i64],
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<f64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<f64>>(7)?,
+                        row.get::<_, Option<f64>>(8)?,
+                    ))
+                },
             )
-            .await?;
-        let Some(meta) = meta_rows.next().await? else {
+            .optional()?;
+        let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams)) = meta
+        else {
             return Ok(None);
         };
-        let as_ing_id: i64 = meta.get(0)?;
-        let name: String = meta.get(1)?;
-        let subtitle: Option<String> = meta.get(2)?;
-        let directions: Option<String> = meta.get(3)?;
-        let creator: Option<String> = meta.get(4)?;
-        let s_amount: Option<f64> = meta.get(5)?;
-        let s_unit: Option<String> = meta.get(6)?;
-        let s_grams: Option<f64> = meta.get(7)?;
-        let batch_grams: Option<f64> = meta.get(8)?;
 
-        let mut item_rows = self
-            .conn
-            .query(
-                "SELECT i.id, i.name, a.amount, a.unit, a.grams
-                 FROM ingredient_in_recipe iir
-                 JOIN ingredients i ON i.id = iir.ingredient_id
-                 JOIN amounts a ON a.id = iir.amount_id
-                 WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
-                libsql::params![id as i64],
-            )
-            .await?;
-        let mut items = Vec::new();
-        while let Some(row) = item_rows.next().await? {
-            items.push(RecipeItem {
-                id: row.get::<i64>(0)? as i32,
-                name: row.get(1)?,
-                amount: Amount {
-                    amount: row.get(2)?,
-                    unit: row.get(3)?,
-                    grams: row.get::<Option<f64>>(4)?.unwrap_or(0.0),
-                },
-            });
-        }
+        let mut istmt = conn.prepare(
+            "SELECT i.id, i.name, a.amount, a.unit, a.grams
+             FROM ingredient_in_recipe iir
+             JOIN ingredients i ON i.id = iir.ingredient_id
+             JOIN amounts a ON a.id = iir.amount_id
+             WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
+        )?;
+        let items = istmt
+            .query_map([id], |row| {
+                Ok(RecipeItem {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    amount: Amount {
+                        amount: row.get(2)?,
+                        unit: row.get(3)?,
+                        grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+                    },
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let nutrition = self.aggregate_per100g(as_ing_id).await?;
+        let nutrition = aggregate_per100g(&conn, as_ing_id)?;
         let serving = s_grams.map(|grams| Amount { amount: s_amount, unit: s_unit, grams });
 
         Ok(Some(RecipeView {
@@ -271,8 +293,45 @@ impl VegifyData for Db {
         }))
     }
 
-    async fn sync(&self) -> Result<(), DataError> {
-        Db::sync(self).await
+    /// A WRITE — captured as a changeset blob (the sync unit) via write_capture.
+    fn rename_recipe(&self, id: i32, name: String) -> Result<(), DataError> {
+        self.write_capture(|conn| {
+            conn.execute(
+                "UPDATE ingredients SET name = ?2
+                 WHERE id = (SELECT as_ingredient_id FROM recipes WHERE id = ?1)",
+                rusqlite::params![id, name],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Pull-and-apply: scan the blob store, apply any changeset not yet seen (LWW), record it.
+    /// No server — the blob store is S3 (a local dir here). This is the whole sync, scale-to-zero.
+    fn sync(&self) -> Result<(), DataError> {
+        let conn = self.conn.lock().unwrap();
+        for entry in fs::read_dir(&self.blob_dir).map_err(io_err)? {
+            let path = entry.map_err(io_err)?.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("cs") {
+                continue;
+            }
+            let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let seen: Option<String> = conn
+                .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [id], |r| r.get(0))
+                .optional()?;
+            if seen.is_some() {
+                continue;
+            }
+            let bytes = fs::read(&path).map_err(io_err)?;
+            conn.apply_strm(
+                &mut &bytes[..],
+                None::<fn(&str) -> bool>,
+                |_conflict, _item| ConflictAction::SQLITE_CHANGESET_REPLACE,
+            )?;
+            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [id])?;
+        }
+        Ok(())
     }
 }
 
@@ -280,51 +339,43 @@ impl VegifyData for Db {
 mod tests {
     use super::*;
 
-    // End-to-end Stage-1 proof: open an embedded replica against the running sqld primary
-    // (docker vegify-sqld on :8080), sync, then run the on-device CTE — recipe 17 must be the
-    // 307.5-cal shake that was seeded into the primary. Requires the primary up + seeded.
     #[test]
-    fn replica_syncs_and_computes_recipe_17() {
-        tauri::async_runtime::block_on(async {
-            let (path, _url, token) = crate::db_config();
-            let db = Db::open(&path, "http://127.0.0.1:8080".into(), token)
-                .await
-                .expect("open replica");
-            db.sync().await.expect("initial sync from primary");
-            let r = VegifyData::recipe(&db, 17)
-                .await
-                .expect("query ok")
-                .expect("recipe 17 synced from primary");
-            let cal100 = r.nutrition.calories_per_100g.expect("has calories");
-            let grams = r.serving.as_ref().expect("has serving").grams;
-            let per_serving = cal100 * grams / 100.0;
-            eprintln!(
-                "replica recipe 17 = {:?}: {:.1} cal/serving, {} nutrients",
-                r.name,
-                per_serving,
-                r.nutrition.readings.len()
-            );
-            assert!(
-                (per_serving - 307.5).abs() < 0.5,
-                "expected ~307.5 cal/serving from the synced replica, got {per_serving:.2}"
-            );
-        });
+    fn recipe_17_nutrition_on_device() {
+        let blobs = std::env::temp_dir().join("vegify-cte-blobs");
+        let db = Db::open(&crate::db_path(), blobs.to_str().unwrap()).expect("open");
+        let r = VegifyData::recipe(&db, 17).expect("query ok").expect("recipe 17 exists");
+        let cal100 = r.nutrition.calories_per_100g.expect("has calories");
+        let grams = r.serving.as_ref().expect("has serving").grams;
+        let per_serving = cal100 * grams / 100.0;
+        eprintln!("recipe 17 = {:?}: {:.1} cal/serving", r.name, per_serving);
+        assert!((per_serving - 307.5).abs() < 0.5, "got {per_serving:.2}");
     }
 
-    // Free default: open LOCAL-ONLY (no primary) — must succeed offline with no sync server.
+    // Scale-to-zero sync, end-to-end in the DAL: device A's offline write flows to device B via a
+    // changeset blob in the shared store — no server. (Local dir here = S3 in production.)
     #[test]
-    fn local_only_opens_without_primary() {
-        tauri::async_runtime::block_on(async {
-            let path = std::env::temp_dir().join("vegify-local-only-test.db");
-            let _ = std::fs::remove_file(&path);
-            let db = Db::open(path.to_str().unwrap(), String::new(), String::new())
-                .await
-                .expect("open local-only (no primary)");
-            db.sync().await.expect("sync is a no-op in local-only mode");
-            // Proves the no-primary open + no-op-sync path (the free/offline default). A fresh
-            // local DB has no app schema yet — a real first-run bundles migrations + a seed; that
-            // is out of scope here, so we don't query the app tables.
-            eprintln!("local-only opened with no primary; sync no-op OK");
-        });
+    fn changeset_syncs_write_between_devices() {
+        let tmp = std::env::temp_dir();
+        let a_db = tmp.join("dev-password-A.db");
+        let b_db = tmp.join("dev-password-B.db");
+        let blobs = tmp.join("vegify-sync-blobs");
+        let _ = fs::remove_file(&a_db);
+        let _ = fs::remove_file(&b_db);
+        let _ = fs::remove_dir_all(&blobs);
+        // Both devices start from the same seed (same row ids → changesets apply cleanly).
+        fs::copy(crate::db_path(), &a_db).expect("seed A");
+        fs::copy(crate::db_path(), &b_db).expect("seed B");
+
+        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
+        let b = Db::open(b_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open B");
+
+        // Device A makes an offline write (captured to the blob store).
+        VegifyData::rename_recipe(&a, 17, "Synced Shake".into()).expect("A writes");
+        // Device B pulls + applies from the shared blob store — no server in between.
+        VegifyData::sync(&b).expect("B syncs");
+
+        let r = VegifyData::recipe(&b, 17).expect("query").expect("recipe 17 on B");
+        eprintln!("device B recipe 17 name after sync = {:?}", r.name);
+        assert_eq!(r.name, "Synced Shake", "B should see A's write after applying the changeset");
     }
 }

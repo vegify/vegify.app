@@ -24,6 +24,11 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  renameRecipe(id: number, name: string): Promise<null> {
+    return invoke("rename_recipe", { id, name });
+  },
+
+  /** @throws {DataError} */
   sync(): Promise<null> {
     return invoke("sync");
   },

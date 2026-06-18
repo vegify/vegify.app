@@ -5,21 +5,27 @@ pub mod data;
 
 use std::path::PathBuf;
 
-/// Embedded-replica config: (local replica path, sync URL of the sqld primary, auth token).
-/// Dev defaults sync from the local docker sqld on :8080 with no token. A real build overrides
-/// LIBSQL_SYNC_URL / LIBSQL_AUTH_TOKEN (the Fargate sqld) and LIBSQL_REPLICA_PATH (OS app-data dir).
-pub fn db_config() -> (String, String, String) {
-    let path = std::env::var("LIBSQL_REPLICA_PATH").unwrap_or_else(|_| {
+/// Path to the on-device SQLite DB. Override with DATABASE_PATH; dev default = the repo's
+/// seeded .data/vegify.db (relative to this crate). A real desktop build would seed into the
+/// OS app-data dir on first run instead.
+pub fn db_path() -> String {
+    std::env::var("DATABASE_PATH").unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../.vegify-replica.db")
+            .join("../../../.data/vegify.db")
             .to_string_lossy()
             .into_owned()
-    });
-    // Empty by default = LOCAL-ONLY (no primary, $0, offline). Set LIBSQL_SYNC_URL to opt into
-    // cloud sync against a primary (the paid always-on tier).
-    let sync_url = std::env::var("LIBSQL_SYNC_URL").unwrap_or_default();
-    let auth_token = std::env::var("LIBSQL_AUTH_TOKEN").unwrap_or_default();
-    (path, sync_url, auth_token)
+    })
+}
+
+/// Changeset blob store dir — the S3 stand-in for dev. Override with SYNC_BLOB_DIR; prod points
+/// this at an S3 bucket (via an on-demand Lambda or the AWS SDK), scale-to-zero.
+pub fn blob_dir() -> String {
+    std::env::var("SYNC_BLOB_DIR").unwrap_or_else(|_| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../.sync-blobs")
+            .to_string_lossy()
+            .into_owned()
+    })
 }
 
 /// Generate the typed TypeScript client from the DAL trait into src/bindings.ts.
