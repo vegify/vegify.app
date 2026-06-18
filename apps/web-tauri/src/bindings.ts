@@ -47,6 +47,11 @@ export const vegifyData = {
   sync(): Promise<null> {
     return invoke("sync");
   },
+
+  /** @throws {DataError} */
+  compact(): Promise<null> {
+    return invoke("compact");
+  },
 };
 
 export type DataError = { type: "db"; message: string };

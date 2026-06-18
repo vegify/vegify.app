@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use rusqlite::session::{ConflictAction, Session};
+use rusqlite::session::{Changegroup, ConflictAction, Session};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -471,6 +471,7 @@ pub trait VegifyData {
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
     fn sync(&self) -> Result<(), DataError>;
+    fn compact(&self) -> Result<(), DataError>;
 }
 
 impl VegifyData for Db {
@@ -601,6 +602,37 @@ impl VegifyData for Db {
         }
         Ok(())
     }
+
+    /// Compaction: squash every changeset blob into ONE via SQLite's changegroup, bounding the
+    /// store (and a new device's replay cost). ULID filenames sort chronologically, which is the
+    /// correct merge order. A fresh device applies just the combined changeset over the seed;
+    /// devices that already applied the originals re-apply the combined one harmlessly (LWW).
+    fn compact(&self) -> Result<(), DataError> {
+        let conn = self.conn.lock().unwrap();
+        let mut blobs: Vec<PathBuf> = fs::read_dir(&self.blob_dir)
+            .map_err(io_err)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("cs"))
+            .collect();
+        if blobs.len() <= 1 {
+            return Ok(());
+        }
+        blobs.sort();
+        let mut group = Changegroup::new()?;
+        for p in &blobs {
+            let bytes = fs::read(p).map_err(io_err)?;
+            group.add_stream(&mut &bytes[..])?;
+        }
+        let mut combined = Vec::new();
+        group.output_strm(&mut combined)?;
+        let id = new_id();
+        fs::write(self.blob_dir.join(format!("{id}.cs")), &combined).map_err(io_err)?;
+        for p in &blobs {
+            fs::remove_file(p).map_err(io_err)?;
+        }
+        conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -666,5 +698,60 @@ mod tests {
             .collect();
         eprintln!("device B recipes after sync: {names:?}");
         assert!(names.contains(&"Synced New Recipe".to_string()), "B should see A's new recipe");
+    }
+
+    // Compaction bounds the blob count without losing data: 3 writes → 3 blobs → compact → 1 blob,
+    // and a FRESH device that syncs the single combined changeset still gets all 3 recipes.
+    #[test]
+    fn compaction_squashes_changesets_losslessly() {
+        let tmp = std::env::temp_dir();
+        let a_db = tmp.join("vegify-compact-A.db");
+        let c_db = tmp.join("vegify-compact-C.db");
+        let blobs = tmp.join("vegify-compact-blobs");
+        let _ = fs::remove_file(&a_db);
+        let _ = fs::remove_file(&c_db);
+        let _ = fs::remove_dir_all(&blobs);
+        fs::copy(crate::db_path(), &a_db).expect("seed A");
+        fs::copy(crate::db_path(), &c_db).expect("seed C");
+
+        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
+        let made = ["Compact R1", "Compact R2", "Compact R3"];
+        for name in made {
+            VegifyData::save_recipe(
+                &a,
+                SaveRecipeInput {
+                    id: None,
+                    name: name.into(),
+                    subtitle: None,
+                    directions: None,
+                    serving_grams: Some(100.0),
+                    batch_grams: Some(200.0),
+                    items: vec![],
+                },
+            )
+            .expect("A save");
+        }
+        let count_cs = || {
+            fs::read_dir(&blobs)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("cs"))
+                .count()
+        };
+        let before = count_cs();
+        assert!(before >= 3, "expected >=3 changeset blobs, got {before}");
+        VegifyData::compact(&a).expect("compact");
+        let after = count_cs();
+        eprintln!("compaction: {before} blobs -> {after}");
+        assert_eq!(after, 1, "compaction should collapse to one combined blob");
+
+        // Fresh device C: seed + sync the single combined changeset → must have all 3 writes.
+        let c = Db::open(c_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open C");
+        VegifyData::sync(&c).expect("C sync");
+        let names: Vec<String> =
+            VegifyData::list_recipes(&c).expect("C list").into_iter().map(|r| r.name).collect();
+        for name in made {
+            assert!(names.contains(&name.to_string()), "C missing {name:?} after compacted sync");
+        }
     }
 }
