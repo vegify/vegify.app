@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import {
   amounts,
@@ -45,6 +45,13 @@ async function upsertAmount(
     .values({ grams, unit, amount: 1, preferred: "grams" })
     .returning();
   return a.id;
+}
+
+// Every `amounts` FK (serving/batch size, recipe-item amount) cascades amount→owner, NOT
+// owner→amount. So deleting an owner row orphans its amounts — they must be deleted by id.
+async function deleteAmounts(ids: (number | null | undefined)[]) {
+  const real = ids.filter((x): x is number => x != null);
+  if (real.length) await db.delete(amounts).where(inArray(amounts.id, real));
 }
 
 async function findOrCreateNutrient(name: string) {
@@ -114,8 +121,15 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<number
 }
 
 export async function deleteIngredient(id: number): Promise<void> {
-  // ingredient_in_recipe has onDelete:"restrict" — deleting an in-use ingredient throws.
+  // ingredient_in_recipe / ingredient_img are onDelete:"restrict" — deleting an in-use
+  // ingredient throws (intended). Its serving/batch `amounts` are not cascaded, so clean
+  // them up after the row is gone.
+  const existing = await db.query.ingredients.findFirst({
+    where: (t, { eq }) => eq(t.id, id),
+  });
+  if (!existing) return;
   await db.delete(ingredients).where(eq(ingredients.id, id));
+  await deleteAmounts([existing.servingSizeId, existing.batchSizeId]);
 }
 
 // --- recipes ---
@@ -152,7 +166,15 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<number> {
       .set({ subtitle: input.subtitle ?? null, directions: input.directions ?? null })
       .where(eq(recipes.id, input.id));
     recipeId = input.id;
+    // Re-attach the item list from scratch. The join rows delete fine, but the per-item
+    // `amounts` they point to are not cascaded — capture and delete them, else every edit
+    // leaks one `amounts` row per ingredient.
+    const prevItems = await db
+      .select({ amountId: ingredientInRecipe.amountId })
+      .from(ingredientInRecipe)
+      .where(eq(ingredientInRecipe.recipeId, recipeId));
     await db.delete(ingredientInRecipe).where(eq(ingredientInRecipe.recipeId, recipeId));
+    await deleteAmounts(prevItems.map((r) => r.amountId));
   } else {
     const servingSizeId = await upsertAmount(null, input.servingGrams, "serving");
     const batchSizeId = await upsertAmount(null, input.batchGrams, "batch");
@@ -195,7 +217,30 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<number> {
 }
 
 export async function deleteRecipe(id: number): Promise<void> {
-  // Cascades ingredient_in_recipe; leaves the as-ingredient row (it may be used by
-  // other recipes — onDelete:"restrict" — so we don't force-delete it here).
-  await db.delete(recipes).where(eq(recipes.id, id));
+  const recipe = await db.query.recipes.findFirst({
+    where: (r, { eq }) => eq(r.id, id),
+    with: { asIngredient: true },
+  });
+  if (!recipe) return;
+
+  // Capture the item amounts before the recipe delete cascades the join rows away (the
+  // amounts themselves are not cascaded — FK is amount→join).
+  const items = await db
+    .select({ amountId: ingredientInRecipe.amountId })
+    .from(ingredientInRecipe)
+    .where(eq(ingredientInRecipe.recipeId, id));
+
+  await db.delete(recipes).where(eq(recipes.id, id)); // cascades ingredient_in_recipe
+  await deleteAmounts(items.map((r) => r.amountId));
+
+  // The as-ingredient row is not cascaded (recipe→ingredient is the wrong direction). Delete
+  // it — and its serving/batch amounts — only when no other recipe still consumes it as an
+  // item (ingredient_in_recipe is onDelete:"restrict"; e.g. a Biga used by a dough is kept).
+  const stillConsumed = await db.query.ingredientInRecipe.findFirst({
+    where: (t, { eq }) => eq(t.ingredientId, recipe.asIngredientId),
+  });
+  if (!stillConsumed) {
+    await db.delete(ingredients).where(eq(ingredients.id, recipe.asIngredientId)); // cascades ingredient_nutrient
+    await deleteAmounts([recipe.asIngredient.servingSizeId, recipe.asIngredient.batchSizeId]);
+  }
 }
