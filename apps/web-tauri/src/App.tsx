@@ -10,7 +10,8 @@ export function App() {
 
   useEffect(() => {
     vegifyData
-      .recipe(17)
+      .listRecipes()
+      .then((cards) => (cards[0] ? vegifyData.recipe(cards[0].id) : null))
       .then(setRecipe)
       .catch((e) => setError(String(e?.message ?? e)))
   }, [])

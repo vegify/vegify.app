@@ -60,7 +60,7 @@ GROUP BY n.id
 ORDER BY name`;
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe) — one recursive CTE. */
-async function per100gForIngredient(ingredientId: number): Promise<AggregatedNutrition> {
+async function per100gForIngredient(ingredientId: string): Promise<AggregatedNutrition> {
   const rs = await client.execute({ sql: CTE, args: { id: ingredientId } });
   let caloriesPer100g: number | null = null;
   const readings: AggregatedNutrition["readings"] = [];
@@ -75,7 +75,7 @@ async function per100gForIngredient(ingredientId: number): Promise<AggregatedNut
   return { caloriesPer100g, readings };
 }
 
-export async function getRecipeNutrition(recipeId: number): Promise<AggregatedNutrition> {
+export async function getRecipeNutrition(recipeId: string): Promise<AggregatedNutrition> {
   const recipe = await db.query.recipes.findFirst({
     where: (r, { eq }) => eq(r.id, recipeId),
   });
@@ -84,12 +84,12 @@ export async function getRecipeNutrition(recipeId: number): Promise<AggregatedNu
 }
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe). */
-export async function getIngredientNutrition(ingredientId: number): Promise<AggregatedNutrition> {
+export async function getIngredientNutrition(ingredientId: string): Promise<AggregatedNutrition> {
   return per100gForIngredient(ingredientId);
 }
 
 export type IngredientSearchResult = AggregatedNutrition & {
-  id: number;
+  id: string;
   name: string;
   servingGrams: number | null;
 };

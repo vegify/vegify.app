@@ -8,7 +8,7 @@ import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
 
 /** What `onSave` receives — the storage shape (per-100g), already converted. */
 export type IngredientFormInput = {
-  id?: number;
+  id?: string;
   name: string;
   description: string | null;
   price: number | null; // cents
@@ -20,7 +20,7 @@ export type IngredientFormInput = {
 
 /** Initial values for edit mode (per-serving, as the user entered them). */
 export type IngredientFormDefaults = {
-  id?: number;
+  id?: string;
   name?: string;
   description?: string | null;
   priceCents?: number | null;

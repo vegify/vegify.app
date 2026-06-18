@@ -15,7 +15,7 @@ import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData, type NutritionReading } from "./nutrition-facts";
 
 export type IngredientSearchItem = {
-  id: number;
+  id: string;
   name: string;
   servingGrams: number | null;
   caloriesPer100g: number | null;
@@ -24,23 +24,23 @@ export type IngredientSearchItem = {
 
 /** Storage shape passed to onSave. */
 export type RecipeFormInput = {
-  id?: number;
+  id?: string;
   name: string;
   subtitle: string | null;
   directions: string | null;
   servingGrams: number | null;
   batchGrams: number | null;
-  items: { ingredientId: number; grams: number }[];
+  items: { ingredientId: string; grams: number }[];
 };
 
 export type RecipeFormDefaults = {
-  id?: number;
+  id?: string;
   name?: string;
   subtitle?: string | null;
   directions?: string | null;
   servings?: number | null;
   items?: Array<{
-    ingredientId: number;
+    ingredientId: string;
     name: string;
     grams: number;
     caloriesPer100g: number | null;
@@ -49,7 +49,7 @@ export type RecipeFormDefaults = {
 };
 
 type Row = {
-  ingredientId: number;
+  ingredientId: string;
   name: string;
   grams: string;
   caloriesPer100g: number | null;

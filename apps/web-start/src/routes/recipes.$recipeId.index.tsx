@@ -17,7 +17,7 @@ const getRecipe = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
   .handler(async ({ data }) => {
     const { db, getRecipeNutrition } = await import('@vegify/db')
-    const id = Number(data)
+    const id = data
     const recipe = await db.query.recipes.findFirst({
       where: (r, { eq }) => eq(r.id, id),
       with: {

@@ -129,7 +129,7 @@ async function main() {
       totalTime: 970,
     })
     .returning();
-  const bigaItems: [number, string, number, number][] = [
+  const bigaItems: [string, string, number, number][] = [
     [flour.id, "g", 250, 250],
     [water.id, "g", 162.5, 162.5],
     [yeast.id, "g", 2.5, 2.5],
@@ -163,7 +163,7 @@ async function main() {
       totalTime: 1440,
     })
     .returning();
-  const doughItems: [number, string, number, number][] = [
+  const doughItems: [string, string, number, number][] = [
     [bigaIngredient.id, "biga", 1, 415],
     [flour.id, "g", 250, 250],
     [water.id, "g", 100, 100],
@@ -208,7 +208,7 @@ async function main() {
         ? "g"
         : "mg";
 
-  const shakeItems: [number, string, number, number][] = [];
+  const shakeItems: [string, string, number, number][] = [];
   for (let k = 0; k < 20; k++) {
     const ing = await ingredient({
       name: `Shake Ingredient ${k + 1}`,

@@ -18,7 +18,7 @@ const getIngredient = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const { db } = await import('@vegify/db')
     const ingredient = await db.query.ingredients.findFirst({
-      where: (i, { eq }) => eq(i.id, Number(data)),
+      where: (i, { eq }) => eq(i.id, data),
       with: {
         creator: true,
         servingSize: true,

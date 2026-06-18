@@ -6,7 +6,7 @@ const getRecipeFn = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
   .handler(async ({ data }) => {
     const { db, getIngredientNutrition } = await import('@vegify/db')
-    const id = Number(data)
+    const id = data
     const recipe = await db.query.recipes.findFirst({
       where: (r, { eq }) => eq(r.id, id),
       with: {
@@ -50,7 +50,7 @@ const saveFn = createServerFn({ method: 'POST' })
   })
 
 const deleteFn = createServerFn({ method: 'POST' })
-  .validator((id: number) => id)
+  .validator((id: string) => id)
   .handler(async ({ data }) => {
     const { deleteRecipe } = await import('@vegify/db')
     await deleteRecipe(data)

@@ -7,10 +7,21 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { ulid } from "ulid";
 
 // Schema ported from vegify-laravel (2022) database/migrations, SQLite dialect.
 // Key idea preserved: a recipe IS an ingredient (recipes.as_ingredient_id) — that row
 // carries the recipe's name, creator, serving/batch sizes, and lets recipes nest.
+//
+// IDs are client-generated ULIDs (text), not autoincrement integers: an offline device can mint
+// ids that never collide with another device's on sync (the local-first/changeset-sync
+// prerequisite), and ULIDs sort lexicographically by creation time. Stays Postgres-portable.
+
+/** Client-generated ULID primary key — sortable + offline-safe (no autoincrement). */
+const pk = () =>
+  text("id")
+    .primaryKey()
+    .$defaultFn(() => ulid());
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(
@@ -22,14 +33,14 @@ const timestamps = {
 };
 
 export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   ...timestamps,
 });
 
 export const amounts = sqliteTable("amounts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   unit: text("unit"),
   amount: real("amount").default(0),
   grams: real("grams").notNull().default(0),
@@ -42,17 +53,17 @@ export const amounts = sqliteTable("amounts", {
 export const ingredients = sqliteTable(
   "ingredients",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    userId: integer("user_id").references(() => users.id),
+    id: pk(),
+    userId: text("user_id").references(() => users.id),
     name: text("name").notNull(),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),
     price: integer("price"), // cents (USD)
     caloriesPer100g: real("calories_per_100g"),
-    servingSizeId: integer("serving_size_id").references(() => amounts.id, {
+    servingSizeId: text("serving_size_id").references(() => amounts.id, {
       onDelete: "cascade",
     }),
-    batchSizeId: integer("batch_size_id").references(() => amounts.id, {
+    batchSizeId: text("batch_size_id").references(() => amounts.id, {
       onDelete: "cascade",
     }),
     ...timestamps,
@@ -64,7 +75,7 @@ export const ingredients = sqliteTable(
 );
 
 export const videos = sqliteTable("videos", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   url: text("url").notNull(),
   description: text("description"),
   ...timestamps,
@@ -73,8 +84,8 @@ export const videos = sqliteTable("videos", {
 export const recipes = sqliteTable(
   "recipes",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    asIngredientId: integer("as_ingredient_id")
+    id: pk(),
+    asIngredientId: text("as_ingredient_id")
       .notNull()
       .references(() => ingredients.id, { onDelete: "cascade" }),
     subtitle: text("subtitle"),
@@ -82,7 +93,7 @@ export const recipes = sqliteTable(
     prepMinutes: real("prep_minutes"),
     cookMinutes: real("cook_minutes"),
     totalTime: real("total_time"),
-    videoId: integer("video_id").references(() => videos.id),
+    videoId: text("video_id").references(() => videos.id),
     ...timestamps,
   },
   (t) => [uniqueIndex("recipes_as_ingredient_uq").on(t.asIngredientId)]
@@ -91,15 +102,15 @@ export const recipes = sqliteTable(
 export const ingredientInRecipe = sqliteTable(
   "ingredient_in_recipe",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: pk(),
     order: integer("order").notNull().default(0),
-    recipeId: integer("recipe_id")
+    recipeId: text("recipe_id")
       .notNull()
       .references(() => recipes.id, { onDelete: "cascade" }),
-    ingredientId: integer("ingredient_id").references(() => ingredients.id, {
+    ingredientId: text("ingredient_id").references(() => ingredients.id, {
       onDelete: "restrict",
     }),
-    amountId: integer("amount_id")
+    amountId: text("amount_id")
       .notNull()
       .references(() => amounts.id, { onDelete: "cascade" }),
     ...timestamps,
@@ -108,7 +119,7 @@ export const ingredientInRecipe = sqliteTable(
 );
 
 export const nutrients = sqliteTable("nutrients", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   name: text("name").notNull(),
   description: text("description"),
   ...timestamps,
@@ -119,11 +130,11 @@ export const nutrients = sqliteTable("nutrients", {
 export const ingredientNutrient = sqliteTable(
   "ingredient_nutrient",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ingredientId: integer("ingredient_id")
+    id: pk(),
+    ingredientId: text("ingredient_id")
       .notNull()
       .references(() => ingredients.id, { onDelete: "cascade" }),
-    nutrientId: integer("nutrient_id")
+    nutrientId: text("nutrient_id")
       .notNull()
       .references(() => nutrients.id, { onDelete: "cascade" }),
     amountPer100g: real("amount_per_100g").notNull(),
@@ -136,7 +147,7 @@ export const ingredientNutrient = sqliteTable(
 );
 
 export const imgs = sqliteTable("imgs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   description: text("description"),
   uuid: text("uuid").notNull(),
   origName: text("orig_name").notNull(),
@@ -147,24 +158,24 @@ export const imgs = sqliteTable("imgs", {
 });
 
 export const ingredientImg = sqliteTable("ingredient_img", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  imgId: integer("img_id")
+  id: pk(),
+  imgId: text("img_id")
     .notNull()
     .references(() => imgs.id, { onDelete: "cascade" }),
-  ingredientId: integer("ingredient_id")
+  ingredientId: text("ingredient_id")
     .notNull()
     .references(() => ingredients.id, { onDelete: "restrict" }),
   ...timestamps,
 });
 
 export const tags = sqliteTable("tags", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   tag: text("tag").notNull().unique(),
   ...timestamps,
 });
 
 export const reviews = sqliteTable("reviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   stars: real("stars").notNull(),
   title: text("title"),
   text: text("text"),
@@ -172,14 +183,14 @@ export const reviews = sqliteTable("reviews", {
 });
 
 export const hrefs = sqliteTable("hrefs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   url: text("url").notNull(),
   description: text("description"),
   ...timestamps,
 });
 
 export const products = sqliteTable("products", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: pk(),
   name: text("name").notNull(),
   upc: integer("upc"),
   price: integer("price"),

@@ -9,8 +9,8 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  recipe(id: number): Promise<{
-	id: number,
+  recipe(id: string): Promise<{
+	id: string,
 	name: string,
 	subtitle: string | null,
 	directions: string | null,
@@ -24,22 +24,22 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  saveIngredient(input: SaveIngredientInput): Promise<number> {
+  saveIngredient(input: SaveIngredientInput): Promise<string> {
     return invoke("save_ingredient", { input });
   },
 
   /** @throws {DataError} */
-  deleteIngredient(id: number): Promise<null> {
+  deleteIngredient(id: string): Promise<null> {
     return invoke("delete_ingredient", { id });
   },
 
   /** @throws {DataError} */
-  saveRecipe(input: SaveRecipeInput): Promise<number> {
+  saveRecipe(input: SaveRecipeInput): Promise<string> {
     return invoke("save_recipe", { input });
   },
 
   /** @throws {DataError} */
-  deleteRecipe(id: number): Promise<null> {
+  deleteRecipe(id: string): Promise<null> {
     return invoke("delete_recipe", { id });
   },
 
@@ -75,25 +75,25 @@ export type Reading = {
 };
 
 export type RecipeCard = {
-	id: number,
+	id: string,
 	name: string,
 	subtitle: string | null,
 };
 
 export type RecipeItem = {
-	id: number,
+	id: string,
 	name: string,
 	amount: Amount,
 };
 
 export type RecipeItemInput = {
-	ingredientId: number,
+	ingredientId: string,
 	grams: number | null,
 	unit: string | null,
 };
 
 export type RecipeView = {
-	id: number,
+	id: string,
 	name: string,
 	subtitle: string | null,
 	directions: string | null,
@@ -105,7 +105,7 @@ export type RecipeView = {
 };
 
 export type SaveIngredientInput = {
-	id: number | null,
+	id: string | null,
 	name: string,
 	description: string | null,
 	price: number | null,
@@ -116,7 +116,7 @@ export type SaveIngredientInput = {
 };
 
 export type SaveRecipeInput = {
-	id: number | null,
+	id: string | null,
 	name: string,
 	subtitle: string | null,
 	directions: string | null,

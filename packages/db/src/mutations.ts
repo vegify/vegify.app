@@ -19,8 +19,8 @@ export type IngredientNutrientInput = {
 };
 
 export type SaveIngredientInput = {
-  id?: number;
-  userId?: number | null;
+  id?: string;
+  userId?: string | null;
   name: string;
   description?: string | null;
   price?: number | null; // cents
@@ -31,7 +31,7 @@ export type SaveIngredientInput = {
 };
 
 async function upsertAmount(
-  id: number | null | undefined,
+  id: string | null | undefined,
   grams: number | null | undefined,
   unit: string,
 ) {
@@ -49,8 +49,8 @@ async function upsertAmount(
 
 // Every `amounts` FK (serving/batch size, recipe-item amount) cascades amount→owner, NOT
 // owner→amount. So deleting an owner row orphans its amounts — they must be deleted by id.
-async function deleteAmounts(ids: (number | null | undefined)[]) {
-  const real = ids.filter((x): x is number => x != null);
+async function deleteAmounts(ids: (string | null | undefined)[]) {
+  const real = ids.filter((x): x is string => x != null);
   if (real.length) await db.delete(amounts).where(inArray(amounts.id, real));
 }
 
@@ -63,8 +63,8 @@ async function findOrCreateNutrient(name: string) {
   return n.id;
 }
 
-export async function saveIngredient(input: SaveIngredientInput): Promise<number> {
-  let ingredientId: number;
+export async function saveIngredient(input: SaveIngredientInput): Promise<string> {
+  let ingredientId: string;
 
   if (input.id) {
     const existing = await db.query.ingredients.findFirst({
@@ -104,7 +104,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<number
     ingredientId = row.id;
   }
 
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const n of input.nutrients) {
     if (!n.name.trim()) continue;
     const nutrientId = await findOrCreateNutrient(n.name.trim());
@@ -120,7 +120,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<number
   return ingredientId;
 }
 
-export async function deleteIngredient(id: number): Promise<void> {
+export async function deleteIngredient(id: string): Promise<void> {
   // ingredient_in_recipe / ingredient_img are onDelete:"restrict" — deleting an in-use
   // ingredient throws (intended). Its serving/batch `amounts` are not cascaded, so clean
   // them up after the row is gone.
@@ -134,10 +134,10 @@ export async function deleteIngredient(id: number): Promise<void> {
 
 // --- recipes ---
 
-export type RecipeItemInput = { ingredientId: number; grams: number; unit?: string | null };
+export type RecipeItemInput = { ingredientId: string; grams: number; unit?: string | null };
 export type SaveRecipeInput = {
-  id?: number;
-  userId?: number | null;
+  id?: string;
+  userId?: string | null;
   name: string;
   subtitle?: string | null;
   directions?: string | null;
@@ -146,8 +146,8 @@ export type SaveRecipeInput = {
   items: RecipeItemInput[];
 };
 
-export async function saveRecipe(input: SaveRecipeInput): Promise<number> {
-  let recipeId: number;
+export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
+  let recipeId: string;
 
   if (input.id) {
     const existing = await db.query.recipes.findFirst({
@@ -216,7 +216,7 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<number> {
   return recipeId;
 }
 
-export async function deleteRecipe(id: number): Promise<void> {
+export async function deleteRecipe(id: string): Promise<void> {
   const recipe = await db.query.recipes.findFirst({
     where: (r, { eq }) => eq(r.id, id),
     with: { asIngredient: true },
