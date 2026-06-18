@@ -15,8 +15,9 @@ pub fn db_config() -> (String, String, String) {
             .to_string_lossy()
             .into_owned()
     });
-    let sync_url =
-        std::env::var("LIBSQL_SYNC_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
+    // Empty by default = LOCAL-ONLY (no primary, $0, offline). Set LIBSQL_SYNC_URL to opt into
+    // cloud sync against a primary (the paid always-on tier).
+    let sync_url = std::env::var("LIBSQL_SYNC_URL").unwrap_or_default();
     let auth_token = std::env::var("LIBSQL_AUTH_TOKEN").unwrap_or_default();
     (path, sync_url, auth_token)
 }

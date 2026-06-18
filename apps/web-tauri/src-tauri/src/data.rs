@@ -123,21 +123,31 @@ ORDER BY name";
 pub struct Db {
     db: Database,
     conn: Connection,
+    synced: bool,
 }
 
 impl Db {
-    /// Open an embedded replica at `path` that syncs from the remote primary `sync_url`.
+    /// Open the on-device DB. Empty `sync_url` → a LOCAL-ONLY SQLite (no primary, $0, fully
+    /// offline — the free default). A non-empty `sync_url` → a remote embedded replica syncing
+    /// from that primary (the opt-in cloud-sync upgrade).
     pub async fn open(path: &str, sync_url: String, auth_token: String) -> Result<Self, DataError> {
-        let db = Builder::new_remote_replica(path, sync_url, auth_token)
-            .build()
-            .await?;
+        let synced = !sync_url.trim().is_empty();
+        let db = if synced {
+            Builder::new_remote_replica(path, sync_url, auth_token)
+                .build()
+                .await?
+        } else {
+            Builder::new_local(path).build().await?
+        };
         let conn = db.connect()?;
-        Ok(Self { db, conn })
+        Ok(Self { db, conn, synced })
     }
 
-    /// Reconcile the local replica with the primary.
+    /// Reconcile the local replica with the primary — a no-op in local-only mode.
     pub async fn sync(&self) -> Result<(), DataError> {
-        self.db.sync().await?;
+        if self.synced {
+            self.db.sync().await?;
+        }
         Ok(())
     }
 
@@ -276,8 +286,10 @@ mod tests {
     #[test]
     fn replica_syncs_and_computes_recipe_17() {
         tauri::async_runtime::block_on(async {
-            let (path, url, token) = crate::db_config();
-            let db = Db::open(&path, url, token).await.expect("open replica");
+            let (path, _url, token) = crate::db_config();
+            let db = Db::open(&path, "http://127.0.0.1:8080".into(), token)
+                .await
+                .expect("open replica");
             db.sync().await.expect("initial sync from primary");
             let r = VegifyData::recipe(&db, 17)
                 .await
@@ -296,6 +308,23 @@ mod tests {
                 (per_serving - 307.5).abs() < 0.5,
                 "expected ~307.5 cal/serving from the synced replica, got {per_serving:.2}"
             );
+        });
+    }
+
+    // Free default: open LOCAL-ONLY (no primary) — must succeed offline with no sync server.
+    #[test]
+    fn local_only_opens_without_primary() {
+        tauri::async_runtime::block_on(async {
+            let path = std::env::temp_dir().join("vegify-local-only-test.db");
+            let _ = std::fs::remove_file(&path);
+            let db = Db::open(path.to_str().unwrap(), String::new(), String::new())
+                .await
+                .expect("open local-only (no primary)");
+            db.sync().await.expect("sync is a no-op in local-only mode");
+            // Proves the no-primary open + no-op-sync path (the free/offline default). A fresh
+            // local DB has no app schema yet — a real first-run bundles migrations + a seed; that
+            // is out of scope here, so we don't query the app tables.
+            eprintln!("local-only opened with no primary; sync no-op OK");
         });
     }
 }
