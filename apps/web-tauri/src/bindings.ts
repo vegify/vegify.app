@@ -24,8 +24,23 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  renameRecipe(id: number, name: string): Promise<null> {
-    return invoke("rename_recipe", { id, name });
+  saveIngredient(input: SaveIngredientInput): Promise<number> {
+    return invoke("save_ingredient", { input });
+  },
+
+  /** @throws {DataError} */
+  deleteIngredient(id: number): Promise<null> {
+    return invoke("delete_ingredient", { id });
+  },
+
+  /** @throws {DataError} */
+  saveRecipe(input: SaveRecipeInput): Promise<number> {
+    return invoke("save_recipe", { input });
+  },
+
+  /** @throws {DataError} */
+  deleteRecipe(id: number): Promise<null> {
+    return invoke("delete_recipe", { id });
   },
 
   /** @throws {DataError} */
@@ -47,6 +62,12 @@ export type Amount = {
 	grams: number | null,
 };
 
+export type IngredientNutrientInput = {
+	name: string,
+	amountPer100g: number | null,
+	unit: string,
+};
+
 export type Reading = {
 	name: string,
 	amountPer100g: number | null,
@@ -65,6 +86,12 @@ export type RecipeItem = {
 	amount: Amount,
 };
 
+export type RecipeItemInput = {
+	ingredientId: number,
+	grams: number | null,
+	unit: string | null,
+};
+
 export type RecipeView = {
 	id: number,
 	name: string,
@@ -75,4 +102,25 @@ export type RecipeView = {
 	batchGrams: number | null,
 	items: RecipeItem[],
 	nutrition: AggregatedNutrition,
+};
+
+export type SaveIngredientInput = {
+	id: number | null,
+	name: string,
+	description: string | null,
+	price: number | null,
+	caloriesPer100g: number | null,
+	servingGrams: number | null,
+	packageGrams: number | null,
+	nutrients: IngredientNutrientInput[],
+};
+
+export type SaveRecipeInput = {
+	id: number | null,
+	name: string,
+	subtitle: string | null,
+	directions: string | null,
+	servingGrams: number | null,
+	batchGrams: number | null,
+	items: RecipeItemInput[],
 };
