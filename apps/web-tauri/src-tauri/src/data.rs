@@ -397,9 +397,60 @@ fn do_delete_recipe(conn: &Connection, id: &str) -> Result<(), DataError> {
     Ok(())
 }
 
+/// Where changeset blobs live. A local dir today (LocalBlobStore); an S3 bucket in production
+/// (S3BlobStore) — same trait, so the sync/compact logic is storage-agnostic. Blob id = ULID.
+pub trait BlobStore: Send + Sync {
+    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError>;
+    /// Blob ids present, sorted (ULID = chronological = correct apply/merge order).
+    fn list(&self) -> Result<Vec<String>, DataError>;
+    fn get(&self, id: &str) -> Result<Vec<u8>, DataError>;
+    fn delete(&self, id: &str) -> Result<(), DataError>;
+}
+
+/// Filesystem blob store: `<dir>/<ulid>.cs`. The dev/offline default and the S3 stand-in.
+pub struct LocalBlobStore {
+    dir: PathBuf,
+}
+
+impl LocalBlobStore {
+    pub fn new(dir: &str) -> Result<Self, DataError> {
+        let dir = PathBuf::from(dir);
+        fs::create_dir_all(&dir).map_err(io_err)?;
+        Ok(Self { dir })
+    }
+    fn path(&self, id: &str) -> PathBuf {
+        self.dir.join(format!("{id}.cs"))
+    }
+}
+
+impl BlobStore for LocalBlobStore {
+    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError> {
+        fs::write(self.path(id), bytes).map_err(io_err)
+    }
+    fn list(&self) -> Result<Vec<String>, DataError> {
+        let mut ids = Vec::new();
+        for entry in fs::read_dir(&self.dir).map_err(io_err)? {
+            let path = entry.map_err(io_err)?.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("cs") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    ids.push(stem.to_string());
+                }
+            }
+        }
+        ids.sort();
+        Ok(ids)
+    }
+    fn get(&self, id: &str) -> Result<Vec<u8>, DataError> {
+        fs::read(self.path(id)).map_err(io_err)
+    }
+    fn delete(&self, id: &str) -> Result<(), DataError> {
+        fs::remove_file(self.path(id)).map_err(io_err)
+    }
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
-    blob_dir: PathBuf,
+    blobs: Box<dyn BlobStore>,
 }
 
 impl Db {
@@ -408,9 +459,16 @@ impl Db {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
-        let blob_dir = PathBuf::from(blob_dir);
-        fs::create_dir_all(&blob_dir).map_err(io_err)?;
-        Ok(Self { conn: Mutex::new(conn), blob_dir })
+        Ok(Self { conn: Mutex::new(conn), blobs: Box::new(LocalBlobStore::new(blob_dir)?) })
+    }
+
+    /// Open with an explicit blob store (e.g. an S3BlobStore) instead of the local-dir default.
+    pub fn open_with(db_path: &str, blobs: Box<dyn BlobStore>) -> Result<Self, DataError> {
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
+            .ok();
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
+        Ok(Self { conn: Mutex::new(conn), blobs })
     }
 
     fn write_capture<T>(
@@ -428,7 +486,7 @@ impl Db {
         };
         if !bytes.is_empty() {
             let id = new_id();
-            fs::write(self.blob_dir.join(format!("{id}.cs")), &bytes).map_err(io_err)?;
+            self.blobs.put(&id, &bytes)?;
             conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
         }
         Ok(value)
@@ -578,27 +636,20 @@ impl VegifyData for Db {
 
     fn sync(&self) -> Result<(), DataError> {
         let conn = self.conn.lock().unwrap();
-        for entry in fs::read_dir(&self.blob_dir).map_err(io_err)? {
-            let path = entry.map_err(io_err)?.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("cs") {
-                continue;
-            }
-            let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
+        for id in self.blobs.list()? {
             let seen: Option<String> = conn
-                .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [id], |r| r.get(0))
+                .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [&id], |r| r.get(0))
                 .optional()?;
             if seen.is_some() {
                 continue;
             }
-            let bytes = fs::read(&path).map_err(io_err)?;
+            let bytes = self.blobs.get(&id)?;
             conn.apply_strm(
                 &mut &bytes[..],
                 None::<fn(&str) -> bool>,
                 |_conflict, _item| ConflictAction::SQLITE_CHANGESET_REPLACE,
             )?;
-            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [id])?;
+            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
         }
         Ok(())
     }
@@ -609,28 +660,23 @@ impl VegifyData for Db {
     /// devices that already applied the originals re-apply the combined one harmlessly (LWW).
     fn compact(&self) -> Result<(), DataError> {
         let conn = self.conn.lock().unwrap();
-        let mut blobs: Vec<PathBuf> = fs::read_dir(&self.blob_dir)
-            .map_err(io_err)?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("cs"))
-            .collect();
-        if blobs.len() <= 1 {
+        let ids = self.blobs.list()?;
+        if ids.len() <= 1 {
             return Ok(());
         }
-        blobs.sort();
         let mut group = Changegroup::new()?;
-        for p in &blobs {
-            let bytes = fs::read(p).map_err(io_err)?;
+        for id in &ids {
+            let bytes = self.blobs.get(id)?;
             group.add_stream(&mut &bytes[..])?;
         }
         let mut combined = Vec::new();
         group.output_strm(&mut combined)?;
-        let id = new_id();
-        fs::write(self.blob_dir.join(format!("{id}.cs")), &combined).map_err(io_err)?;
-        for p in &blobs {
-            fs::remove_file(p).map_err(io_err)?;
+        let new = new_id();
+        self.blobs.put(&new, &combined)?;
+        for id in &ids {
+            self.blobs.delete(id)?;
         }
-        conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
+        conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&new])?;
         Ok(())
     }
 }
