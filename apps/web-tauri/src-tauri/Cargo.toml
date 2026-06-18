@@ -1,0 +1,30 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "Vegify desktop (local-first spike)"
+authors = ["you"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Generates src/bindings.ts from the DAL trait. Separate from the app bin so it doesn't pull
+# in tauri::generate_context! (which would need the frontend dist/ to exist first).
+[[bin]]
+name = "gen-bindings"
+path = "src/bin/gen_bindings.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.2" }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.2" }
+tauri-plugin-log = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
