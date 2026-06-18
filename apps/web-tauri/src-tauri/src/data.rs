@@ -89,6 +89,28 @@ pub struct IngredientSearchResult {
     pub readings: Vec<Reading>,
 }
 
+/// RecipeForm edit-mode defaults: per-item nutrition included so each row shows live nutrition.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeEditItem {
+    pub ingredient_id: String,
+    pub name: String,
+    pub grams: f64,
+    pub calories_per_100g: Option<f64>,
+    pub readings: Vec<Reading>,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeEditData {
+    pub id: String,
+    pub name: String,
+    pub subtitle: Option<String>,
+    pub directions: Option<String>,
+    pub servings: Option<f64>,
+    pub items: Vec<RecipeEditItem>,
+}
+
 // ---- write/input wire types (mirror @vegify/db mutation inputs) ----
 
 #[derive(Deserialize, Type)]
@@ -607,6 +629,7 @@ fn aggregate_per100g(conn: &Connection, ingredient_id: &str) -> Result<Aggregate
 pub trait VegifyData {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
+    fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
@@ -659,6 +682,65 @@ impl VegifyData for Db {
             });
         }
         Ok(out)
+    }
+
+    fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        let meta = conn
+            .query_row(
+                "SELECT i.name, r.subtitle, r.directions, sa.grams, ba.grams
+                 FROM recipes r
+                 JOIN ingredients i ON i.id = r.as_ingredient_id
+                 LEFT JOIN amounts sa ON sa.id = i.serving_size_id
+                 LEFT JOIN amounts ba ON ba.id = i.batch_size_id
+                 WHERE r.id = ?1",
+                [&id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<f64>>(3)?,
+                        row.get::<_, Option<f64>>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((name, subtitle, directions, sg, bg)) = meta else {
+            return Ok(None);
+        };
+        let servings = match (sg, bg) {
+            (Some(s), Some(b)) if s > 0.0 => Some(b / s),
+            _ => None,
+        };
+
+        let rows: Vec<(String, String, f64)> = {
+            let mut stmt = conn.prepare(
+                "SELECT i.id, i.name, a.grams
+                 FROM ingredient_in_recipe iir
+                 JOIN ingredients i ON i.id = iir.ingredient_id
+                 JOIN amounts a ON a.id = iir.amount_id
+                 WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
+            )?;
+            let v = stmt
+                .query_map([&id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<f64>>(2)?.unwrap_or(0.0)))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            v
+        };
+        let mut items = Vec::new();
+        for (ingredient_id, iname, grams) in rows {
+            let nut = aggregate_per100g(&conn, &ingredient_id)?;
+            items.push(RecipeEditItem {
+                ingredient_id,
+                name: iname,
+                grams,
+                calories_per_100g: nut.calories_per_100g,
+                readings: nut.readings,
+            });
+        }
+        Ok(Some(RecipeEditData { id, name, subtitle, directions, servings, items }))
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
@@ -888,12 +970,18 @@ mod tests {
         )
         .expect("save recipe with an item");
 
-        let r = VegifyData::recipe(&db, id).expect("read").expect("exists");
+        let r = VegifyData::recipe(&db, id.clone()).expect("read").expect("exists");
         assert_eq!(r.name, "UI Flow Bread");
         assert_eq!(r.items.len(), 1, "the searched ingredient is attached as an item");
         assert_eq!(r.items[0].name, flour.name);
         assert!(r.nutrition.calories_per_100g.is_some(), "flour has calories → recipe aggregates them");
         eprintln!("UI-flow recipe: {} item(s), {:?} cal/100g", r.items.len(), r.nutrition.calories_per_100g);
+
+        // edit-with-defaults: per-item nutrition + servings (batch/serving = 500/100 = 5).
+        let edit = VegifyData::recipe_for_edit(&db, id).expect("edit").expect("exists");
+        assert_eq!(edit.servings, Some(5.0));
+        assert_eq!(edit.items.len(), 1);
+        assert_eq!(edit.items[0].calories_per_100g, Some(364.0));
     }
 
     // Compaction bounds the blob count without losing data: 3 writes → 3 blobs → compact → 1 blob,

@@ -24,6 +24,18 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  recipeForEdit(id: string): Promise<{
+	id: string,
+	name: string,
+	subtitle: string | null,
+	directions: string | null,
+	servings: number | null,
+	items: RecipeEditItem[],
+} | null> {
+    return invoke("recipe_for_edit", { id });
+  },
+
+  /** @throws {DataError} */
   searchIngredients(query: string): Promise<IngredientSearchResult[]> {
     return invoke("search_ingredients", { query });
   },
@@ -96,6 +108,24 @@ export type RecipeCard = {
 	id: string,
 	name: string,
 	subtitle: string | null,
+};
+
+export type RecipeEditData = {
+	id: string,
+	name: string,
+	subtitle: string | null,
+	directions: string | null,
+	servings: number | null,
+	items: RecipeEditItem[],
+};
+
+/**  RecipeForm edit-mode defaults: per-item nutrition included so each row shows live nutrition. */
+export type RecipeEditItem = {
+	ingredientId: string,
+	name: string,
+	grams: number | null,
+	caloriesPer100g: number | null,
+	readings: Reading[],
 };
 
 export type RecipeItem = {

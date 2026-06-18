@@ -5,6 +5,7 @@ import {
   RecipeForm,
   type IngredientFormInput,
   type NutritionFactsData,
+  type RecipeFormDefaults,
   type RecipeFormInput,
 } from '@vegify/ui'
 import { vegifyData, type RecipeCard, type RecipeView } from './bindings'
@@ -12,9 +13,38 @@ import { vegifyData, type RecipeCard, type RecipeView } from './bindings'
 // The SAME React shell + shared @vegify/ui forms the web app uses — but every read AND write goes
 // through the on-device Rust DAL over typed IPC (vegifyData), not a server. Edits work offline:
 // each save is captured as a SQLite changeset and shipped via the blob store (S3) on sync().
+
+// specta types every f64 wire field as `number | null` (JSON can't carry NaN/Inf), so coerce reads.
+const num = (n: number | null) => n ?? 0
+
+// Shared by create + edit: the RecipeForm ingredient picker, backed by the DAL search.
+const searchForForm = async (q: string) => {
+  const results = await vegifyData.searchIngredients(q)
+  return results.map((r) => ({
+    id: r.id,
+    name: r.name,
+    servingGrams: r.servingGrams,
+    caloriesPer100g: r.caloriesPer100g,
+    readings: r.readings.map((x) => ({ name: x.name, amountPer100g: num(x.amountPer100g), unit: x.unit })),
+  }))
+}
+
+// Shared by create (input.id absent) + edit (input.id set → updates that recipe).
+const saveRecipeFromForm = (input: RecipeFormInput) =>
+  vegifyData.saveRecipe({
+    id: input.id ?? null,
+    name: input.name,
+    subtitle: input.subtitle,
+    directions: input.directions,
+    servingGrams: input.servingGrams,
+    batchGrams: input.batchGrams,
+    items: input.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams, unit: null })),
+  })
+
 type View =
   | { mode: 'list' }
   | { mode: 'recipe'; id: string }
+  | { mode: 'edit-recipe'; id: string }
   | { mode: 'new-recipe' }
   | { mode: 'new-ingredient' }
 
@@ -78,8 +108,22 @@ export function App() {
         <RecipeDetail
           id={view.id}
           onBack={() => setView({ mode: 'list' })}
+          onEdit={() => setView({ mode: 'edit-recipe', id: view.id })}
           onDeleted={() => {
-            run('Deleted', Promise.resolve())
+            refresh()
+            setView({ mode: 'list' })
+          }}
+        />
+      )}
+      {view.mode === 'edit-recipe' && (
+        <EditRecipe
+          id={view.id}
+          onSaved={() => {
+            refresh()
+            setView({ mode: 'recipe', id: view.id })
+          }}
+          onDeleted={() => {
+            refresh()
             setView({ mode: 'list' })
           }}
         />
@@ -87,34 +131,9 @@ export function App() {
       {view.mode === 'new-recipe' && (
         <div className="mx-auto max-w-3xl p-6">
           <RecipeForm
-            onSearch={async (q) => {
-              const results = await vegifyData.searchIngredients(q)
-              return results.map((r) => ({
-                id: r.id,
-                name: r.name,
-                servingGrams: r.servingGrams,
-                caloriesPer100g: r.caloriesPer100g,
-                readings: r.readings.map((x) => ({
-                  name: x.name,
-                  amountPer100g: x.amountPer100g ?? 0,
-                  unit: x.unit,
-                })),
-              }))
-            }}
+            onSearch={searchForForm}
             onSave={async (input: RecipeFormInput) => {
-              await vegifyData.saveRecipe({
-                id: input.id ?? null,
-                name: input.name,
-                subtitle: input.subtitle,
-                directions: input.directions,
-                servingGrams: input.servingGrams,
-                batchGrams: input.batchGrams,
-                items: input.items.map((it) => ({
-                  ingredientId: it.ingredientId,
-                  grams: it.grams,
-                  unit: null,
-                })),
-              })
+              await saveRecipeFromForm(input)
               refresh()
               setView({ mode: 'list' })
             }}
@@ -192,10 +211,12 @@ function RecipeList({
 function RecipeDetail({
   id,
   onBack,
+  onEdit,
   onDeleted,
 }: {
   id: string
   onBack: () => void
+  onEdit: () => void
   onDeleted: () => void
 }) {
   const [recipe, setRecipe] = useState<RecipeView | null>(null)
@@ -215,7 +236,7 @@ function RecipeDetail({
   const nutrition: NutritionFactsData = {
     heading: 'This Recipe',
     serving: serving
-      ? { amount: serving.amount ?? 0, unit: serving.unit ?? 'g', grams: serving.grams ?? 0 }
+      ? { amount: num(serving.amount), unit: serving.unit ?? 'g', grams: num(serving.grams) }
       : null,
     servingsPerBatch:
       recipe.batchGrams && serving?.grams ? recipe.batchGrams / serving.grams : null,
@@ -225,7 +246,7 @@ function RecipeDetail({
         : recipe.nutrition.caloriesPer100g,
     readings: recipe.nutrition.readings.map((r) => ({
       name: r.name,
-      amountPer100g: r.amountPer100g ?? 0,
+      amountPer100g: num(r.amountPer100g),
       unit: r.unit,
     })),
   }
@@ -237,14 +258,19 @@ function RecipeDetail({
           <button className="text-sm text-primary hover:underline" onClick={onBack}>
             ← Recipes
           </button>
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between gap-4">
             <h1 className="text-4xl font-bold text-primary-dark">{recipe.name}</h1>
-            <button
-              className="text-sm text-destructive hover:underline"
-              onClick={() => vegifyData.deleteRecipe(recipe.id).then(onDeleted)}
-            >
-              Delete
-            </button>
+            <div className="flex shrink-0 gap-3">
+              <button className="text-sm text-primary hover:underline" onClick={onEdit}>
+                Edit
+              </button>
+              <button
+                className="text-sm text-destructive hover:underline"
+                onClick={() => vegifyData.deleteRecipe(recipe.id).then(onDeleted)}
+              >
+                Delete
+              </button>
+            </div>
           </div>
           {recipe.subtitle ? (
             <p className="mt-1 text-muted-foreground">{recipe.subtitle}</p>
@@ -269,6 +295,69 @@ function RecipeDetail({
           <NutritionFacts data={nutrition} />
         </div>
       </aside>
+    </div>
+  )
+}
+
+function EditRecipe({
+  id,
+  onSaved,
+  onDeleted,
+}: {
+  id: string
+  onSaved: () => void
+  onDeleted: () => void
+}) {
+  const [defaults, setDefaults] = useState<RecipeFormDefaults | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    vegifyData
+      .recipeForEdit(id)
+      .then((d) => {
+        if (!d) {
+          setErr('recipe not found')
+          return
+        }
+        setDefaults({
+          id: d.id,
+          name: d.name,
+          subtitle: d.subtitle,
+          directions: d.directions,
+          servings: d.servings,
+          items: d.items.map((it) => ({
+            ingredientId: it.ingredientId,
+            name: it.name,
+            grams: num(it.grams),
+            caloriesPer100g: it.caloriesPer100g,
+            readings: it.readings.map((x) => ({
+              name: x.name,
+              amountPer100g: num(x.amountPer100g),
+              unit: x.unit,
+            })),
+          })),
+        })
+      })
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [id])
+
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  if (!defaults) return <div className="p-8 text-muted-foreground">Loading…</div>
+
+  return (
+    <div className="mx-auto max-w-3xl p-6">
+      <RecipeForm
+        defaults={defaults}
+        onSearch={searchForForm}
+        onSave={async (input: RecipeFormInput) => {
+          await saveRecipeFromForm(input)
+          onSaved()
+        }}
+        onDelete={async () => {
+          await vegifyData.deleteRecipe(id)
+          onDeleted()
+        }}
+      />
     </div>
   )
 }
