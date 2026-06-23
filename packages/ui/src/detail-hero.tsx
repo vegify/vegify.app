@@ -10,13 +10,18 @@ import { cn } from "./cn";
 export function DetailHero({
   label,
   editHref,
+  onEdit,
   className,
 }: {
   label: string;
   /** When set, the edit FAB becomes a link to this route (plain <a>, framework-agnostic). */
   editHref?: string;
+  /** When set, the edit FAB becomes a button calling this (router-less shells like Tauri). Wins over editHref. */
+  onEdit?: () => void;
   className?: string;
 }) {
+  const editFabClass =
+    "flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground";
   return (
     <div className={cn("relative", className)}>
       <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-muted">
@@ -33,20 +38,16 @@ export function DetailHero({
         >
           <SaveIcon className="size-5" />
         </button>
-        {editHref ? (
-          <a
-            href={editHref}
-            aria-label="Edit"
-            className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
-          >
+        {onEdit ? (
+          <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
+            <PencilIcon className="size-5" />
+          </button>
+        ) : editHref ? (
+          <a href={editHref} aria-label="Edit" className={editFabClass}>
             <PencilIcon className="size-5" />
           </a>
         ) : (
-          <button
-            type="button"
-            aria-label="Edit"
-            className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
-          >
+          <button type="button" aria-label="Edit" className={editFabClass}>
             <PencilIcon className="size-5" />
           </button>
         )}

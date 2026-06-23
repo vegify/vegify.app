@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { Bell, Carrot, House, Mail, Search, Settings, User } from "lucide-react";
+import { Bell, Carrot, House, Mail, Salad, Search, Settings, User } from "lucide-react";
 import { cn } from "./cn";
 import { VegifyLogo } from "./vegify-logo";
 
@@ -51,20 +51,33 @@ export function AppShell({
   currentPath,
   LinkComponent,
   children,
+  footer,
+  ingredientsNav,
 }: {
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
   children: ReactNode;
+  /** Optional desktop-only sidebar footer (e.g. the Tauri shell's Sync/Compact controls). */
+  footer?: ReactNode;
+  /** Desktop-only: inject a first-class "Ingredients" destination into the nav (web shells reach ingredients via recipe links). */
+  ingredientsNav?: boolean;
 }) {
+  const navItems = ingredientsNav
+    ? [
+        ...APP_NAV.slice(0, 2),
+        { key: "ingredients", label: "Ingredients", icon: Salad, href: "/ingredients" },
+        ...APP_NAV.slice(2),
+      ]
+    : APP_NAV;
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground lg:flex-row">
       {/* ===== Desktop sidebar ===== */}
       <aside className="hidden bg-green-dark text-white lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:sticky lg:top-0">
-        <LinkComponent href="/" className="flex items-center px-6 py-7">
-          <VegifyLogo className="h-10 w-auto" />
+        <LinkComponent href="/" className="flex items-center px-6 py-8">
+          <VegifyLogo className="h-auto w-full" />
         </LinkComponent>
         <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-          {APP_NAV.map((item) => (
+          {navItems.map((item) => (
             <NavRow
               key={item.key}
               item={item}
@@ -73,6 +86,7 @@ export function AppShell({
             />
           ))}
         </nav>
+        {footer ? <div className="mt-auto px-3 pb-5">{footer}</div> : null}
       </aside>
 
       {/* ===== Mobile top bar ===== */}
