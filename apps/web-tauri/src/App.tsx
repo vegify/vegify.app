@@ -110,6 +110,7 @@ export function App() {
   const [recipes, setRecipes] = useState<RecipeCard[]>([])
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   const refresh = useCallback(() => {
     vegifyData
@@ -132,6 +133,7 @@ export function App() {
   // AppShell injects this for the sidebar/tab-bar nav. The web shells pass a router Link; the
   // desktop maps the shared nav hrefs onto the `view` state machine — no router needed.
   const navigate = useCallback((href: string) => {
+    setSearch('')
     if (href === '/') setView({ mode: 'home' })
     else if (href === '/recipes') setView({ mode: 'list' })
     else if (href === '/ingredients') setView({ mode: 'ingredients' })
@@ -160,7 +162,14 @@ export function App() {
   )
 
   return (
-    <AppShell currentPath={pathForView(view)} LinkComponent={LinkComponent} footer={footer} ingredientsNav>
+    <AppShell
+      currentPath={pathForView(view)}
+      LinkComponent={LinkComponent}
+      footer={footer}
+      ingredientsNav
+      searchValue={search}
+      onSearchChange={setSearch}
+    >
       {error ? (
         <div className="m-6 flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
           <p className="text-sm text-destructive">Error: {error}</p>
@@ -175,6 +184,7 @@ export function App() {
       {view.mode === 'list' && (
         <RecipeList
           recipes={recipes}
+          search={search}
           onOpen={(id) => setView({ mode: 'recipe', id })}
           onNew={() => setView({ mode: 'new-recipe' })}
         />
@@ -215,6 +225,7 @@ export function App() {
 
       {view.mode === 'ingredients' && (
         <IngredientList
+          search={search}
           onOpen={(id) => setView({ mode: 'ingredient', id })}
           onNew={() => setView({ mode: 'new-ingredient' })}
         />
@@ -273,29 +284,35 @@ function Home({ onBrowse }: { onBrowse: () => void }) {
 
 function RecipeList({
   recipes,
+  search,
   onOpen,
   onNew,
 }: {
   recipes: RecipeCard[]
+  search: string
   onOpen: (id: string) => void
   onNew: () => void
 }) {
+  const q = search.trim().toLowerCase()
+  const shown = q ? recipes.filter((r) => r.name.toLowerCase().includes(q)) : recipes
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
           <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Recipes</h1>
-          <p className="text-gray-500">{recipes.length} recipes</p>
+          <p className="text-gray-500">{shown.length} recipes</p>
         </div>
         <button onClick={onNew} className={buttonClasses({ size: 'sm' })}>
           + New recipe
         </button>
       </div>
-      {recipes.length === 0 ? (
-        <p className="text-muted-foreground">No recipes yet — add one.</p>
+      {shown.length === 0 ? (
+        <p className="text-muted-foreground">
+          {search ? 'No recipes match your search.' : 'No recipes yet — add one.'}
+        </p>
       ) : (
         <div className="flex flex-col gap-4">
-          {recipes.map((r) => (
+          {shown.map((r) => (
             <button key={r.id} onClick={() => onOpen(r.id)} className="block w-full text-left">
               <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
@@ -472,9 +489,11 @@ function EditRecipe({
 }
 
 function IngredientList({
+  search,
   onOpen,
   onNew,
 }: {
+  search: string
   onOpen: (id: string) => void
   onNew: () => void
 }) {
@@ -486,23 +505,27 @@ function IngredientList({
       .then(setItems)
       .catch((e) => setErr(String(e?.message ?? e)))
   }, [])
+  const q = search.trim().toLowerCase()
+  const shown = q ? items.filter((i) => i.name.toLowerCase().includes(q)) : items
   if (err) return <div className="p-8 text-destructive">Error: {err}</div>
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
           <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Ingredients</h1>
-          <p className="text-gray-500">{items.length} ingredients</p>
+          <p className="text-gray-500">{shown.length} ingredients</p>
         </div>
         <button onClick={onNew} className={buttonClasses({ size: 'sm' })}>
           + New ingredient
         </button>
       </div>
-      {items.length === 0 ? (
-        <p className="text-muted-foreground">No ingredients yet — add one.</p>
+      {shown.length === 0 ? (
+        <p className="text-muted-foreground">
+          {search ? 'No ingredients match your search.' : 'No ingredients yet — add one.'}
+        </p>
       ) : (
         <div className="flex flex-col gap-4">
-          {items.map((i) => (
+          {shown.map((i) => (
             <button key={i.id} onClick={() => onOpen(i.id)} className="block w-full text-left">
               <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />

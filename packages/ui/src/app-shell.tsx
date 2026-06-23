@@ -53,6 +53,8 @@ export function AppShell({
   children,
   footer,
   ingredientsNav,
+  searchValue,
+  onSearchChange,
 }: {
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
@@ -61,6 +63,9 @@ export function AppShell({
   footer?: ReactNode;
   /** Desktop-only: inject a first-class "Ingredients" destination into the nav (web shells reach ingredients via recipe links). */
   ingredientsNav?: boolean;
+  /** When provided, the chrome search becomes a controlled input (e.g. the desktop filters the active list). */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }) {
   const navItems = ingredientsNav
     ? [
@@ -105,6 +110,9 @@ export function AppShell({
               aria-label="Search"
               placeholder="Search…"
               className="h-11 w-full rounded-full border border-input bg-card pl-5 pr-12 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+              {...(onSearchChange
+                ? { value: searchValue ?? "", onChange: (e) => onSearchChange(e.target.value) }
+                : {})}
             />
             <span className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <Search className="size-4" />
