@@ -106,8 +106,27 @@ function pathForView(view: View): string {
   }
 }
 
+// Browser-style view history so ⌘[ / ⌘] go back / forward. `setView` pushes a new entry
+// (truncating any forward history), so every existing setView(...) call just works.
+function useHistory(initial: View) {
+  const [state, setState] = useState<{ stack: View[]; index: number }>({ stack: [initial], index: 0 })
+  const setView = useCallback((next: View) => {
+    setState((s) => {
+      const stack = s.stack.slice(0, s.index + 1)
+      stack.push(next)
+      return { stack, index: stack.length - 1 }
+    })
+  }, [])
+  const back = useCallback(() => setState((s) => (s.index > 0 ? { ...s, index: s.index - 1 } : s)), [])
+  const forward = useCallback(
+    () => setState((s) => (s.index < s.stack.length - 1 ? { ...s, index: s.index + 1 } : s)),
+    [],
+  )
+  return { view: state.stack[state.index], setView, back, forward }
+}
+
 export function App() {
-  const [view, setView] = useState<View>({ mode: 'list' })
+  const { view, setView, back, forward } = useHistory({ mode: 'list' })
   const [recipes, setRecipes] = useState<RecipeCard[]>([])
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -176,6 +195,14 @@ export function App() {
       } else if (meta && e.key === '3') {
         e.preventDefault()
         navigate('/ingredients')
+      } else if (meta && e.key === '[') {
+        e.preventDefault()
+        setSearch('')
+        back()
+      } else if (meta && e.key === ']') {
+        e.preventDefault()
+        setSearch('')
+        forward()
       } else if ((meta && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) {
         e.preventDefault()
         focusSearch()
@@ -186,7 +213,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [navigate])
+  }, [navigate, back, forward])
 
   // Desktop-only local-first controls (Sync/Compact + theme) in the sidebar footer.
   const footer = (
