@@ -87,6 +87,32 @@ lines.push("  --ring: var(--color-green);");
 lines.push("  --radius: 0.625rem;");
 lines.push("}");
 lines.push("");
+lines.push("/* Dark theme — applied via a `.dark` class on the root (OS appearance + manual toggle). */");
+lines.push(".dark {");
+lines.push("  color-scheme: dark;");
+lines.push("  --background: #1a1a1a;");
+lines.push("  --foreground: var(--color-gray-100);");
+lines.push("  --card: var(--color-gray-900);");
+lines.push("  --card-foreground: var(--color-gray-100);");
+lines.push("  --popover: var(--color-gray-900);");
+lines.push("  --popover-foreground: var(--color-gray-100);");
+lines.push("  --primary: var(--color-green);");
+lines.push("  --primary-foreground: #ffffff;");
+lines.push("  --secondary: var(--color-gray-800);");
+lines.push("  --secondary-foreground: var(--color-gray-100);");
+lines.push("  --muted: var(--color-gray-800);");
+lines.push("  --muted-foreground: var(--color-gray-400);");
+lines.push("  --accent: var(--color-gray-800);");
+lines.push("  --accent-foreground: var(--color-gray-100);");
+lines.push("  --destructive: var(--color-red);");
+lines.push("  --destructive-foreground: #ffffff;");
+lines.push("  --border: var(--color-gray-800);");
+lines.push("  --input: var(--color-gray-700);");
+lines.push("  --ring: var(--color-green);");
+lines.push("  /* brighten the dark-green heading token so it reads on a dark surface */");
+lines.push("  --color-primary-dark: var(--color-green);");
+lines.push("}");
+lines.push("");
 lines.push("@theme inline {");
 for (const t of [
   "background",
@@ -118,6 +144,9 @@ lines.push("");
 //    these, classes like `data-checked:bg-primary` / `data-open:animate-in`
 //    silently do nothing.
 const variants = {
+  // class-based dark mode: `dark:` utilities key off a `.dark` class on the root
+  // (set from the OS appearance + a manual toggle in the desktop shell).
+  dark: ["&:where(.dark, .dark *)"],
   "data-open": ['&:where([data-state="open"])', '&:where([data-open]:not([data-open="false"]))'],
   "data-closed": ['&:where([data-state="closed"])', '&:where([data-closed]:not([data-closed="false"]))'],
   "data-checked": ['&:where([data-state="checked"])', '&:where([data-checked]:not([data-checked="false"]))'],
