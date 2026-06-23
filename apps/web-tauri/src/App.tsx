@@ -24,6 +24,7 @@ import {
   vegifyData,
   type IngredientCard,
   type IngredientEditData,
+  type IngredientSearchResult,
   type RecipeCard,
   type RecipeView,
 } from './bindings'
@@ -196,6 +197,21 @@ export function App() {
         </div>
       ) : null}
 
+      {search.trim() ? (
+        <SearchResults
+          search={search}
+          recipes={recipes}
+          onOpenRecipe={(id) => {
+            setSearch('')
+            setView({ mode: 'recipe', id })
+          }}
+          onOpenIngredient={(id) => {
+            setSearch('')
+            setView({ mode: 'ingredient', id })
+          }}
+        />
+      ) : (
+        <>
       {view.mode === 'home' && <Home onBrowse={() => setView({ mode: 'list' })} />}
 
       {view.mode === 'list' && (
@@ -269,7 +285,94 @@ export function App() {
           />
         </div>
       )}
+        </>
+      )}
     </AppShell>
+  )
+}
+
+function SearchResults({
+  search,
+  recipes,
+  onOpenRecipe,
+  onOpenIngredient,
+}: {
+  search: string
+  recipes: RecipeCard[]
+  onOpenRecipe: (id: string) => void
+  onOpenIngredient: (id: string) => void
+}) {
+  const q = search.trim().toLowerCase()
+  const recipeHits = recipes.filter((r) => r.name.toLowerCase().includes(q))
+  const [ingredientHits, setIngredientHits] = useState<IngredientSearchResult[]>([])
+  useEffect(() => {
+    vegifyData
+      .searchIngredients(search.trim())
+      .then(setIngredientHits)
+      .catch(() => setIngredientHits([]))
+  }, [search])
+  const total = recipeHits.length + ingredientHits.length
+  return (
+    <div className="mx-auto max-w-3xl p-8">
+      <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Search</h1>
+      <p className="mb-8 text-gray-500">
+        {total} {total === 1 ? 'result' : 'results'} for “{search.trim()}”
+      </p>
+      {total === 0 ? (
+        <p className="text-muted-foreground">No recipes or ingredients match.</p>
+      ) : (
+        <div className="space-y-8">
+          {recipeHits.length > 0 && (
+            <section>
+              <h2 className="mb-3 font-serif text-xl font-bold">Recipes</h2>
+              <div className="flex flex-col gap-3">
+                {recipeHits.map((r) => (
+                  <ResultRow
+                    key={r.id}
+                    name={r.name}
+                    sub={r.subtitle ?? 'Recipe'}
+                    onOpen={() => onOpenRecipe(r.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {ingredientHits.length > 0 && (
+            <section>
+              <h2 className="mb-3 font-serif text-xl font-bold">Ingredients</h2>
+              <div className="flex flex-col gap-3">
+                {ingredientHits.map((i) => (
+                  <ResultRow
+                    key={i.id}
+                    name={i.name}
+                    sub={
+                      i.caloriesPer100g != null
+                        ? `${Math.round(i.caloriesPer100g)} cal/100g`
+                        : 'Ingredient'
+                    }
+                    onOpen={() => onOpenIngredient(i.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResultRow({ name, sub, onOpen }: { name: string; sub: string; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} className="block w-full text-left">
+      <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
+        <div className="size-12 shrink-0 rounded-lg bg-muted" />
+        <div className="min-w-0">
+          <h3 className="truncate font-serif text-xl font-semibold">{name}</h3>
+          <p className="truncate text-sm text-muted-foreground">{sub}</p>
+        </div>
+      </div>
+    </button>
   )
 }
 
