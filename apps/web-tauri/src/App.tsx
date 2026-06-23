@@ -157,8 +157,38 @@ export function App() {
     [navigate],
   )
 
-  // Desktop-only local-first controls + the ingredient browser entry point (web has neither),
-  // tucked into the sidebar footer so the shared nav stays identical to the web shells.
+  // Navigation keyboard shortcuts: ⌘1/2/3 jump to Home/Explore/Ingredients, ⌘K or "/" focuses
+  // the search, Esc clears it. ⌘-or-Ctrl so it behaves the same regardless of keyboard.
+  useEffect(() => {
+    const focusSearch = () =>
+      document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey
+      const el = e.target as HTMLElement | null
+      const typing =
+        el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable === true
+      if (meta && e.key === '1') {
+        e.preventDefault()
+        navigate('/')
+      } else if (meta && e.key === '2') {
+        e.preventDefault()
+        navigate('/recipes')
+      } else if (meta && e.key === '3') {
+        e.preventDefault()
+        navigate('/ingredients')
+      } else if ((meta && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) {
+        e.preventDefault()
+        focusSearch()
+      } else if (e.key === 'Escape') {
+        setSearch('')
+        ;(document.activeElement as HTMLElement | null)?.blur?.()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate])
+
+  // Desktop-only local-first controls (Sync/Compact + theme) in the sidebar footer.
   const footer = (
     <div className="space-y-2 border-t border-white/15 pt-4">
       <div className="flex gap-2 px-3">
@@ -515,9 +545,10 @@ function RecipeDetail({
           ) : null}
 
           <h2 className="mt-8 text-center font-serif text-xl font-bold">Ingredients</h2>
-          <ul className="mx-auto mt-4 grid max-w-2xl list-disc grid-cols-1 gap-x-8 gap-y-1.5 pl-5 marker:text-primary sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {recipe.items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="flex items-start gap-2">
+                <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
                 <button
                   type="button"
                   onClick={() => (item.recipeId ? onOpenRecipe(item.recipeId) : onOpenIngredient(item.id))}
