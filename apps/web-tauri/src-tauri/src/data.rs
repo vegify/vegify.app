@@ -55,6 +55,9 @@ pub struct RecipeItem {
     pub id: String,
     pub name: String,
     pub amount: Amount,
+    /// Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),
+    /// so the UI links to that recipe's page instead of a (sparse) ingredient page.
+    pub recipe_id: Option<String>,
 }
 
 #[derive(Serialize, Type)]
@@ -870,10 +873,11 @@ impl VegifyData for Db {
         };
 
         let mut istmt = conn.prepare(
-            "SELECT i.id, i.name, a.amount, a.unit, a.grams
+            "SELECT i.id, i.name, a.amount, a.unit, a.grams, r2.id AS recipe_id
              FROM ingredient_in_recipe iir
              JOIN ingredients i ON i.id = iir.ingredient_id
              JOIN amounts a ON a.id = iir.amount_id
+             LEFT JOIN recipes r2 ON r2.as_ingredient_id = i.id
              WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
         )?;
         let items = istmt
@@ -886,6 +890,7 @@ impl VegifyData for Db {
                         unit: row.get(3)?,
                         grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
                     },
+                    recipe_id: row.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;

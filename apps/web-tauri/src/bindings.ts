@@ -170,6 +170,11 @@ export type RecipeItem = {
 	id: string,
 	name: string,
 	amount: Amount,
+	/**
+	 *  Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),
+	 *  so the UI links to that recipe's page instead of a (sparse) ingredient page.
+	 */
+	recipeId: string | null,
 };
 
 export type RecipeItemInput = {
