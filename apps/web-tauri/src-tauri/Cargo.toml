@@ -5,6 +5,9 @@ description = "Vegify desktop (local-first)"
 authors = ["you"]
 edition = "2021"
 rust-version = "1.77.2"
+# Two binaries (app + the gen-bindings helper) → `cargo run` is ambiguous without this.
+# `tauri dev` invokes `cargo run` with no --bin, so it must know the default target.
+default-run = "app"
 
 [lib]
 name = "app_lib"
@@ -16,13 +19,13 @@ name = "gen-bindings"
 path = "src/bin/gen_bindings.rs"
 
 [build-dependencies]
-tauri-build = { version = "2.6.2" }
+tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.2" }
+tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 # `session` enables sqlite3session changesets — the scale-to-zero sync unit (capture local
 # writes as a blob, ship via S3, apply on other devices). `bundled` compiles SQLite in.
