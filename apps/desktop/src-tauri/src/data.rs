@@ -361,6 +361,112 @@ fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataE
     }
 }
 
+/// Content-API HTTP client — the sync transport. Mirrors `post_auth`: ureq + a Bearer session token,
+/// with the server's JSON `error` surfaced on non-2xx. `pull` reads the viewer's listed world in
+/// mutation shape; `post`/`delete` drain a local write to the server. The sync engine (next step) wires
+/// these to the `_outbox` and the local apply — so they're dead-code-allowed here until then.
+mod content_client {
+    #![allow(dead_code)]
+    use super::{auth_base_url, AuthErrorBody, DataError, Visibility};
+    use serde::Deserialize;
+
+    // The /api/content/pull payload, in @vegify/db mutation shape + each row's owner (see the web's
+    // PullContent). The sync engine maps these to SaveRecipeInput/SaveIngredientInput for the apply.
+    #[derive(Deserialize)]
+    pub struct PullPayload {
+        pub recipes: Vec<PullRecipe>,
+        pub ingredients: Vec<PullIngredient>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct PullRecipe {
+        pub id: String,
+        pub as_ingredient_id: String,
+        pub user_id: Option<String>,
+        pub visibility: Visibility,
+        pub name: String,
+        pub subtitle: Option<String>,
+        pub directions: Option<String>,
+        pub serving_grams: Option<f64>,
+        pub batch_grams: Option<f64>,
+        pub items: Vec<PullItem>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct PullItem {
+        pub ingredient_id: String,
+        pub grams: f64,
+        pub unit: Option<String>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct PullIngredient {
+        pub id: String,
+        pub user_id: Option<String>,
+        pub visibility: Visibility,
+        pub name: String,
+        pub description: Option<String>,
+        pub price: Option<i32>,
+        pub calories_per_100g: Option<f64>,
+        pub serving_grams: Option<f64>,
+        pub package_grams: Option<f64>,
+        pub nutrients: Vec<PullReading>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct PullReading {
+        pub name: String,
+        pub amount_per_100g: f64,
+        pub unit: String,
+    }
+
+    fn url(path: &str) -> String {
+        format!("{}/api/content/{path}", auth_base_url())
+    }
+
+    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
+        req.set("authorization", &format!("Bearer {token}"))
+    }
+
+    /// Map a ureq error → DataError, surfacing the server's JSON `error` message on non-2xx.
+    fn err(e: ureq::Error) -> DataError {
+        match e {
+            ureq::Error::Status(_, resp) => {
+                let msg = resp
+                    .into_json::<AuthErrorBody>()
+                    .map(|b| b.error)
+                    .unwrap_or_else(|_| "Request failed.".to_string());
+                DataError::Db(msg)
+            }
+            e => DataError::Db(format!("Network error: {e}")),
+        }
+    }
+
+    /// GET /api/content/pull → the viewer's listed world (public + own) in mutation shape.
+    pub fn pull(token: &str) -> Result<PullPayload, DataError> {
+        bearer(ureq::get(&url("pull")), token)
+            .call()
+            .map_err(err)?
+            .into_json::<PullPayload>()
+            .map_err(|e| DataError::Db(e.to_string()))
+    }
+
+    /// POST /api/content/{collection} with a save payload. The server upserts by id and stamps userId
+    /// from the session (so the body omits it). `collection` ∈ {"recipes", "ingredients"}.
+    pub fn post(token: &str, collection: &str, body: &serde_json::Value) -> Result<(), DataError> {
+        bearer(ureq::post(&url(collection)), token).send_json(body).map_err(err)?;
+        Ok(())
+    }
+
+    /// DELETE /api/content/{collection}?id=… — idempotent server-side (deleting a missing id no-ops).
+    pub fn delete(token: &str, collection: &str, id: &str) -> Result<(), DataError> {
+        bearer(ureq::delete(&format!("{}?id={id}", url(collection))), token)
+            .call()
+            .map_err(err)?;
+        Ok(())
+    }
+}
+
 /// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g (text ids).
 const CTE: &str = "
 WITH RECURSIVE
@@ -867,6 +973,11 @@ impl Db {
         self.auth.lock().unwrap().as_ref().map(|s| s.user.id.clone())
     }
 
+    /// The current opaque session token (for the content API's Bearer auth + server-side logout).
+    fn current_token(&self) -> Option<String> {
+        self.auth.lock().unwrap().as_ref().map(|s| s.token.clone())
+    }
+
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
     /// recipe `creator`) resolve on-device. Runs outside `write_capture` — identity isn't synced
     /// content. Idempotent.
@@ -1362,7 +1473,7 @@ impl VegifyData for Db {
     }
 
     fn sign_out(&self) -> Result<(), DataError> {
-        let token = self.auth.lock().unwrap().as_ref().map(|s| s.token.clone());
+        let token = self.current_token();
         if let Some(token) = token {
             // best-effort server-side revoke; ignore network errors so logout always works locally
             let _ = ureq::post(&format!("{}/api/auth/logout", auth_base_url()))
@@ -2190,5 +2301,53 @@ mod tests {
         // deleteRecipe payload = { id } (drives DELETE /api/content/recipes?id=…).
         assert_eq!(rows[2].1["id"], serde_json::json!(rid));
         eprintln!("outbox FIFO {ops:?}; recipe payload's as-ingredient id matches the local row");
+    }
+
+    // Step 4: the content-API HTTP client against a running web shell (real network + Bearer auth).
+    // #[ignore]'d so the default suite needs no server. Run with the web build served on $VEGIFY_AUTH_URL:
+    //   VEGIFY_AUTH_URL=http://localhost:39008 \
+    //     cargo test --lib content_client_round_trip -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn content_client_round_trip_against_web() {
+        let blobs = std::env::temp_dir().join("vegify-client-blobs");
+        let db_path = std::env::temp_dir().join("vegify-client.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let _ = VegifyData::sign_out(&db); // clean slot
+        VegifyData::sign_in(
+            &db,
+            SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+        )
+        .expect("sign in");
+        let token = db.current_token().expect("token after sign in");
+
+        // pull: the seed world comes back in mutation shape (recipes carry their as-ingredient id).
+        let p = content_client::pull(&token).expect("pull");
+        eprintln!("pull: {} recipes, {} ingredients", p.recipes.len(), p.ingredients.len());
+        assert!(!p.recipes.is_empty() && !p.ingredients.is_empty(), "seed content pulled");
+        assert!(p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()), "recipes carry as-ingredient id");
+
+        // post a recipe via the client → it appears in a fresh pull.
+        let rid = new_id();
+        let body = serde_json::json!({
+            "id": rid, "asIngredientId": new_id(), "name": "Client Posted Loaf", "visibility": "public",
+            "servingGrams": 100.0, "batchGrams": 200.0, "items": []
+        });
+        content_client::post(&token, "recipes", &body).expect("post recipe");
+        let p2 = content_client::pull(&token).expect("pull2");
+        assert!(
+            p2.recipes.iter().any(|r| r.id == rid && r.name == "Client Posted Loaf"),
+            "posted recipe appears in the pull"
+        );
+
+        // delete via the client → gone from the next pull.
+        content_client::delete(&token, "recipes", &rid).expect("delete recipe");
+        let p3 = content_client::pull(&token).expect("pull3");
+        assert!(!p3.recipes.iter().any(|r| r.id == rid), "deleted recipe is gone");
+        VegifyData::sign_out(&db).ok();
+        eprintln!("content client round-trip OK: pull → post → pull → delete → pull");
     }
 }
