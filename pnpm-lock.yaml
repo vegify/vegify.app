@@ -17,6 +17,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@tanstack/react-router':
+        specifier: ^1.170.16
+        version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tauri-apps/api':
         specifier: ^2.4.0
         version: 2.11.1
