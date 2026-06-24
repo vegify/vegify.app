@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { Bell, Carrot, House, Mail, Salad, Search, Settings, User } from "lucide-react";
+import { Bell, Carrot, House, LogOut, Mail, Salad, Search, Settings, User } from "lucide-react";
 import { cn } from "./cn";
 import { ThemeToggle } from "./theme-toggle";
 import { VegifyLogo } from "./vegify-logo";
@@ -57,6 +57,8 @@ export function AppShell({
   ingredientsNav,
   searchValue,
   onSearchChange,
+  user,
+  onSignOut,
 }: {
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
@@ -68,6 +70,9 @@ export function AppShell({
   /** When provided, the chrome search becomes a controlled input (e.g. the desktop filters the active list). */
   searchValue?: string;
   onSearchChange?: (value: string) => void;
+  /** The signed-in user — renders an account block + sign-out in the sidebar and mobile bar. */
+  user?: { name: string; email: string } | null;
+  onSignOut?: () => void;
 }) {
   const navItems = ingredientsNav
     ? [
@@ -95,6 +100,27 @@ export function AppShell({
         </nav>
         <div className="mt-auto space-y-3 px-3 pb-5">
           {footer}
+          {user ? (
+            <div className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-bold uppercase">
+                {user.name.trim().charAt(0) || "?"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold leading-tight">{user.name}</p>
+                <p className="truncate text-xs leading-tight text-white/70">{user.email}</p>
+              </div>
+              {onSignOut ? (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  aria-label="Sign out"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/80 transition hover:bg-white/10 hover:text-white"
+                >
+                  <LogOut className="size-5" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <ThemeToggle />
         </div>
       </aside>
@@ -103,7 +129,13 @@ export function AppShell({
       <header className="flex h-14 shrink-0 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
         <Settings className="size-6" aria-label="Settings" />
         <VegifyLogo className="h-6 w-auto" />
-        <Mail className="size-6" aria-label="Inbox" />
+        {onSignOut ? (
+          <button type="button" onClick={onSignOut} aria-label="Sign out">
+            <LogOut className="size-6" />
+          </button>
+        ) : (
+          <Mail className="size-6" aria-label="Inbox" />
+        )}
       </header>
 
       {/* ===== Content ===== */}

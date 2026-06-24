@@ -13,7 +13,8 @@ const saveFn = createServerFn({ method: 'POST' })
   .validator((input: RecipeFormInput) => input)
   .handler(async ({ data }) => {
     const { saveRecipe } = await import('@vegify/db')
-    return saveRecipe(data)
+    const { currentUserId } = await import('../auth')
+    return saveRecipe({ ...data, userId: await currentUserId() })
   })
 
 export const Route = createFileRoute('/recipes/new')({

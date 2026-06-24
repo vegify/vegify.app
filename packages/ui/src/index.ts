@@ -27,6 +27,7 @@ export {
   type RecipeFormDefaults,
   type IngredientSearchItem,
 } from "./recipe-form";
+export { LoginView, SignupView, type AuthSubmitResult } from "./auth-form";
 export {
   HomeView,
   RecipeListView,
