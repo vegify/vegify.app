@@ -14,3 +14,4 @@ export * from "./schema";
 export * as schema from "./schema";
 export * from "./mutations";
 export * from "./nutrition";
+export * from "./auth";

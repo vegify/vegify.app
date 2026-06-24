@@ -8,6 +8,7 @@ import {
   recipes,
   users,
 } from "./schema";
+import { hashPassword } from "./auth";
 
 // Seed content ported in spirit from vegify-laravel's seeders (Caputo 00 Flour, Biga)
 // plus a nested-recipe example to exercise the recipe-as-ingredient pattern.
@@ -23,9 +24,14 @@ async function main() {
   await db.delete(nutrients);
   await db.delete(users);
 
+  // Dev login: dev@example.com / "dev-password" (local seed only — not a real credential).
   const [john] = await db
     .insert(users)
-    .values({ name: "John", email: "dev@example.com" })
+    .values({
+      name: "John",
+      email: "dev@example.com",
+      passwordHash: await hashPassword("dev-password"),
+    })
     .returning();
 
   const amount = async (unit: string, qty: number, grams: number) =>

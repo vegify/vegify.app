@@ -36,8 +36,26 @@ export const users = sqliteTable("users", {
   id: pk(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  passwordHash: text("password_hash"),
   ...timestamps,
 });
+
+// Opaque server-side sessions. The raw token is handed to the client (httpOnly cookie on web,
+// OS keychain on desktop); only its SHA-256 hash lives here, so a DB leak yields no usable
+// tokens. Lookups are by hashed_token (unique); expired rows are filtered at validate time.
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: pk(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    hashedToken: text("hashed_token").notNull().unique(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)]
+);
 
 export const amounts = sqliteTable("amounts", {
   id: pk(),
@@ -202,6 +220,14 @@ export const products = sqliteTable("products", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   ingredients: many(ingredients),
+  sessions: many(sessions),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
 }));
 
 export const ingredientsRelations = relations(ingredients, ({ one, many }) => ({
