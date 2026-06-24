@@ -4,7 +4,7 @@
 use app_lib::data::*;
 
 fn main() {
-    let db = Db::open(&app_lib::db_path(), &app_lib::blob_dir()).expect("open vegify db");
+    let db = app_lib::open_db().expect("open vegify db");
 
     tauri::Builder::default()
         .setup(|app| {

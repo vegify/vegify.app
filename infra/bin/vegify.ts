@@ -4,6 +4,7 @@ import { VpcStack } from "../lib/vpc-stack.js";
 import { DbStack } from "../lib/db-stack.js";
 import { WebNextStack } from "../lib/web-next-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
+import { SyncStack } from "../lib/sync-stack.js";
 
 const app = new App();
 const env = {
@@ -32,3 +33,7 @@ new WebStartStack(app, "VegifyWebStart", {
   dbClientSecurityGroup: db.clientSecurityGroup,
   databaseUrl: db.internalUrl,
 });
+
+// Desktop local-first sync: an S3 changeset-blob store (scale-to-zero) + a least-privilege client.
+// Independent of the VPC/db/web stacks. Outputs the bucket + a Secrets Manager creds secret.
+new SyncStack(app, "VegifySync", { env });
