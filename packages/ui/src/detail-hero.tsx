@@ -1,4 +1,6 @@
+import type { ComponentType } from "react";
 import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react";
+import type { AppShellLinkProps } from "./app-shell";
 import { cn } from "./cn";
 
 /**
@@ -11,12 +13,15 @@ export function DetailHero({
   label,
   editHref,
   onEdit,
+  LinkComponent,
   className,
 }: {
   label: string;
-  /** When set, the edit FAB becomes a link to this route (plain <a>, framework-agnostic). */
+  /** When set, the edit FAB links to this route. */
   editHref?: string;
-  /** When set, the edit FAB becomes a button calling this (router-less shells like Tauri). Wins over editHref. */
+  /** With editHref, routes the edit FAB through the shell's nav port (preferred — works on Tauri too). */
+  LinkComponent?: ComponentType<AppShellLinkProps>;
+  /** When set (and no LinkComponent), the edit FAB becomes a button calling this. Wins over a plain editHref. */
   onEdit?: () => void;
   className?: string;
 }) {
@@ -38,7 +43,11 @@ export function DetailHero({
         >
           <SaveIcon className="size-5" />
         </button>
-        {onEdit ? (
+        {LinkComponent && editHref ? (
+          <LinkComponent href={editHref} aria-label="Edit" className={editFabClass}>
+            <PencilIcon className="size-5" />
+          </LinkComponent>
+        ) : onEdit ? (
           <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
             <PencilIcon className="size-5" />
           </button>

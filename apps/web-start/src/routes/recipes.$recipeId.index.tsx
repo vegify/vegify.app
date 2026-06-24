@@ -1,21 +1,11 @@
-import { Link, createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-  DetailHero,
-  NutritionFacts,
-  NutritionFactsFab,
-  type NutritionFactsData,
-} from '@vegify/ui'
+import { RecipeDetailView, type NutritionFactsData, type RecipeDetailVM } from '@vegify/ui'
+import { LinkAdapter } from '../link'
 
 const getRecipe = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<RecipeDetailVM> => {
     const { db, getRecipeNutrition } = await import('@vegify/db')
     const id = data
     const recipe = await db.query.recipes.findFirst({
@@ -29,8 +19,53 @@ const getRecipe = createServerFn({ method: 'GET' })
       },
     })
     if (!recipe) throw notFound()
-    const nutrition = await getRecipeNutrition(id)
-    return { recipe, nutrition }
+    const agg = await getRecipeNutrition(id)
+
+    // An item whose ingredient is itself a recipe's as-ingredient links to the recipe page, not
+    // the ingredient page (mirrors the desktop) — resolve those in one extra query.
+    const itemIngredientIds = recipe.items
+      .map((it) => it.ingredient?.id)
+      .filter((x): x is string => Boolean(x))
+    const subRecipes = itemIngredientIds.length
+      ? await db.query.recipes.findMany({
+          columns: { id: true, asIngredientId: true },
+          where: (r, { inArray }) => inArray(r.asIngredientId, itemIngredientIds),
+        })
+      : []
+    const recipeByIngredient = new Map(subRecipes.map((r) => [r.asIngredientId, r.id]))
+
+    const serving = recipe.asIngredient.servingSize
+    const nutrition: NutritionFactsData = {
+      heading: 'This Recipe',
+      serving: serving ? { amount: serving.amount, unit: serving.unit, grams: serving.grams } : null,
+      servingsPerBatch:
+        recipe.asIngredient.batchSize && serving?.grams
+          ? recipe.asIngredient.batchSize.grams / serving.grams
+          : null,
+      caloriesPerServing:
+        agg.caloriesPer100g != null && serving?.grams
+          ? (agg.caloriesPer100g * serving.grams) / 100
+          : agg.caloriesPer100g,
+      readings: agg.readings,
+    }
+
+    return {
+      id: recipe.id,
+      name: recipe.asIngredient.name,
+      subtitle: recipe.subtitle,
+      creator: recipe.asIngredient.creator?.name,
+      directions: recipe.directions,
+      items: recipe.items.map((item) => {
+        const ing = item.ingredient
+        const subRecipeId = ing ? recipeByIngredient.get(ing.id) : undefined
+        return {
+          key: item.id,
+          label: `${item.amount?.amount ?? ''} ${item.amount?.unit ?? ''} ${ing?.name ?? '(unknown)'}`.trim(),
+          href: subRecipeId ? `/recipes/${subRecipeId}` : `/ingredients/${ing?.id ?? ''}`,
+        }
+      }),
+      nutrition,
+    }
   })
 
 export const Route = createFileRoute('/recipes/$recipeId/')({
@@ -39,86 +74,5 @@ export const Route = createFileRoute('/recipes/$recipeId/')({
 })
 
 function RecipePage() {
-  const { recipe, nutrition: agg } = Route.useLoaderData()
-  const serving = recipe.asIngredient.servingSize
-  const nutrition: NutritionFactsData = {
-    heading: 'This Recipe',
-    serving: serving
-      ? { amount: serving.amount, unit: serving.unit, grams: serving.grams }
-      : null,
-    servingsPerBatch:
-      recipe.asIngredient.batchSize && serving?.grams
-        ? recipe.asIngredient.batchSize.grams / serving.grams
-        : null,
-    caloriesPerServing:
-      agg.caloriesPer100g != null && serving?.grams
-        ? (agg.caloriesPer100g * serving.grams) / 100
-        : agg.caloriesPer100g,
-    readings: agg.readings,
-  }
-
-  return (
-    <div className="flex">
-      <div className="min-w-0 flex-1">
-        <div className="mx-auto max-w-3xl p-6 lg:p-8">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink>@{recipe.asIngredient.creator?.name ?? 'user'}</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{recipe.asIngredient.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-
-          <DetailHero
-            label="Recipe Image"
-            editHref={`/recipes/${recipe.id}/edit`}
-            className="mt-4"
-          />
-
-          <h1 className="mt-10 text-center text-4xl font-bold text-primary-dark">
-            {recipe.asIngredient.name}
-          </h1>
-          {recipe.subtitle ? (
-            <p className="mt-1 text-center text-muted-foreground">{recipe.subtitle}</p>
-          ) : null}
-
-          <h2 className="mt-8 text-center text-xl font-bold">Ingredients</h2>
-          <ul className="mx-auto mt-4 grid max-w-2xl list-disc grid-cols-1 gap-x-8 gap-y-1.5 pl-5 marker:text-primary sm:grid-cols-2 lg:grid-cols-3">
-            {recipe.items.map((item) => (
-              <li key={item.id}>
-                {item.ingredient ? (
-                  <Link
-                    to="/ingredients/$ingredientId"
-                    params={{ ingredientId: String(item.ingredient.id) }}
-                    className="hover:text-primary hover:underline"
-                  >
-                    {item.amount?.amount} {item.amount?.unit} {item.ingredient.name}
-                  </Link>
-                ) : (
-                  <span>(unknown)</span>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          <h2 className="mt-8 text-center text-xl font-bold">Directions</h2>
-          <p className="mt-3 text-muted-foreground">
-            {recipe.directions ?? 'No directions yet.'}
-          </p>
-        </div>
-      </div>
-
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
-        <div className="lg:sticky lg:top-6">
-          <NutritionFacts data={nutrition} />
-        </div>
-      </aside>
-
-      <NutritionFactsFab data={nutrition} />
-    </div>
-  )
+  return <RecipeDetailView recipe={Route.useLoaderData()} LinkComponent={LinkAdapter} />
 }

@@ -1,44 +1,38 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AppShell,
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-  buttonClasses,
-  DetailHero,
+  HomeView,
+  IngredientDetailView,
   IngredientForm,
-  NutritionFacts,
-  NutritionFactsFab,
+  IngredientListView,
+  RecipeDetailView,
   RecipeForm,
+  RecipeListView,
+  SearchResultsView,
   type AppShellLinkProps,
+  type IngredientDetailVM,
   type IngredientFormDefaults,
   type IngredientFormInput,
+  type IngredientListItem,
+  type NavLink,
   type NutritionFactsData,
+  type RecipeDetailVM,
   type RecipeFormDefaults,
   type RecipeFormInput,
+  type RecipeListItem,
 } from '@vegify/ui'
-import {
-  vegifyData,
-  type IngredientCard,
-  type IngredientEditData,
-  type IngredientSearchResult,
-  type RecipeCard,
-  type RecipeView,
-} from './bindings'
+import { vegifyData, type IngredientEditData, type RecipeCard, type RecipeView } from './bindings'
 
-// The SAME branded shell (AppShell, DetailHero, NutritionFacts, the shared forms) the web app
-// renders — but every read AND write goes through the on-device Rust DAL over typed IPC
-// (vegifyData), not a server. Edits work offline: each save is captured as a SQLite changeset
-// and shipped via the blob store (S3) on sync(). web-start drives this same JSX through its
-// router; the desktop drives it through the `view` state machine below + a router-less adapter.
+// SAME shared screens (@vegify/ui) the web app renders — but every read AND write goes through the
+// on-device Rust DAL over typed IPC (vegifyData), not a server. This file is the desktop ADAPTER:
+// it maps IPC results to the screens' view-models, and maps the screens' href-based navigation onto
+// an in-process `view` state machine (no router). web-start is the same screens with a server +
+// router adapter; the screens themselves live once, in @vegify/ui.
 
 // specta types every f64 wire field as `number | null` (JSON can't carry NaN/Inf), so coerce reads.
 const num = (n: number | null) => n ?? 0
 
-// Shared by create + edit: the RecipeForm ingredient picker, backed by the DAL search.
+// --- form helpers (shared by create + edit) ---
 const searchForForm = async (q: string) => {
   const results = await vegifyData.searchIngredients(q)
   return results.map((r) => ({
@@ -49,8 +43,6 @@ const searchForForm = async (q: string) => {
     readings: r.readings.map((x) => ({ name: x.name, amountPer100g: num(x.amountPer100g), unit: x.unit })),
   }))
 }
-
-// Shared by create (input.id absent) + edit (input.id set → updates that recipe).
 const saveRecipeFromForm = (input: RecipeFormInput) =>
   vegifyData.saveRecipe({
     id: input.id ?? null,
@@ -61,8 +53,6 @@ const saveRecipeFromForm = (input: RecipeFormInput) =>
     batchGrams: input.batchGrams,
     items: input.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams, unit: null })),
   })
-
-// Shared by create + edit: IngredientForm gives per-serving values already converted to per-100g.
 const saveIngredientFromForm = (input: IngredientFormInput) =>
   vegifyData.saveIngredient({
     id: input.id ?? null,
@@ -74,6 +64,49 @@ const saveIngredientFromForm = (input: IngredientFormInput) =>
     packageGrams: input.packageGrams,
     nutrients: input.nutrients,
   })
+
+// --- IPC results → shared view-models (the desktop's data adapter) ---
+const toRecipeListItem = (r: RecipeCard): RecipeListItem => ({ id: r.id, name: r.name, subtitle: r.subtitle })
+
+function recipeViewToNutrition(recipe: RecipeView): NutritionFactsData {
+  const serving = recipe.serving
+  return {
+    heading: 'This Recipe',
+    serving: serving ? { amount: num(serving.amount), unit: serving.unit ?? 'g', grams: num(serving.grams) } : null,
+    servingsPerBatch: recipe.batchGrams && serving?.grams ? recipe.batchGrams / serving.grams : null,
+    caloriesPerServing:
+      recipe.nutrition.caloriesPer100g != null && serving?.grams
+        ? (recipe.nutrition.caloriesPer100g * serving.grams) / 100
+        : recipe.nutrition.caloriesPer100g,
+    readings: recipe.nutrition.readings.map((r) => ({ name: r.name, amountPer100g: num(r.amountPer100g), unit: r.unit })),
+  }
+}
+function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
+  return {
+    id,
+    name: recipe.name,
+    subtitle: recipe.subtitle,
+    creator: recipe.creator,
+    directions: recipe.directions,
+    items: recipe.items.map((item) => ({
+      key: item.id,
+      label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
+      href: item.recipeId ? `/recipes/${item.recipeId}` : `/ingredients/${item.id}`,
+    })),
+    nutrition: recipeViewToNutrition(recipe),
+  }
+}
+function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
+  const grams = data.servingGrams
+  const nutrition: NutritionFactsData = {
+    heading: 'This Ingredient',
+    caloriesPerServing: data.caloriesPer100g != null ? data.caloriesPer100g * (grams ? grams / 100 : 1) : null,
+    serving: grams != null ? { amount: grams, unit: 'g', grams } : null,
+    servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
+    readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+  }
+  return { id: data.id, name: data.name, description: data.description, nutrition }
+}
 
 type View =
   | { mode: 'home' }
@@ -104,6 +137,22 @@ function pathForView(view: View): string {
     case 'new-ingredient':
       return '/ingredients/new'
   }
+}
+
+// The desktop's router: maps an href (as the shared screens emit) to a view. This is the inverse of
+// pathForView and the reason the screens can be router-agnostic — web-start uses a real router here.
+function viewForHref(href: string): View | null {
+  if (href === '/') return { mode: 'home' }
+  if (href === '/recipes') return { mode: 'list' }
+  if (href === '/recipes/new') return { mode: 'new-recipe' }
+  if (href === '/ingredients') return { mode: 'ingredients' }
+  if (href === '/ingredients/new') return { mode: 'new-ingredient' }
+  let m: RegExpMatchArray | null
+  if ((m = href.match(/^\/recipes\/([^/]+)\/edit$/))) return { mode: 'edit-recipe', id: m[1] }
+  if ((m = href.match(/^\/recipes\/([^/]+)$/))) return { mode: 'recipe', id: m[1] }
+  if ((m = href.match(/^\/ingredients\/([^/]+)\/edit$/))) return { mode: 'edit-ingredient', id: m[1] }
+  if ((m = href.match(/^\/ingredients\/([^/]+)$/))) return { mode: 'ingredient', id: m[1] }
+  return null
 }
 
 // Browser-style view history so ⌘[ / ⌘] go back / forward. `setView` pushes a new entry
@@ -158,15 +207,15 @@ export function App() {
     }).catch((e) => setError(String(e?.message ?? e)))
   }
 
-  // AppShell injects this for the sidebar/tab-bar nav. The web shells pass a router Link; the
-  // desktop maps the shared nav hrefs onto the `view` state machine — no router needed.
-  const navigate = useCallback((href: string) => {
-    setSearch('')
-    if (href === '/') setView({ mode: 'home' })
-    else if (href === '/recipes') setView({ mode: 'list' })
-    else if (href === '/ingredients') setView({ mode: 'ingredients' })
-    else if (href === '/ingredients/new') setView({ mode: 'new-ingredient' })
-  }, [])
+  // The screens (and AppShell) navigate by href; the desktop maps that href to its view state.
+  const navigate = useCallback(
+    (href: string) => {
+      setSearch('')
+      const next = viewForHref(href)
+      if (next) setView(next)
+    },
+    [setView],
+  )
   const LinkComponent = useCallback(
     ({ href, children, className, ...rest }: AppShellLinkProps) => (
       <button type="button" className={className} onClick={() => navigate(href)} {...rest}>
@@ -177,15 +226,13 @@ export function App() {
   )
 
   // Navigation keyboard shortcuts: ⌘1/2/3 jump to Home/Explore/Ingredients, ⌘K or "/" focuses
-  // the search, Esc clears it. ⌘-or-Ctrl so it behaves the same regardless of keyboard.
+  // the search, Esc clears it, ⌘[ / ⌘] go back / forward.
   useEffect(() => {
-    const focusSearch = () =>
-      document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
+    const focusSearch = () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
       const el = e.target as HTMLElement | null
-      const typing =
-        el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable === true
+      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable === true
       if (meta && e.key === '1') {
         e.preventDefault()
         navigate('/')
@@ -255,182 +302,135 @@ export function App() {
       ) : null}
 
       {search.trim() ? (
-        <SearchResults
-          search={search}
-          recipes={recipes}
-          onOpenRecipe={(id) => {
-            setSearch('')
-            setView({ mode: 'recipe', id })
-          }}
-          onOpenIngredient={(id) => {
-            setSearch('')
-            setView({ mode: 'ingredient', id })
-          }}
-        />
+        <SearchRoute search={search.trim()} recipes={recipes} LinkComponent={LinkComponent} />
       ) : (
         <>
-      {view.mode === 'home' && <Home onBrowse={() => setView({ mode: 'list' })} />}
+          {view.mode === 'home' && <HomeView LinkComponent={LinkComponent} />}
 
-      {view.mode === 'list' && (
-        <RecipeList
-          recipes={recipes}
-          search={search}
-          onOpen={(id) => setView({ mode: 'recipe', id })}
-          onNew={() => setView({ mode: 'new-recipe' })}
-        />
-      )}
+          {view.mode === 'list' && (
+            <RecipeListView recipes={recipes.map(toRecipeListItem)} LinkComponent={LinkComponent} />
+          )}
 
-      {view.mode === 'recipe' && (
-        <RecipeDetail
-          id={view.id}
-          onEdit={() => setView({ mode: 'edit-recipe', id: view.id })}
-          onOpenIngredient={(ingId) => setView({ mode: 'ingredient', id: ingId })}
-          onOpenRecipe={(rid) => setView({ mode: 'recipe', id: rid })}
-        />
-      )}
+          {view.mode === 'recipe' && <RecipeDetailRoute id={view.id} LinkComponent={LinkComponent} />}
 
-      {view.mode === 'edit-recipe' && (
-        <EditRecipe
-          id={view.id}
-          onSaved={() => setView({ mode: 'recipe', id: view.id })}
-          onDeleted={() => {
-            refresh()
-            setView({ mode: 'list' })
-          }}
-        />
-      )}
+          {view.mode === 'edit-recipe' && (
+            <EditRecipe
+              id={view.id}
+              onSaved={() => setView({ mode: 'recipe', id: view.id })}
+              onDeleted={() => {
+                refresh()
+                setView({ mode: 'list' })
+              }}
+            />
+          )}
 
-      {view.mode === 'new-recipe' && (
-        <div className="mx-auto max-w-3xl p-6 lg:p-8">
-          <RecipeForm
-            onSearch={searchForForm}
-            onSave={async (input: RecipeFormInput) => {
-              await saveRecipeFromForm(input)
-              refresh()
-              setView({ mode: 'list' })
-            }}
-          />
-        </div>
-      )}
+          {view.mode === 'new-recipe' && (
+            <div className="mx-auto max-w-3xl p-6 lg:p-8">
+              <RecipeForm
+                onSearch={searchForForm}
+                onSave={async (input: RecipeFormInput) => {
+                  await saveRecipeFromForm(input)
+                  refresh()
+                  setView({ mode: 'list' })
+                }}
+              />
+            </div>
+          )}
 
-      {view.mode === 'ingredients' && (
-        <IngredientList
-          search={search}
-          onOpen={(id) => setView({ mode: 'ingredient', id })}
-          onNew={() => setView({ mode: 'new-ingredient' })}
-        />
-      )}
+          {view.mode === 'ingredients' && <IngredientListRoute LinkComponent={LinkComponent} />}
 
-      {view.mode === 'ingredient' && (
-        <IngredientDetail
-          id={view.id}
-          onEdit={() => setView({ mode: 'edit-ingredient', id: view.id })}
-        />
-      )}
+          {view.mode === 'ingredient' && <IngredientDetailRoute id={view.id} LinkComponent={LinkComponent} />}
 
-      {view.mode === 'edit-ingredient' && (
-        <EditIngredient id={view.id} onDone={() => setView({ mode: 'ingredients' })} />
-      )}
+          {view.mode === 'edit-ingredient' && (
+            <EditIngredient id={view.id} onDone={() => setView({ mode: 'ingredients' })} />
+          )}
 
-      {view.mode === 'new-ingredient' && (
-        <div className="mx-auto max-w-3xl p-6 lg:p-8">
-          <IngredientForm
-            onSave={async (input: IngredientFormInput) => {
-              await saveIngredientFromForm(input)
-              setView({ mode: 'ingredients' })
-            }}
-          />
-        </div>
-      )}
+          {view.mode === 'new-ingredient' && (
+            <div className="mx-auto max-w-3xl p-6 lg:p-8">
+              <IngredientForm
+                onSave={async (input: IngredientFormInput) => {
+                  await saveIngredientFromForm(input)
+                  setView({ mode: 'ingredients' })
+                }}
+              />
+            </div>
+          )}
         </>
       )}
     </AppShell>
   )
 }
 
-function SearchResults({
+// Search overlay: filters the already-loaded recipes + searches ingredients via the DAL, then
+// renders the SHARED SearchResultsView (same component web-start would use).
+function SearchRoute({
   search,
   recipes,
-  onOpenRecipe,
-  onOpenIngredient,
+  LinkComponent,
 }: {
   search: string
   recipes: RecipeCard[]
-  onOpenRecipe: (id: string) => void
-  onOpenIngredient: (id: string) => void
+  LinkComponent: NavLink
 }) {
-  const q = search.trim().toLowerCase()
-  const recipeHits = recipes.filter((r) => r.name.toLowerCase().includes(q))
-  const [ingredientHits, setIngredientHits] = useState<IngredientSearchResult[]>([])
+  const q = search.toLowerCase()
+  const recipeHits = recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem)
+  const [ingredientHits, setIngredientHits] = useState<IngredientListItem[]>([])
   useEffect(() => {
     vegifyData
-      .searchIngredients(search.trim())
-      .then(setIngredientHits)
+      .searchIngredients(search)
+      .then((res) =>
+        setIngredientHits(res.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))),
+      )
       .catch(() => setIngredientHits([]))
   }, [search])
-  const total = recipeHits.length + ingredientHits.length
   return (
-    <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Search</h1>
-      <p className="mb-8 text-gray-500">
-        {total} {total === 1 ? 'result' : 'results'} for “{search.trim()}”
-      </p>
-      {total === 0 ? (
-        <p className="text-muted-foreground">No recipes or ingredients match.</p>
-      ) : (
-        <div className="space-y-8">
-          {recipeHits.length > 0 && (
-            <section>
-              <h2 className="mb-3 font-serif text-xl font-bold">Recipes</h2>
-              <div className="flex flex-col gap-3">
-                {recipeHits.map((r) => (
-                  <ResultRow
-                    key={r.id}
-                    name={r.name}
-                    sub={r.subtitle ?? 'Recipe'}
-                    onOpen={() => onOpenRecipe(r.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-          {ingredientHits.length > 0 && (
-            <section>
-              <h2 className="mb-3 font-serif text-xl font-bold">Ingredients</h2>
-              <div className="flex flex-col gap-3">
-                {ingredientHits.map((i) => (
-                  <ResultRow
-                    key={i.id}
-                    name={i.name}
-                    sub={
-                      i.caloriesPer100g != null
-                        ? `${Math.round(i.caloriesPer100g)} cal/100g`
-                        : 'Ingredient'
-                    }
-                    onOpen={() => onOpenIngredient(i.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      )}
-    </div>
+    <SearchResultsView query={search} recipes={recipeHits} ingredients={ingredientHits} LinkComponent={LinkComponent} />
   )
 }
 
-function ResultRow({ name, sub, onOpen }: { name: string; sub: string; onOpen: () => void }) {
-  return (
-    <button onClick={onOpen} className="block w-full text-left">
-      <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
-        <div className="size-12 shrink-0 rounded-lg bg-muted" />
-        <div className="min-w-0">
-          <h3 className="truncate font-serif text-xl font-semibold">{name}</h3>
-          <p className="truncate text-sm text-muted-foreground">{sub}</p>
-        </div>
-      </div>
-    </button>
-  )
+type LinkProp = { LinkComponent: NavLink }
+
+function RecipeDetailRoute({ id, LinkComponent }: { id: string } & LinkProp) {
+  const [vm, setVm] = useState<RecipeDetailVM | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    vegifyData
+      .recipe(id)
+      .then((r) => (r ? setVm(recipeViewToVM(id, r)) : setErr('recipe not found')))
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [id])
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  if (!vm) return <div className="p-8 text-muted-foreground">Loading…</div>
+  return <RecipeDetailView recipe={vm} LinkComponent={LinkComponent} />
+}
+
+function IngredientDetailRoute({ id, LinkComponent }: { id: string } & LinkProp) {
+  const [vm, setVm] = useState<IngredientDetailVM | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    vegifyData
+      .ingredientForEdit(id)
+      .then((d) => (d ? setVm(ingredientEditToVM(d)) : setErr('ingredient not found')))
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [id])
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  if (!vm) return <div className="p-8 text-muted-foreground">Loading…</div>
+  return <IngredientDetailView ingredient={vm} LinkComponent={LinkComponent} />
+}
+
+function IngredientListRoute({ LinkComponent }: LinkProp) {
+  const [items, setItems] = useState<IngredientListItem[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    vegifyData
+      .listIngredients()
+      .then((res) =>
+        setItems(res.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))),
+      )
+      .catch((e) => setErr(String(e?.message ?? e)))
+  }, [])
+  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
+  return <IngredientListView ingredients={items} LinkComponent={LinkComponent} />
 }
 
 function SyncButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -442,164 +442,6 @@ function SyncButton({ label, onClick }: { label: string; onClick: () => void }) 
     >
       {label}
     </button>
-  )
-}
-
-function Home({ onBrowse }: { onBrowse: () => void }) {
-  return (
-    <div className="mx-auto flex min-h-[70vh] max-w-3xl flex-col items-center justify-center gap-6 p-8 text-center">
-      <h1 className="text-5xl font-serif font-bold text-primary-dark">Vegify</h1>
-      <p className="w-full max-w-md text-lg text-gray-500">
-        Micronutrition tracking for plant-based cooking — local-first desktop
-      </p>
-      <button onClick={onBrowse} className={buttonClasses({ size: 'lg' })}>
-        Browse recipes
-      </button>
-    </div>
-  )
-}
-
-function RecipeList({
-  recipes,
-  search,
-  onOpen,
-  onNew,
-}: {
-  recipes: RecipeCard[]
-  search: string
-  onOpen: (id: string) => void
-  onNew: () => void
-}) {
-  const q = search.trim().toLowerCase()
-  const shown = q ? recipes.filter((r) => r.name.toLowerCase().includes(q)) : recipes
-  return (
-    <div className="mx-auto max-w-3xl p-8">
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Recipes</h1>
-          <p className="text-gray-500">{shown.length} recipes</p>
-        </div>
-        <button onClick={onNew} className={buttonClasses({ size: 'sm' })}>
-          + New recipe
-        </button>
-      </div>
-      {shown.length === 0 ? (
-        <p className="text-muted-foreground">
-          {search ? 'No recipes match your search.' : 'No recipes yet — add one.'}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {shown.map((r) => (
-            <button key={r.id} onClick={() => onOpen(r.id)} className="block w-full text-left">
-              <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
-                <div className="size-16 shrink-0 rounded-lg bg-muted" />
-                <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
-                  <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? 'Recipe'}</p>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RecipeDetail({
-  id,
-  onEdit,
-  onOpenIngredient,
-  onOpenRecipe,
-}: {
-  id: string
-  onEdit: () => void
-  onOpenIngredient: (id: string) => void
-  onOpenRecipe: (id: string) => void
-}) {
-  const [recipe, setRecipe] = useState<RecipeView | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    vegifyData
-      .recipe(id)
-      .then(setRecipe)
-      .catch((e) => setErr(String(e?.message ?? e)))
-  }, [id])
-
-  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
-  if (!recipe) return <div className="p-8 text-muted-foreground">Loading…</div>
-
-  const serving = recipe.serving
-  const nutrition: NutritionFactsData = {
-    heading: 'This Recipe',
-    serving: serving
-      ? { amount: num(serving.amount), unit: serving.unit ?? 'g', grams: num(serving.grams) }
-      : null,
-    servingsPerBatch: recipe.batchGrams && serving?.grams ? recipe.batchGrams / serving.grams : null,
-    caloriesPerServing:
-      recipe.nutrition.caloriesPer100g != null && serving?.grams
-        ? (recipe.nutrition.caloriesPer100g * serving.grams) / 100
-        : recipe.nutrition.caloriesPer100g,
-    readings: recipe.nutrition.readings.map((r) => ({
-      name: r.name,
-      amountPer100g: num(r.amountPer100g),
-      unit: r.unit,
-    })),
-  }
-
-  return (
-    <div className="flex">
-      <div className="min-w-0 flex-1">
-        <div className="mx-auto max-w-3xl p-6 lg:p-8">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink>@{recipe.creator ?? 'user'}</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{recipe.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-
-          <DetailHero label="Recipe Image" onEdit={onEdit} className="mt-4" />
-
-          <h1 className="mt-10 text-center text-4xl font-serif font-bold text-primary-dark">{recipe.name}</h1>
-          {recipe.subtitle ? (
-            <p className="mt-1 text-center text-muted-foreground">{recipe.subtitle}</p>
-          ) : null}
-
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Ingredients</h2>
-          <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
-            {recipe.items.map((item) => (
-              <li key={item.id} className="flex items-start gap-2">
-                <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
-                <button
-                  type="button"
-                  onClick={() => (item.recipeId ? onOpenRecipe(item.recipeId) : onOpenIngredient(item.id))}
-                  className="text-left hover:text-primary hover:underline"
-                >
-                  {item.amount.amount ?? ''} {item.amount.unit ?? ''} {item.name}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Directions</h2>
-          <p className="mt-3 text-muted-foreground">{recipe.directions ?? 'No directions yet.'}</p>
-        </div>
-      </div>
-
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
-        <div className="lg:sticky lg:top-6">
-          <NutritionFacts data={nutrition} />
-        </div>
-      </aside>
-
-      <NutritionFactsFab data={nutrition} />
-    </div>
   )
 }
 
@@ -662,132 +504,6 @@ function EditRecipe({
           onDeleted()
         }}
       />
-    </div>
-  )
-}
-
-function IngredientList({
-  search,
-  onOpen,
-  onNew,
-}: {
-  search: string
-  onOpen: (id: string) => void
-  onNew: () => void
-}) {
-  const [items, setItems] = useState<IngredientCard[]>([])
-  const [err, setErr] = useState<string | null>(null)
-  useEffect(() => {
-    vegifyData
-      .listIngredients()
-      .then(setItems)
-      .catch((e) => setErr(String(e?.message ?? e)))
-  }, [])
-  const q = search.trim().toLowerCase()
-  const shown = q ? items.filter((i) => i.name.toLowerCase().includes(q)) : items
-  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
-  return (
-    <div className="mx-auto max-w-3xl p-8">
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="mb-1 text-4xl font-serif font-bold text-primary-dark">Ingredients</h1>
-          <p className="text-gray-500">{shown.length} ingredients</p>
-        </div>
-        <button onClick={onNew} className={buttonClasses({ size: 'sm' })}>
-          + New ingredient
-        </button>
-      </div>
-      {shown.length === 0 ? (
-        <p className="text-muted-foreground">
-          {search ? 'No ingredients match your search.' : 'No ingredients yet — add one.'}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {shown.map((i) => (
-            <button key={i.id} onClick={() => onOpen(i.id)} className="block w-full text-left">
-              <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
-                <div className="size-16 shrink-0 rounded-lg bg-muted" />
-                <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{i.name}</h3>
-                  {i.caloriesPer100g != null ? (
-                    <p className="text-sm text-muted-foreground">{Math.round(i.caloriesPer100g)} cal/100g</p>
-                  ) : null}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function IngredientDetail({ id, onEdit }: { id: string; onEdit: () => void }) {
-  const [data, setData] = useState<IngredientEditData | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    vegifyData
-      .ingredientForEdit(id)
-      .then((d) => {
-        if (!d) {
-          setErr('ingredient not found')
-          return
-        }
-        setData(d)
-      })
-      .catch((e) => setErr(String(e?.message ?? e)))
-  }, [id])
-
-  if (err) return <div className="p-8 text-destructive">Error: {err}</div>
-  if (!data) return <div className="p-8 text-muted-foreground">Loading…</div>
-
-  // ingredientForEdit returns per-100g + servingGrams (no human amount/unit); show grams as the unit.
-  const grams = data.servingGrams
-  const nutrition: NutritionFactsData = {
-    heading: 'This Ingredient',
-    caloriesPerServing:
-      data.caloriesPer100g != null ? data.caloriesPer100g * (grams ? grams / 100 : 1) : null,
-    serving: grams != null ? { amount: grams, unit: 'g', grams } : null,
-    servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
-    readings: data.nutrients.map((n) => ({
-      name: n.name,
-      amountPer100g: num(n.amountPer100g),
-      unit: n.unit,
-    })),
-  }
-
-  return (
-    <div className="flex">
-      <div className="min-w-0 flex-1">
-        <div className="mx-auto max-w-2xl p-6 lg:p-8">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink>@user</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{data.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-
-          <DetailHero label="Ingredient Image" onEdit={onEdit} className="mt-4" />
-
-          <h1 className="mt-10 text-center text-4xl font-serif font-bold text-primary-dark">{data.name}</h1>
-          <h2 className="mt-6 text-center font-serif text-xl font-bold">Information</h2>
-          <p className="mt-3 text-muted-foreground">{data.description ?? 'No description yet.'}</p>
-        </div>
-      </div>
-
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
-        <div className="lg:sticky lg:top-6">
-          <NutritionFacts data={nutrition} />
-        </div>
-      </aside>
-
-      <NutritionFactsFab data={nutrition} />
     </div>
   )
 }

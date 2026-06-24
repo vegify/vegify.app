@@ -1,20 +1,16 @@
 import {
   HeadContent,
-  Link,
   Scripts,
   createRootRoute,
   useRouterState,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { AppShell, type AppShellLinkProps } from '@vegify/ui'
+import { AppShell } from '@vegify/ui'
 
+import { LinkAdapter } from '../link'
 import appCss from '../styles.css?url'
-import faviconUrl from '../favicon.svg?url'
-
-function LinkAdapter({ href, ...props }: AppShellLinkProps) {
-  return <Link to={href} {...props} />
-}
+import faviconUrl from '../favicon.ico?url'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -37,7 +33,7 @@ export const Route = createRootRoute({
       },
       {
         rel: 'icon',
-        type: 'image/svg+xml',
+        type: 'image/x-icon',
         href: faviconUrl,
       },
     ],
