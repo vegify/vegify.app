@@ -1248,9 +1248,16 @@ mod tests {
     #[test]
     #[ignore]
     fn s3_blob_store_syncs_and_compacts() {
+        // Env-driven: defaults to MinIO (offline) but runs against a real S3 bucket when SYNC_S3_*
+        // are set (SYNC_S3_ENDPOINT set to empty ⇒ real AWS, region-based).
         let mk = || {
-            S3BlobStore::new("vegify-sync", "us-east-1", "http://127.0.0.1:9000", "minioadmin", "minioadmin")
-                .expect("s3 store")
+            let bucket = std::env::var("SYNC_S3_BUCKET").unwrap_or_else(|_| "vegify-sync".into());
+            let region = std::env::var("SYNC_S3_REGION").unwrap_or_else(|_| "us-east-1".into());
+            let endpoint =
+                std::env::var("SYNC_S3_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9000".into());
+            let access = std::env::var("SYNC_S3_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".into());
+            let secret = std::env::var("SYNC_S3_SECRET_KEY").unwrap_or_else(|_| "minioadmin".into());
+            S3BlobStore::new(&bucket, &region, &endpoint, &access, &secret).expect("s3 store")
         };
         // deterministic run: clear the bucket first
         let cleaner = mk();
@@ -1269,6 +1276,13 @@ mod tests {
         let a = Db::open_with(a_db.to_str().unwrap(), Box::new(mk())).expect("open A");
         let b = Db::open_with(b_db.to_str().unwrap(), Box::new(mk())).expect("open B");
 
+        // A recipe WITH an item → the changeset includes an ingredient_in_recipe row, so B's sync
+        // exercises the FK-on-fresh-replica path (the SQLITE_MISUSE fix) over real S3 transport.
+        let flour = VegifyData::search_ingredients(&a, "Flour".into())
+            .expect("search")
+            .into_iter()
+            .next()
+            .expect("seed flour exists");
         let new_id = VegifyData::save_recipe(
             &a,
             SaveRecipeInput {
@@ -1278,17 +1292,21 @@ mod tests {
                 directions: None,
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
-                items: vec![],
+                items: vec![RecipeItemInput { ingredient_id: flour.id, grams: 300.0, unit: None }],
             },
         )
         .expect("A save -> S3");
         assert_eq!(new_id.len(), 26);
 
         VegifyData::sync(&b).expect("B sync from S3");
-        let names: Vec<String> =
-            VegifyData::list_recipes(&b).expect("B list").into_iter().map(|r| r.name).collect();
-        eprintln!("device B (via S3) recipes: {names:?}");
-        assert!(names.contains(&"Synced via S3".to_string()), "B should see A's S3-synced recipe");
+        let made = VegifyData::list_recipes(&b).expect("B list");
+        eprintln!("device B (via S3) recipes: {:?}", made.iter().map(|r| &r.name).collect::<Vec<_>>());
+        let loaf = made
+            .iter()
+            .find(|r| r.name == "Synced via S3")
+            .expect("B should see A's S3-synced recipe");
+        let view = VegifyData::recipe(&b, loaf.id.clone()).expect("B recipe").expect("exists");
+        assert_eq!(view.items.len(), 1, "B should have replayed the ingredient_in_recipe row over S3");
 
         // compaction works over S3 too: a 2nd write, then compact → one object remains.
         VegifyData::save_recipe(
