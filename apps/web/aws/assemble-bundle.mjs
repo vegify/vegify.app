@@ -19,6 +19,7 @@ const out = ".aws-lambda";
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 cpSync("aws/lambda-handler.mjs", `${out}/handler.mjs`);
+cpSync("aws/ensure-schema.mjs", `${out}/ensure-schema.mjs`); // in-place EFS migration the handler runs
 cpSync("dist/server", `${out}/server`, { recursive: true });
 
 // "type":"module" makes handler.mjs + server/server.js ESM; @libsql/client stays external (native).

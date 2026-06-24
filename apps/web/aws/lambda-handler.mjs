@@ -15,6 +15,7 @@
 import { existsSync, copyFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureAuthSchema } from "./ensure-schema.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dbPath = (process.env.DATABASE_URL ?? "file:/mnt/data/vegify.db").replace(/^file:/, "");
@@ -23,7 +24,11 @@ if (!existsSync(dbPath)) {
   copyFileSync(`${here}/vegify-seed.db`, dbPath); // seed EFS from the baked rollback-mode copy
 }
 
-// Dynamic import AFTER the seed copy — @vegify/db connects at module load.
+// EFS persists across deploys and the seed-copy above only runs on an EMPTY volume, so a DB seeded
+// before the auth schema existed must be migrated in place (additive, idempotent) before the app opens it.
+await ensureAuthSchema(dbPath);
+
+// Dynamic import AFTER the seed copy + migration — @vegify/db connects at module load.
 const app = await import("./server/server.js");
 const target = app.default ?? app;
 const fetchHandler = typeof target === "function" ? target : target.fetch.bind(target);
