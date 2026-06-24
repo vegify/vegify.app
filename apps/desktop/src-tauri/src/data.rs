@@ -24,6 +24,51 @@ fn new_id() -> String {
     Ulid::new().to_string()
 }
 
+// ---- UGC visibility (mirrors @vegify/db: schema `visibility` + the access.ts policy) ----
+
+/// The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by
+/// direct id/link but not listed; `private` = owner only. Stored on `ingredients` — a recipe IS an
+/// ingredient (`as_ingredient_id`), so this one field covers both. Ownership (`user_id`) gates
+/// EDITING, not reading.
+#[derive(Serialize, Deserialize, Type, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum Visibility {
+    Public,
+    Private,
+    Unlisted,
+}
+
+impl Visibility {
+    /// For binding into SQL (the stored TEXT column).
+    fn as_str(self) -> &'static str {
+        match self {
+            Visibility::Public => "public",
+            Visibility::Private => "private",
+            Visibility::Unlisted => "unlisted",
+        }
+    }
+    /// Parse the stored column; unknown/legacy values fall back to public (the column default).
+    fn from_db(s: &str) -> Self {
+        match s {
+            "private" => Visibility::Private,
+            "unlisted" => Visibility::Unlisted,
+            _ => Visibility::Public,
+        }
+    }
+}
+
+// Access policy — the Rust mirror of packages/db/src/access.ts (one rule set, two impls). `isListed`
+// (public OR own) is inlined into the list/search SQL (commented at each site); these two cover the
+// single-row gates.
+/// Edit/delete + the edit-load gate: owner only (both ids present and equal).
+fn is_owner(owner: Option<&str>, viewer: Option<&str>) -> bool {
+    matches!((owner, viewer), (Some(o), Some(v)) if o == v)
+}
+/// Readable by direct id/link: anything not private, or your own.
+fn can_view(visibility: Visibility, owner: Option<&str>, viewer: Option<&str>) -> bool {
+    visibility != Visibility::Private || is_owner(owner, viewer)
+}
+
 // ---- read/output wire types ----
 
 #[derive(Serialize, Type)]
@@ -111,6 +156,7 @@ pub struct RecipeEditData {
     pub subtitle: Option<String>,
     pub directions: Option<String>,
     pub servings: Option<f64>,
+    pub visibility: Visibility,
     pub items: Vec<RecipeEditItem>,
 }
 
@@ -134,6 +180,7 @@ pub struct IngredientEditData {
     pub calories_per_100g: Option<f64>,
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
+    pub visibility: Visibility,
     pub nutrients: Vec<Reading>,
 }
 
@@ -151,6 +198,7 @@ pub struct IngredientNutrientInput {
 #[serde(rename_all = "camelCase")]
 pub struct SaveIngredientInput {
     pub id: Option<String>,
+    pub visibility: Option<Visibility>,
     pub name: String,
     pub description: Option<String>,
     pub price: Option<i32>, // cents
@@ -172,6 +220,7 @@ pub struct RecipeItemInput {
 #[serde(rename_all = "camelCase")]
 pub struct SaveRecipeInput {
     pub id: Option<String>,
+    pub visibility: Option<Visibility>,
     pub name: String,
     pub subtitle: Option<String>,
     pub directions: Option<String>,
@@ -377,18 +426,27 @@ fn do_save_ingredient(
     input: &SaveIngredientInput,
     user_id: Option<&str>,
 ) -> Result<String, DataError> {
+    let visibility = input.visibility.unwrap_or(Visibility::Public).as_str();
     let ingredient_id: String = if let Some(id) = &input.id {
-        let (serving, batch): (Option<String>, Option<String>) = conn
-            .query_row("SELECT serving_size_id, batch_size_id FROM ingredients WHERE id = ?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .optional()?
-            .unwrap_or((None, None));
+        let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT serving_size_id, batch_size_id, user_id FROM ingredients WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        // Owner-gated edit (only when the row exists; a missing id no-ops, matching the web).
+        if let Some((_, _, owner)) = &existing {
+            if !is_owner(owner.as_deref(), user_id) {
+                return Err(DataError::Db("You can only edit your own ingredients.".into()));
+            }
+        }
+        let (serving, batch) = existing.map(|(s, b, _)| (s, b)).unwrap_or((None, None));
         let serving_size_id = upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.package_grams, "package")?;
         conn.execute(
             "UPDATE ingredients SET name=?2, description=?3, price=?4, calories_per_100g=?5,
-             serving_size_id=?6, batch_size_id=?7 WHERE id=?1",
+             serving_size_id=?6, batch_size_id=?7, visibility=?8 WHERE id=?1",
             params![
                 id,
                 input.name,
@@ -396,7 +454,8 @@ fn do_save_ingredient(
                 input.price,
                 input.calories_per_100g,
                 serving_size_id,
-                batch_size_id
+                batch_size_id,
+                visibility
             ],
         )?;
         conn.execute("DELETE FROM ingredient_nutrient WHERE ingredient_id = ?1", [id])?;
@@ -406,8 +465,8 @@ fn do_save_ingredient(
         let batch_size_id = upsert_amount(conn, None, input.package_grams, "package")?;
         let id = new_id();
         conn.execute(
-            "INSERT INTO ingredients(id, user_id, name, description, is_vegan, price, calories_per_100g,
-             serving_size_id, batch_size_id) VALUES (?1, ?8, ?2, ?3, 1, ?4, ?5, ?6, ?7)",
+            "INSERT INTO ingredients(id, user_id, visibility, name, description, is_vegan, price,
+             calories_per_100g, serving_size_id, batch_size_id) VALUES (?1, ?8, ?9, ?2, ?3, 1, ?4, ?5, ?6, ?7)",
             params![
                 id,
                 input.name,
@@ -416,7 +475,8 @@ fn do_save_ingredient(
                 input.calories_per_100g,
                 serving_size_id,
                 batch_size_id,
-                user_id
+                user_id,
+                visibility
             ],
         )?;
         id
@@ -442,13 +502,18 @@ fn do_save_ingredient(
     Ok(ingredient_id)
 }
 
-fn do_delete_ingredient(conn: &Connection, id: &str) -> Result<(), DataError> {
-    let existing: Option<(Option<String>, Option<String>)> = conn
-        .query_row("SELECT serving_size_id, batch_size_id FROM ingredients WHERE id = ?1", [id], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
+fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), DataError> {
+    let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT serving_size_id, batch_size_id, user_id FROM ingredients WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
         .optional()?;
-    let Some((serving, batch)) = existing else { return Ok(()) };
+    let Some((serving, batch, owner)) = existing else { return Ok(()) };
+    if !is_owner(owner.as_deref(), user_id) {
+        return Err(DataError::Db("You can only delete your own ingredients.".into()));
+    }
     conn.execute("DELETE FROM ingredients WHERE id = ?1", [id])?;
     delete_amounts(conn, &[serving, batch])
 }
@@ -458,18 +523,24 @@ fn do_save_recipe(
     input: &SaveRecipeInput,
     user_id: Option<&str>,
 ) -> Result<String, DataError> {
+    let visibility = input.visibility.unwrap_or(Visibility::Public).as_str();
     let recipe_id: String = if let Some(id) = &input.id {
-        let (as_ing_id, serving, batch): (String, Option<String>, Option<String>) = conn.query_row(
-            "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id
-             FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
+        let (as_ing_id, serving, batch, owner): (String, Option<String>, Option<String>, Option<String>) =
+            conn.query_row(
+                "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id, i.user_id
+                 FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )?;
+        // The recipe's owner is its as-ingredient's owner; only the owner may edit.
+        if !is_owner(owner.as_deref(), user_id) {
+            return Err(DataError::Db("You can only edit your own recipes.".into()));
+        }
         let serving_size_id = upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.batch_grams, "batch")?;
         conn.execute(
-            "UPDATE ingredients SET name=?2, serving_size_id=?3, batch_size_id=?4 WHERE id=?1",
-            params![as_ing_id, input.name, serving_size_id, batch_size_id],
+            "UPDATE ingredients SET name=?2, visibility=?3, serving_size_id=?4, batch_size_id=?5 WHERE id=?1",
+            params![as_ing_id, input.name, visibility, serving_size_id, batch_size_id],
         )?;
         conn.execute(
             "UPDATE recipes SET subtitle=?2, directions=?3 WHERE id=?1",
@@ -490,9 +561,9 @@ fn do_save_recipe(
         let batch_size_id = upsert_amount(conn, None, input.batch_grams, "batch")?;
         let as_ing_id = new_id();
         conn.execute(
-            "INSERT INTO ingredients(id, user_id, name, is_vegan, serving_size_id, batch_size_id)
-             VALUES (?1, ?5, ?2, 1, ?3, ?4)",
-            params![as_ing_id, input.name, serving_size_id, batch_size_id, user_id],
+            "INSERT INTO ingredients(id, user_id, visibility, name, is_vegan, serving_size_id, batch_size_id)
+             VALUES (?1, ?5, ?6, ?2, 1, ?3, ?4)",
+            params![as_ing_id, input.name, serving_size_id, batch_size_id, user_id, visibility],
         )?;
         let rid = new_id();
         conn.execute(
@@ -523,16 +594,19 @@ fn do_save_recipe(
     Ok(recipe_id)
 }
 
-fn do_delete_recipe(conn: &Connection, id: &str) -> Result<(), DataError> {
-    let as_ing: Option<(String, Option<String>, Option<String>)> = conn
+fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), DataError> {
+    let as_ing: Option<(String, Option<String>, Option<String>, Option<String>)> = conn
         .query_row(
-            "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id
+            "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id, i.user_id
              FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((as_ing_id, serving, batch)) = as_ing else { return Ok(()) };
+    let Some((as_ing_id, serving, batch, owner)) = as_ing else { return Ok(()) };
+    if !is_owner(owner.as_deref(), user_id) {
+        return Err(DataError::Db("You can only delete your own recipes.".into()));
+    }
 
     let item_amounts: Vec<Option<String>> = {
         let mut stmt = conn.prepare("SELECT amount_id FROM ingredient_in_recipe WHERE recipe_id = ?1")?;
@@ -774,12 +848,78 @@ fn aggregate_per100g(conn: &Connection, ingredient_id: &str) -> Result<Aggregate
     Ok(AggregatedNutrition { calories_per_100g, readings })
 }
 
+/// Load an ingredient's edit-shape data + its owner id (for the visibility gate). Shared by the
+/// `ingredient` detail read (canView) and `ingredient_for_edit` (isOwner) — the desktop reuses one
+/// loader where the web splits it into two server fns. The detail VM simply ignores the extra fields.
+fn load_ingredient_edit(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<(IngredientEditData, Option<String>)>, DataError> {
+    let meta = conn
+        .query_row(
+            "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
+                    i.visibility, i.user_id
+             FROM ingredients i
+             LEFT JOIN amounts sa ON sa.id = i.serving_size_id
+             LEFT JOIN amounts ba ON ba.id = i.batch_size_id
+             WHERE i.id = ?1",
+            [id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<f64>>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                    row.get::<_, Option<f64>>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner)) =
+        meta
+    else {
+        return Ok(None);
+    };
+    let nutrients: Vec<Reading> = {
+        let mut stmt = conn.prepare(
+            "SELECT n.name, inu.amount_per_100g, inu.unit
+             FROM ingredient_nutrient inu
+             JOIN nutrients n ON n.id = inu.nutrient_id
+             WHERE inu.ingredient_id = ?1 ORDER BY n.name",
+        )?;
+        let v = stmt
+            .query_map([id], |r| {
+                Ok(Reading { name: r.get(0)?, amount_per_100g: r.get(1)?, unit: r.get(2)? })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        v
+    };
+    Ok(Some((
+        IngredientEditData {
+            id: id.to_string(),
+            name,
+            description,
+            price: price.map(|p| p as i32),
+            calories_per_100g,
+            serving_grams,
+            package_grams,
+            visibility: Visibility::from_db(&visibility),
+            nutrients,
+        },
+        owner,
+    )))
+}
+
 #[procedures]
 pub trait VegifyData {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError>;
+    fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
@@ -796,14 +936,18 @@ pub trait VegifyData {
 
 impl VegifyData for Db {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
+        // isListed: public catalog + your own (any visibility). `user_id = NULL` never matches, so
+        // a signed-out viewer (me = NULL) sees only public.
         let mut stmt = conn.prepare(
             "SELECT r.id, i.name, r.subtitle
              FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+             WHERE i.visibility = 'public' OR i.user_id = ?1
              ORDER BY i.name",
         )?;
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(params![me], |row| {
                 Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -811,17 +955,20 @@ impl VegifyData for Db {
     }
 
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
         let like = format!("%{}%", query.replace('%', "").replace('_', ""));
         let rows: Vec<(String, String, Option<f64>)> = {
+            // isListed: public catalog + your own — same scoping as the recipe/ingredient lists.
             let mut stmt = conn.prepare(
                 "SELECT i.id, i.name, sa.grams
                  FROM ingredients i
                  LEFT JOIN amounts sa ON sa.id = i.serving_size_id
-                 WHERE i.name LIKE ?1 ORDER BY i.name LIMIT 20",
+                 WHERE i.name LIKE ?1 AND (i.visibility = 'public' OR i.user_id = ?2)
+                 ORDER BY i.name LIMIT 20",
             )?;
             let v = stmt
-                .query_map([&like], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .query_map(params![like, me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             v
         };
@@ -840,16 +987,19 @@ impl VegifyData for Db {
     }
 
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
+        // Owner-only edit-load: `i.user_id = ?2` is the isOwner rule inline (NULL never matches), so
+        // a non-owner gets None → the route renders NotFound, mirroring the web's edit-load 404.
         let meta = conn
             .query_row(
-                "SELECT i.name, r.subtitle, r.directions, sa.grams, ba.grams
+                "SELECT i.name, r.subtitle, r.directions, sa.grams, ba.grams, i.visibility
                  FROM recipes r
                  JOIN ingredients i ON i.id = r.as_ingredient_id
                  LEFT JOIN amounts sa ON sa.id = i.serving_size_id
                  LEFT JOIN amounts ba ON ba.id = i.batch_size_id
-                 WHERE r.id = ?1",
-                [&id],
+                 WHERE r.id = ?1 AND i.user_id = ?2",
+                params![id, me],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -857,11 +1007,12 @@ impl VegifyData for Db {
                         row.get::<_, Option<String>>(2)?,
                         row.get::<_, Option<f64>>(3)?,
                         row.get::<_, Option<f64>>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((name, subtitle, directions, sg, bg)) = meta else {
+        let Some((name, subtitle, directions, sg, bg, visibility)) = meta else {
             return Ok(None);
         };
         let servings = match (sg, bg) {
@@ -895,79 +1046,62 @@ impl VegifyData for Db {
                 readings: nut.readings,
             });
         }
-        Ok(Some(RecipeEditData { id, name, subtitle, directions, servings, items }))
+        Ok(Some(RecipeEditData {
+            id,
+            name,
+            subtitle,
+            directions,
+            servings,
+            visibility: Visibility::from_db(&visibility),
+            items,
+        }))
     }
 
     fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
+        // Standalone ingredients (not a recipe's as-ingredient), scoped isListed: public + your own.
         let mut stmt = conn.prepare(
             "SELECT i.id, i.name, i.calories_per_100g
              FROM ingredients i
              WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+               AND (i.visibility = 'public' OR i.user_id = ?1)
              ORDER BY i.name",
         )?;
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(params![me], |row| {
                 Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
+    fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
-        let meta = conn
-            .query_row(
-                "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams
-                 FROM ingredients i
-                 LEFT JOIN amounts sa ON sa.id = i.serving_size_id
-                 LEFT JOIN amounts ba ON ba.id = i.batch_size_id
-                 WHERE i.id = ?1",
-                [&id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, Option<i64>>(2)?,
-                        row.get::<_, Option<f64>>(3)?,
-                        row.get::<_, Option<f64>>(4)?,
-                        row.get::<_, Option<f64>>(5)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((name, description, price, calories_per_100g, serving_grams, package_grams)) = meta
-        else {
-            return Ok(None);
-        };
-        let nutrients: Vec<Reading> = {
-            let mut stmt = conn.prepare(
-                "SELECT n.name, inu.amount_per_100g, inu.unit
-                 FROM ingredient_nutrient inu
-                 JOIN nutrients n ON n.id = inu.nutrient_id
-                 WHERE inu.ingredient_id = ?1 ORDER BY n.name",
-            )?;
-            let v = stmt
-                .query_map([&id], |r| {
-                    Ok(Reading { name: r.get(0)?, amount_per_100g: r.get(1)?, unit: r.get(2)? })
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            v
-        };
-        Ok(Some(IngredientEditData {
-            id,
-            name,
-            description,
-            price: price.map(|p| p as i32),
-            calories_per_100g,
-            serving_grams,
-            package_grams,
-            nutrients,
-        }))
+        // Detail read: canView — anything not private, or your own.
+        match load_ingredient_edit(&conn, &id)? {
+            Some((data, owner)) if can_view(data.visibility, owner.as_deref(), me.as_deref()) => {
+                Ok(Some(data))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
+        let me = self.current_uid();
+        let conn = self.conn.lock().unwrap();
+        // Owner-only edit-load (mirrors the web's edit-load 404 for non-owners).
+        match load_ingredient_edit(&conn, &id)? {
+            Some((data, owner)) if is_owner(owner.as_deref(), me.as_deref()) => Ok(Some(data)),
+            _ => Ok(None),
+        }
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
+        let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
+        // canView: serve unless it's someone else's private recipe (then None → NotFound, as the web 404s).
         let meta = conn
             .query_row(
                 "SELECT i.id, i.name, r.subtitle, r.directions, u.name,
@@ -977,8 +1111,8 @@ impl VegifyData for Db {
                  LEFT JOIN users u ON u.id = i.user_id
                  LEFT JOIN amounts sa ON sa.id = i.serving_size_id
                  LEFT JOIN amounts ba ON ba.id = i.batch_size_id
-                 WHERE r.id = ?1",
-                [&id],
+                 WHERE r.id = ?1 AND (i.visibility != 'private' OR i.user_id = ?2)",
+                params![id, me],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -1044,7 +1178,8 @@ impl VegifyData for Db {
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
-        self.write_capture(|conn| do_delete_ingredient(conn, &id))
+        let uid = self.current_uid();
+        self.write_capture(|conn| do_delete_ingredient(conn, &id, uid.as_deref()))
     }
 
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError> {
@@ -1053,7 +1188,8 @@ impl VegifyData for Db {
     }
 
     fn delete_recipe(&self, id: String) -> Result<(), DataError> {
-        self.write_capture(|conn| do_delete_recipe(conn, &id))
+        let uid = self.current_uid();
+        self.write_capture(|conn| do_delete_recipe(conn, &id, uid.as_deref()))
     }
 
     fn sync(&self) -> Result<(), DataError> {
@@ -1172,6 +1308,26 @@ mod tests {
             .id
     }
 
+    /// Stamp the in-memory session as `id` (writes get owned by it; reads scope to it).
+    fn set_auth(db: &Db, id: &str, name: &str) {
+        *db.auth.lock().unwrap() = Some(StoredSession {
+            token: "t".into(),
+            user: AuthUser { id: id.into(), name: name.into(), email: format!("{name}@x") },
+        });
+    }
+
+    /// Sign in as the seed user (owns all seed content), returning its id.
+    fn sign_in_seed(db: &Db) -> String {
+        let uid: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT id FROM users LIMIT 1", [], |r| r.get(0))
+            .expect("a seed user exists");
+        set_auth(db, &uid, "Seed");
+        uid
+    }
+
     #[test]
     fn recipe_nutrition_on_device() {
         let blobs = std::env::temp_dir().join("vegify-cte-blobs");
@@ -1204,6 +1360,7 @@ mod tests {
 
         let input = SaveRecipeInput {
             id: None,
+            visibility: None,
             name: "Synced New Recipe".into(),
             subtitle: Some("made offline on A".into()),
             directions: None,
@@ -1235,6 +1392,7 @@ mod tests {
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
         let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        sign_in_seed(&db); // own the saved recipe so the owner-gated edit-load returns it
 
         let hits = VegifyData::search_ingredients(&db, "Flour".into()).expect("search");
         let flour = hits.into_iter().find(|h| h.name.contains("Flour")).expect("a flour exists");
@@ -1243,6 +1401,7 @@ mod tests {
             &db,
             SaveRecipeInput {
                 id: None,
+                visibility: None,
                 name: "UI Flow Bread".into(),
                 subtitle: None,
                 directions: Some("mix".into()),
@@ -1277,11 +1436,13 @@ mod tests {
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
         let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        sign_in_seed(&db); // own the saved ingredient so the owner-gated edit-load returns it
 
         let id = VegifyData::save_ingredient(
             &db,
             SaveIngredientInput {
                 id: None,
+                visibility: None,
                 name: "Test Tofu".into(),
                 description: Some("firm".into()),
                 price: Some(250),
@@ -1334,6 +1495,7 @@ mod tests {
                 &a,
                 SaveRecipeInput {
                     id: None,
+                    visibility: None,
                     name: name.into(),
                     subtitle: None,
                     directions: None,
@@ -1396,6 +1558,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                visibility: None,
                 name: "FK Replay Loaf".into(),
                 subtitle: None,
                 directions: None,
@@ -1462,6 +1625,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                visibility: None,
                 name: "Synced via S3".into(),
                 subtitle: None,
                 directions: None,
@@ -1488,6 +1652,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                visibility: None,
                 name: "S3 R2".into(),
                 subtitle: None,
                 directions: None,
@@ -1514,21 +1679,13 @@ mod tests {
         fs::copy(crate::db_path(), &db_path).expect("seed");
         let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
 
-        let uid: String = db
-            .conn
-            .lock()
-            .unwrap()
-            .query_row("SELECT id FROM users LIMIT 1", [], |r| r.get(0))
-            .expect("a seed user exists");
-        *db.auth.lock().unwrap() = Some(StoredSession {
-            token: "t".into(),
-            user: AuthUser { id: uid.clone(), name: "Seed".into(), email: "seed@x".into() },
-        });
+        let uid = sign_in_seed(&db);
 
         let rid = VegifyData::save_recipe(
             &db,
             SaveRecipeInput {
                 id: None,
+                visibility: None,
                 name: "Owned Recipe".into(),
                 subtitle: None,
                 directions: None,
@@ -1590,5 +1747,148 @@ mod tests {
 
         VegifyData::sign_out(&db).expect("sign out");
         assert!(VegifyData::current_user(&db).expect("current").is_none(), "cleared after sign out");
+    }
+
+    // A4 visibility model (mirrors the web's 2-user test): public content is shared, private is
+    // owner-only, and edit/delete are owner-gated. Two accounts over one local DB exercise the
+    // per-viewer policy directly (the desktop is single-user-local until A3, but the DAL gates are
+    // per-viewer regardless). Covers BOTH entities: a recipe IS an ingredient at the data level, but
+    // the recipe read procedures have their own SQL gates, so they're asserted separately below.
+    #[test]
+    fn visibility_scopes_reads_and_guards_writes() {
+        let blobs = std::env::temp_dir().join("vegify-vis-blobs");
+        let db_path = std::env::temp_dir().join("vegify-vis.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+
+        // Two accounts: john (the seed owner) + Bob (upserted locally, as sign-in would guarantee).
+        let john = sign_in_seed(&db);
+        let bob = new_id();
+        db.ensure_user_local(&AuthUser { id: bob.clone(), name: "Bob".into(), email: "bob@x".into() })
+            .expect("create bob");
+
+        // John creates a PRIVATE and a PUBLIC ingredient.
+        let mk = |name: &str, vis: Visibility| {
+            VegifyData::save_ingredient(
+                &db,
+                SaveIngredientInput {
+                    id: None,
+                    visibility: Some(vis),
+                    name: name.into(),
+                    description: None,
+                    price: None,
+                    calories_per_100g: Some(50.0),
+                    serving_grams: Some(100.0),
+                    package_grams: None,
+                    nutrients: vec![],
+                },
+            )
+            .expect("john saves")
+        };
+        let secret = mk("John Secret Sauce", Visibility::Private);
+        let public = mk("John Public Sauce", Visibility::Public);
+
+        // John also creates a PRIVATE recipe — the recipe read procs apply their own SQL gates.
+        let secret_recipe = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: None,
+                visibility: Some(Visibility::Private),
+                name: "John Secret Recipe".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(200.0),
+                items: vec![],
+            },
+        )
+        .expect("john saves recipe");
+
+        // --- As Bob (a different account) ---
+        set_auth(&db, &bob, "Bob");
+
+        // Lists + search (isListed): Bob sees John's PUBLIC, not John's private.
+        let listed: Vec<String> =
+            VegifyData::list_ingredients(&db).expect("bob list").into_iter().map(|c| c.name).collect();
+        assert!(listed.contains(&"John Public Sauce".to_string()), "bob sees john's public");
+        assert!(!listed.contains(&"John Secret Sauce".to_string()), "bob must NOT see john's private");
+        let found: Vec<String> = VegifyData::search_ingredients(&db, "John".into())
+            .expect("bob search")
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert!(found.contains(&"John Public Sauce".to_string()), "search returns public");
+        assert!(!found.contains(&"John Secret Sauce".to_string()), "search hides private");
+
+        // Detail (canView): public viewable; private 404s (None).
+        assert!(VegifyData::ingredient(&db, public.clone()).expect("ok").is_some(), "public viewable");
+        assert!(VegifyData::ingredient(&db, secret.clone()).expect("ok").is_none(), "private hidden");
+
+        // Edit-load (isOwner): Bob can't load John's public ingredient for editing.
+        assert!(
+            VegifyData::ingredient_for_edit(&db, public.clone()).expect("ok").is_none(),
+            "non-owner can't edit-load"
+        );
+
+        // Mutations owner-guarded: Bob can neither edit nor delete John's ingredient.
+        let hijack = VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: Some(public.clone()),
+                visibility: Some(Visibility::Private),
+                name: "Hijacked".into(),
+                description: None,
+                price: None,
+                calories_per_100g: None,
+                serving_grams: None,
+                package_grams: None,
+                nutrients: vec![],
+            },
+        );
+        assert!(hijack.is_err(), "bob can't edit john's ingredient");
+        assert!(VegifyData::delete_ingredient(&db, public.clone()).is_err(), "bob can't delete john's");
+
+        // Recipe gates (separate SQL from the ingredient path): John's private recipe is hidden,
+        // unviewable, un-editable, and un-deletable by Bob.
+        let recipe_names: Vec<String> =
+            VegifyData::list_recipes(&db).expect("bob recipes").into_iter().map(|c| c.name).collect();
+        assert!(!recipe_names.contains(&"John Secret Recipe".to_string()), "private recipe not listed");
+        assert!(VegifyData::recipe(&db, secret_recipe.clone()).expect("ok").is_none(), "private recipe 404s");
+        assert!(
+            VegifyData::recipe_for_edit(&db, secret_recipe.clone()).expect("ok").is_none(),
+            "non-owner can't edit-load the recipe"
+        );
+        assert!(VegifyData::delete_recipe(&db, secret_recipe.clone()).is_err(), "bob can't delete the recipe");
+
+        // --- Back as John (the owner) ---
+        set_auth(&db, &john, "John");
+        assert!(
+            VegifyData::recipe_for_edit(&db, secret_recipe).expect("ok").is_some(),
+            "owner can edit-load their recipe"
+        );
+        let e = VegifyData::ingredient_for_edit(&db, secret.clone())
+            .expect("ok")
+            .expect("owner edit-load");
+        assert_eq!(e.visibility, Visibility::Private, "edit defaults carry the stored visibility");
+        // Owner can edit (change visibility) then delete own content.
+        VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: Some(secret),
+                visibility: Some(Visibility::Unlisted),
+                name: "John Secret Sauce".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(50.0),
+                serving_grams: Some(100.0),
+                package_grams: None,
+                nutrients: vec![],
+            },
+        )
+        .expect("owner edits own");
+        VegifyData::delete_ingredient(&db, public).expect("owner deletes own");
+        eprintln!("visibility: public shared, private hidden from non-owner, edit/delete owner-gated");
     }
 }

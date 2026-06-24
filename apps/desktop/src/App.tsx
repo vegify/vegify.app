@@ -66,6 +66,7 @@ const searchForForm = async (q: string) => {
 const saveRecipeFromForm = (input: RecipeFormInput) =>
   vegifyData.saveRecipe({
     id: input.id ?? null,
+    visibility: input.visibility,
     name: input.name,
     subtitle: input.subtitle,
     directions: input.directions,
@@ -76,6 +77,7 @@ const saveRecipeFromForm = (input: RecipeFormInput) =>
 const saveIngredientFromForm = (input: IngredientFormInput) =>
   vegifyData.saveIngredient({
     id: input.id ?? null,
+    visibility: input.visibility,
     name: input.name,
     description: input.description,
     price: input.price,
@@ -329,6 +331,7 @@ const recipeEditRoute = createRoute({
     if (!d) return <NotFound what="recipe" />
     const defaults: RecipeFormDefaults = {
       id: d.id,
+      visibility: d.visibility,
       name: d.name,
       subtitle: d.subtitle,
       directions: d.directions,
@@ -401,7 +404,7 @@ const ingredientDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients/$ingredientId',
   loader: async ({ params }) => {
-    const d = await vegifyData.ingredientForEdit(params.ingredientId)
+    const d = await vegifyData.ingredient(params.ingredientId)
     return d ? ingredientEditToVM(d) : null
   },
   component: function IngredientDetail() {
@@ -424,6 +427,7 @@ const ingredientEditRoute = createRoute({
     const scale = d.servingGrams ? d.servingGrams / 100 : 1
     const defaults: IngredientFormDefaults = {
       id: d.id,
+      visibility: d.visibility,
       name: d.name,
       description: d.description,
       priceCents: d.price,

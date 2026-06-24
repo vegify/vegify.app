@@ -30,6 +30,7 @@ export const vegifyData = {
 	subtitle: string | null,
 	directions: string | null,
 	servings: number | null,
+	visibility: Visibility,
 	items: RecipeEditItem[],
 } | null> {
     return invoke("recipe_for_edit", { id });
@@ -41,6 +42,21 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  ingredient(id: string): Promise<{
+	id: string,
+	name: string,
+	description: string | null,
+	price: number | null,
+	caloriesPer100g: number | null,
+	servingGrams: number | null,
+	packageGrams: number | null,
+	visibility: Visibility,
+	nutrients: Reading[],
+} | null> {
+    return invoke("ingredient", { id });
+  },
+
+  /** @throws {DataError} */
   ingredientForEdit(id: string): Promise<{
 	id: string,
 	name: string,
@@ -49,6 +65,7 @@ export const vegifyData = {
 	caloriesPer100g: number | null,
 	servingGrams: number | null,
 	packageGrams: number | null,
+	visibility: Visibility,
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient_for_edit", { id });
@@ -153,6 +170,7 @@ export type IngredientEditData = {
 	caloriesPer100g: number | null,
 	servingGrams: number | null,
 	packageGrams: number | null,
+	visibility: Visibility,
 	nutrients: Reading[],
 };
 
@@ -188,6 +206,7 @@ export type RecipeEditData = {
 	subtitle: string | null,
 	directions: string | null,
 	servings: number | null,
+	visibility: Visibility,
 	items: RecipeEditItem[],
 };
 
@@ -231,6 +250,7 @@ export type RecipeView = {
 
 export type SaveIngredientInput = {
 	id: string | null,
+	visibility: Visibility | null,
 	name: string,
 	description: string | null,
 	price: number | null,
@@ -242,6 +262,7 @@ export type SaveIngredientInput = {
 
 export type SaveRecipeInput = {
 	id: string | null,
+	visibility: Visibility | null,
 	name: string,
 	subtitle: string | null,
 	directions: string | null,
@@ -260,3 +281,11 @@ export type SignUpInput = {
 	email: string,
 	password: string,
 };
+
+/**
+ *  The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by
+ *  direct id/link but not listed; `private` = owner only. Stored on `ingredients` — a recipe IS an
+ *  ingredient (`as_ingredient_id`), so this one field covers both. Ownership (`user_id`) gates
+ *  EDITING, not reading.
+ */
+export type Visibility = "public" | "private" | "unlisted";
