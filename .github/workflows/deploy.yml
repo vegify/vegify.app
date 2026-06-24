@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/web-start/**"
+      - "apps/web/**"
       - "packages/**"
       - "infra/**"
       - ".github/workflows/deploy.yml"
@@ -41,7 +41,7 @@ jobs:
       - name: Create + seed the DB (.data is gitignored; assemble-bundle bakes it as the EFS seed)
         run: pnpm db:push && pnpm db:seed
       - name: Build web-start AWS bundle
-        run: pnpm --filter web-start build:aws
+        run: pnpm --filter web build:aws
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy

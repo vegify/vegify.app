@@ -1,6 +1,6 @@
-// Production runtime for web-start: serves the built WinterCG fetch handler on Bun.
-//   pnpm --filter web-start build           # produces dist/server + dist/client
-//   pnpm --filter web-start start:bun        # serve the build on Bun (PORT, DATABASE_URL via env)
+// Production runtime for web: serves the built WinterCG fetch handler on Bun.
+//   pnpm --filter web build           # produces dist/server + dist/client
+//   pnpm --filter web start:bun        # serve the build on Bun (PORT, DATABASE_URL via env)
 //
 // Why Bun: measured ~+10% read throughput and a ~10x tighter p99.9 tail vs Node serving the SAME
 // build under sustained concurrency — the win is the runtime (JSC vs V8), not native serving (a
@@ -33,4 +33,4 @@ Bun.serve({
     return fetchHandler(req);
   },
 });
-console.log(`web-start (Bun.serve) listening on :${port}`);
+console.log(`web (Bun.serve) listening on :${port}`);

@@ -9,7 +9,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import type { Construct } from "constructs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const webStart = path.join(repoRoot, "apps/web-start");
+const webStart = path.join(repoRoot, "apps/web");
 
 interface WebStartFargateStackProps extends StackProps {
   vpc: ec2.Vpc;
@@ -26,13 +26,13 @@ interface WebStartFargateStackProps extends StackProps {
  * FLIP TO THIS when revenue justifies the tail win:
  *   1. In bin/vegify.ts, replace `new WebStartStack(...)` with `new WebStartFargateStack(app,
  *      "VegifyWebStart", { env, vpc: net.vpc })`.
- *   2. `pnpm --filter web-start build:aws` (produces dist/ + the seed the Dockerfile bakes).
+ *   2. `pnpm --filter web build:aws` (produces dist/ + the seed the Dockerfile bakes).
  *   3. `cdk deploy VegifyVpc VegifyWebStart`.
  *
  * DB shape: option (ii) "collapse" — libSQL embedded IN-PROCESS in the task against a mounted EBS
  * volume (`DATABASE_URL=file:/data/vegify.db`). One task, no separate DB service, proper local-disk
  * file locking (WAL is fine on EBS, unlike EFS/NFS), single-writer at this scale. The image is
- * apps/web-start/Dockerfile (oven/bun + the build + serve-bun.mjs + @libsql/client + seed DB).
+ * apps/web/Dockerfile (oven/bun + the build + serve-bun.mjs + @libsql/client + seed DB).
  */
 export class WebStartFargateStack extends Stack {
   constructor(scope: Construct, id: string, props: WebStartFargateStackProps) {

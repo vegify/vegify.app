@@ -10,7 +10,7 @@ import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const webStart = path.join(repoRoot, "apps/web-start");
+const webStart = path.join(repoRoot, "apps/web");
 
 interface WebStartStackProps extends StackProps {
   vpc: ec2.Vpc;

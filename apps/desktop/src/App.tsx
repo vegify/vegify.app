@@ -26,7 +26,7 @@ import { vegifyData, type IngredientEditData, type RecipeCard, type RecipeView }
 // SAME shared screens (@vegify/ui) the web app renders — but every read AND write goes through the
 // on-device Rust DAL over typed IPC (vegifyData), not a server. This file is the desktop ADAPTER:
 // it maps IPC results to the screens' view-models, and maps the screens' href-based navigation onto
-// an in-process `view` state machine (no router). web-start is the same screens with a server +
+// an in-process `view` state machine (no router). web is the same screens with a server +
 // router adapter; the screens themselves live once, in @vegify/ui.
 
 // specta types every f64 wire field as `number | null` (JSON can't carry NaN/Inf), so coerce reads.
@@ -140,7 +140,7 @@ function pathForView(view: View): string {
 }
 
 // The desktop's router: maps an href (as the shared screens emit) to a view. This is the inverse of
-// pathForView and the reason the screens can be router-agnostic — web-start uses a real router here.
+// pathForView and the reason the screens can be router-agnostic — web uses a real router here.
 function viewForHref(href: string): View | null {
   if (href === '/') return { mode: 'home' }
   if (href === '/recipes') return { mode: 'list' }
@@ -345,7 +345,7 @@ export function App() {
 }
 
 // Search overlay: filters the already-loaded recipes + searches ingredients via the DAL, then
-// renders the SHARED SearchResultsView (same component web-start would use).
+// renders the SHARED SearchResultsView (same component web would use).
 function SearchRoute({
   search,
   recipes,

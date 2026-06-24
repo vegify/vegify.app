@@ -1,5 +1,5 @@
 {
-  "name": "web-start",
+  "name": "web",
   "private": true,
   "type": "module",
   "imports": {

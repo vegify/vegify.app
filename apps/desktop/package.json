@@ -1,5 +1,5 @@
 {
-  "name": "web-tauri",
+  "name": "desktop",
   "private": true,
   "type": "module",
   "scripts": {

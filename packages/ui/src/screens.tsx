@@ -19,9 +19,9 @@ import { NutritionFactsFab } from "./nutrition-facts-fab";
  * view-model + a `LinkComponent` nav port, and do no data-fetching or routing of their own.
  *
  * Each shell supplies the two things that genuinely differ:
- *   - data: the desktop maps its on-device IPC results to these view-models; web-start maps its
+ *   - data: the desktop maps its on-device IPC results to these view-models; web maps its
  *     loader/Drizzle results to the SAME view-models.
- *   - navigation: web-start passes a router <Link>; the desktop passes an adapter that maps the
+ *   - navigation: web passes a router <Link>; the desktop passes an adapter that maps the
  *     href to its in-process view state. Every navigable element here renders through it, so a new
  *     screen is written once and never drifts between the two apps.
  */
