@@ -8,6 +8,7 @@ export {
 } from "./app-shell";
 export { VegifyLogo } from "./vegify-logo";
 export { ThemeToggle } from "./theme-toggle";
+export { useTheme, themeScript, type Theme } from "./use-theme";
 export { DetailHero } from "./detail-hero";
 export {
   NutritionFacts,

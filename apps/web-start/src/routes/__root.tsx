@@ -4,12 +4,13 @@ import {
   createRootRoute,
   useRouterState,
 } from '@tanstack/react-router'
+import { useState } from 'react'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { ThemeProvider } from 'next-themes'
-import { AppShell } from '@vegify/ui'
+import { AppShell, themeScript } from '@vegify/ui'
 
 import { LinkAdapter } from '../link'
+import { SearchOverlay } from '../search'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
@@ -44,17 +45,28 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const [search, setSearch] = useState('')
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        {/* No-FOUC: set the theme class before first paint (the example.com pattern). */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <AppShell currentPath={pathname} LinkComponent={LinkAdapter} ingredientsNav>
-            {children}
-          </AppShell>
-        </ThemeProvider>
+        <AppShell
+          currentPath={pathname}
+          LinkComponent={LinkAdapter}
+          ingredientsNav
+          searchValue={search}
+          onSearchChange={setSearch}
+        >
+          {search.trim() ? (
+            <SearchOverlay query={search.trim()} LinkComponent={LinkAdapter} />
+          ) : (
+            children
+          )}
+        </AppShell>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

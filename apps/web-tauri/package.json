@@ -13,7 +13,6 @@
     "@tauri-apps/api": "^2.4.0",
     "@vegify/tokens": "workspace:*",
     "@vegify/ui": "workspace:*",
-    "next-themes": "^0.4.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

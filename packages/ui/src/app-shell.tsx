@@ -77,9 +77,9 @@ export function AppShell({
       ]
     : APP_NAV;
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground lg:flex-row">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row">
       {/* ===== Desktop sidebar ===== */}
-      <aside className="hidden bg-green-dark text-white lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:sticky lg:top-0">
+      <aside className="hidden bg-green-dark text-white lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:overflow-y-auto">
         <LinkComponent href="/" className="flex items-center px-6 py-8">
           <VegifyLogo className="h-auto w-full" />
         </LinkComponent>
@@ -100,15 +100,15 @@ export function AppShell({
       </aside>
 
       {/* ===== Mobile top bar ===== */}
-      <header className="flex h-14 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
+      <header className="flex h-14 shrink-0 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
         <Settings className="size-6" aria-label="Settings" />
         <VegifyLogo className="h-6 w-auto" />
         <Mail className="size-6" aria-label="Inbox" />
       </header>
 
       {/* ===== Content ===== */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="hidden items-center px-8 py-4 lg:flex">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="hidden shrink-0 items-center px-8 py-4 lg:flex">
           <div className="relative mx-auto w-full max-w-xl">
             <input
               type="search"
@@ -124,7 +124,7 @@ export function AppShell({
             </span>
           </div>
         </div>
-        <main className="min-w-0 flex-1 pb-24 lg:pb-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto pb-24 lg:pb-8">{children}</main>
       </div>
 
       {/* ===== Mobile bottom tab bar ===== */}
