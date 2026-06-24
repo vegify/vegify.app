@@ -3,6 +3,7 @@ import { App } from "aws-cdk-lib";
 import { VpcStack } from "../lib/vpc-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
 import { SyncStack } from "../lib/sync-stack.js";
+import { CiStack } from "../lib/ci-stack.js";
 
 // Hosting decision (see infra/README "Hosting decision"): the bake-off winner is TanStack Start
 // (web-start); web-next is dropped. web-start ships on the FREE TIER — Lambda + CloudFront + S3 with
@@ -25,3 +26,6 @@ new WebStartStack(app, "VegifyWebStart", { env, vpc: net.vpc });
 // Desktop local-first sync: a scale-to-zero S3 changeset-blob store + a least-privilege client.
 // Independent of the VPC/web stack. Outputs the bucket + a Secrets Manager creds secret.
 new SyncStack(app, "VegifySync", { env });
+
+// CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it.
+new CiStack(app, "VegifyCi", { env, githubRepo: "vegify/vegify.app" });

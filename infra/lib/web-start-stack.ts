@@ -58,14 +58,14 @@ export class WebStartStack extends Stack {
 
     const fn = new lambda.Function(this, "ServerFn", {
       runtime: lambda.Runtime.NODEJS_22_X,
-      architecture: lambda.Architecture.ARM_64,
+      // x86_64 so the Docker bundling runs NATIVELY on the x86 GitHub Actions runner (no qemu);
+      // deploys run in CI now. The platform pin keeps the installed @libsql native binding matched.
+      architecture: lambda.Architecture.X86_64,
       handler: "handler.handler",
       code: lambda.Code.fromAsset(path.join(webStart, ".aws-lambda"), {
         bundling: {
           image: lambda.Runtime.NODEJS_22_X.bundlingImage,
-          // Pin the container arch so npm installs the @libsql native binding (@libsql/linux-arm64-gnu)
-          // that MATCHES this Lambda — independent of the build host's own architecture.
-          platform: "linux/arm64",
+          platform: "linux/amd64",
           command: [
             "bash",
             "-c",

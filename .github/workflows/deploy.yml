@@ -1,0 +1,50 @@
+name: deploy
+
+# Deploys web-start to AWS (VegifyWebStart) on merge to main. Auth is OIDC — no stored AWS secrets:
+# the job assumes the least-privilege vegify-github-deploy role (infra/lib/ci-stack.ts), which can
+# only assume the CDK bootstrap roles. One-time bootstrap of that role: `cdk deploy VegifyCi`.
+# (Hardening TODO: pin these actions to commit SHAs instead of major tags.)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web-start/**"
+      - "packages/**"
+      - "infra/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-web-start
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # mint the OIDC token to assume the AWS role
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: sqlite3 (assemble-bundle bakes the EFS seed with it)
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - run: pnpm install --frozen-lockfile
+      - name: Build design tokens (theme.css is gitignored)
+        run: pnpm --filter @vegify/tokens build
+      - name: Build web-start AWS bundle
+        run: pnpm --filter web-start build:aws
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
+          aws-region: us-east-1
+      - name: cdk deploy
+        run: pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyWebStart --require-approval never
