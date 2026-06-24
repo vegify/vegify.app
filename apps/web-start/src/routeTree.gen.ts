@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
+import { Route as IngredientsIndexRouteImport } from './routes/ingredients.index'
 import { Route as RecipesNewRouteImport } from './routes/recipes.new'
 import { Route as IngredientsNewRouteImport } from './routes/ingredients.new'
 import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$recipeId.index'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const RecipesIndexRoute = RecipesIndexRouteImport.update({
   id: '/recipes/',
   path: '/recipes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IngredientsIndexRoute = IngredientsIndexRouteImport.update({
+  id: '/ingredients/',
+  path: '/ingredients/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecipesNewRoute = RecipesNewRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/ingredients': typeof IngredientsIndexRoute
   '/recipes': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/ingredients/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/ingredients'
     | '/recipes'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/ingredients/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
   RecipesNewRoute: typeof RecipesNewRoute
+  IngredientsIndexRoute: typeof IngredientsIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
   RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
@@ -150,6 +163,13 @@ declare module '@tanstack/react-router' {
       path: '/recipes'
       fullPath: '/recipes/'
       preLoaderRoute: typeof RecipesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ingredients/': {
+      id: '/ingredients/'
+      path: '/ingredients'
+      fullPath: '/ingredients/'
+      preLoaderRoute: typeof IngredientsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recipes/new': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IngredientsNewRoute: IngredientsNewRoute,
   RecipesNewRoute: RecipesNewRoute,
+  IngredientsIndexRoute: IngredientsIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
   RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,

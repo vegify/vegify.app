@@ -10,6 +10,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 import { AppShell, type AppShellLinkProps } from '@vegify/ui'
 
 import appCss from '../styles.css?url'
+import faviconUrl from '../favicon.svg?url'
 
 function LinkAdapter({ href, ...props }: AppShellLinkProps) {
   return <Link to={href} {...props} />
@@ -26,13 +27,18 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Vegify',
       },
     ],
     links: [
       {
         rel: 'stylesheet',
         href: appCss,
+      },
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: faviconUrl,
       },
     ],
   }),
@@ -47,7 +53,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <AppShell currentPath={pathname} LinkComponent={LinkAdapter}>
+        <AppShell currentPath={pathname} LinkComponent={LinkAdapter} ingredientsNav>
           {children}
         </AppShell>
         <TanStackDevtools
