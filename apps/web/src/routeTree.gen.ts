@@ -23,6 +23,7 @@ import { Route as IngredientsIngredientIdEditRouteImport } from './routes/ingred
 import { Route as ApiAuthSignupRouteImport } from './routes/api.auth.signup'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
+import { Route as ApiAuthBootstrapRouteImport } from './routes/api.auth.bootstrap'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -96,6 +97,11 @@ const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   path: '/api/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthBootstrapRoute = ApiAuthBootstrapRouteImport.update({
+  id: '/api/auth/bootstrap',
+  path: '/api/auth/bootstrap',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients': typeof IngredientsIndexRoute
   '/recipes': typeof RecipesIndexRoute
+  '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients/'
     | '/recipes/'
+    | '/api/auth/bootstrap'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients'
     | '/recipes'
+    | '/api/auth/bootstrap'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients/'
     | '/recipes/'
+    | '/api/auth/bootstrap'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
@@ -205,6 +217,7 @@ export interface RootRouteChildren {
   RecipesNewRoute: typeof RecipesNewRoute
   IngredientsIndexRoute: typeof IngredientsIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
+  ApiAuthBootstrapRoute: typeof ApiAuthBootstrapRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSignupRoute: typeof ApiAuthSignupRoute
@@ -314,6 +327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/bootstrap': {
+      id: '/api/auth/bootstrap'
+      path: '/api/auth/bootstrap'
+      fullPath: '/api/auth/bootstrap'
+      preLoaderRoute: typeof ApiAuthBootstrapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -325,6 +345,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecipesNewRoute: RecipesNewRoute,
   IngredientsIndexRoute: IngredientsIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
+  ApiAuthBootstrapRoute: ApiAuthBootstrapRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSignupRoute: ApiAuthSignupRoute,

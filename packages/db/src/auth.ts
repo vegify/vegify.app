@@ -120,3 +120,26 @@ export async function invalidateSession(token: string): Promise<void> {
 export async function invalidateAllSessions(userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
 }
+
+/**
+ * Set an INITIAL password for an account that has none (NULL hash). Refuses to change an existing
+ * password — used to claim a pre-provisioned/seeded account (e.g. a user that predates the password
+ * column). Idempotent-unsafe by design: once a hash exists, this is a no-op error.
+ */
+export async function setInitialPassword(
+  email: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, normalizeEmail(email)))
+    .limit(1);
+  if (!user) return { ok: false, error: "No such account." };
+  if (user.passwordHash) return { ok: false, error: "Account already has a password." };
+  await db
+    .update(users)
+    .set({ passwordHash: await hashPassword(password) })
+    .where(eq(users.id, user.id));
+  return { ok: true };
+}
