@@ -7,6 +7,7 @@ export {
   type AppShellNavItem,
 } from "./app-shell";
 export { VegifyLogo } from "./vegify-logo";
+export { ThemeToggle } from "./theme-toggle";
 export { DetailHero } from "./detail-hero";
 export {
   NutritionFacts,

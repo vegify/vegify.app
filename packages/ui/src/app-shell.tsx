@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { Bell, Carrot, House, Mail, Salad, Search, Settings, User } from "lucide-react";
 import { cn } from "./cn";
+import { ThemeToggle } from "./theme-toggle";
 import { VegifyLogo } from "./vegify-logo";
 
 type IconType = ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -92,7 +93,10 @@ export function AppShell({
             />
           ))}
         </nav>
-        {footer ? <div className="mt-auto px-3 pb-5">{footer}</div> : null}
+        <div className="mt-auto space-y-3 px-3 pb-5">
+          {footer}
+          <ThemeToggle />
+        </div>
       </aside>
 
       {/* ===== Mobile top bar ===== */}

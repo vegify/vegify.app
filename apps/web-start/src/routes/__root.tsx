@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { ThemeProvider } from 'next-themes'
 import { AppShell } from '@vegify/ui'
 
 import { LinkAdapter } from '../link'
@@ -44,14 +45,16 @@ export const Route = createRootRoute({
 function RootDocument({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
-        <AppShell currentPath={pathname} LinkComponent={LinkAdapter} ingredientsNav>
-          {children}
-        </AppShell>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <AppShell currentPath={pathname} LinkComponent={LinkAdapter} ingredientsNav>
+            {children}
+          </AppShell>
+        </ThemeProvider>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

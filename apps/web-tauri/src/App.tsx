@@ -180,14 +180,6 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const toggleTheme = () => {
-    setDark((d) => {
-      const next = !d
-      document.documentElement.classList.toggle('dark', next)
-      return next
-    })
-  }
 
   const refresh = useCallback(() => {
     vegifyData
@@ -268,15 +260,6 @@ export function App() {
       <div className="flex gap-2 px-3">
         <SyncButton label="Sync" onClick={() => run('Sync', vegifyData.sync())} />
         <SyncButton label="Compact" onClick={() => run('Compact', vegifyData.compact())} />
-      </div>
-      <div className="px-3">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20"
-        >
-          {dark ? '☀ Light mode' : '☾ Dark mode'}
-        </button>
       </div>
       {status ? <p className="px-3 text-xs text-white/70">{status}</p> : null}
       <p className="px-3 text-xs text-white/45">local-first · on-device</p>
