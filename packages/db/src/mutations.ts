@@ -66,16 +66,19 @@ async function findOrCreateNutrient(name: string) {
 }
 
 export async function saveIngredient(input: SaveIngredientInput): Promise<string> {
-  let ingredientId: string;
+  // Upsert by id: an existing row updates; a provided-but-absent id inserts WITH that id (an offline
+  // create's client ULID, or a pulled row). `userId` is set only on insert — an edit never reassigns
+  // ownership. The owner guard applies only when the row already exists.
+  const existing = input.id
+    ? await db.query.ingredients.findFirst({ where: (t, { eq }) => eq(t.id, input.id!) })
+    : null;
+  if (existing && !isOwner(existing.userId, input.userId))
+    throw new Error("You can only edit your own ingredients.");
+  const servingSizeId = await upsertAmount(existing?.servingSizeId, input.servingGrams, "serving");
+  const batchSizeId = await upsertAmount(existing?.batchSizeId, input.packageGrams, "package");
 
-  if (input.id) {
-    const existing = await db.query.ingredients.findFirst({
-      where: (t, { eq }) => eq(t.id, input.id!),
-    });
-    if (existing && !isOwner(existing.userId, input.userId))
-      throw new Error("You can only edit your own ingredients.");
-    const servingSizeId = await upsertAmount(existing?.servingSizeId, input.servingGrams, "serving");
-    const batchSizeId = await upsertAmount(existing?.batchSizeId, input.packageGrams, "package");
+  let ingredientId: string;
+  if (existing) {
     await db
       .update(ingredients)
       .set({
@@ -87,15 +90,14 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
         servingSizeId,
         batchSizeId,
       })
-      .where(eq(ingredients.id, input.id));
-    ingredientId = input.id;
+      .where(eq(ingredients.id, existing.id));
+    ingredientId = existing.id;
     await db.delete(ingredientNutrient).where(eq(ingredientNutrient.ingredientId, ingredientId));
   } else {
-    const servingSizeId = await upsertAmount(null, input.servingGrams, "serving");
-    const batchSizeId = await upsertAmount(null, input.packageGrams, "package");
     const [row] = await db
       .insert(ingredients)
       .values({
+        id: input.id, // honor a client-supplied id; undefined → drizzle mints a ULID
         userId: input.userId ?? null,
         visibility: input.visibility ?? "public",
         name: input.name,
@@ -156,16 +158,20 @@ export type SaveRecipeInput = {
 };
 
 export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
-  let recipeId: string;
+  // Upsert by id (see saveIngredient). A provided-but-absent recipe id inserts WITH that id (offline
+  // create / pulled row); the recipe's internal as-ingredient id stays server-minted (it's never
+  // referenced cross-replica — only the recipe id needs to be stable). Owner guard only when present.
+  const existing = input.id
+    ? await db.query.recipes.findFirst({
+        where: (r, { eq }) => eq(r.id, input.id!),
+        with: { asIngredient: true },
+      })
+    : null;
+  if (existing && !isOwner(existing.asIngredient.userId, input.userId))
+    throw new Error("You can only edit your own recipes.");
 
-  if (input.id) {
-    const existing = await db.query.recipes.findFirst({
-      where: (r, { eq }) => eq(r.id, input.id!),
-      with: { asIngredient: true },
-    });
-    if (!existing) throw new Error(`recipe ${input.id} not found`);
-    if (!isOwner(existing.asIngredient.userId, input.userId))
-      throw new Error("You can only edit your own recipes.");
+  let recipeId: string;
+  if (existing) {
     const servingSizeId = await upsertAmount(existing.asIngredient.servingSizeId, input.servingGrams, "serving");
     const batchSizeId = await upsertAmount(existing.asIngredient.batchSizeId, input.batchGrams, "batch");
     await db
@@ -175,8 +181,8 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
     await db
       .update(recipes)
       .set({ subtitle: input.subtitle ?? null, directions: input.directions ?? null })
-      .where(eq(recipes.id, input.id));
-    recipeId = input.id;
+      .where(eq(recipes.id, existing.id));
+    recipeId = existing.id;
     // Re-attach the item list from scratch. The join rows delete fine, but the per-item
     // `amounts` they point to are not cascaded — capture and delete them, else every edit
     // leaks one `amounts` row per ingredient.
@@ -203,6 +209,7 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
     const [rec] = await db
       .insert(recipes)
       .values({
+        id: input.id, // honor a client-supplied recipe id; undefined → drizzle mints
         asIngredientId: ing.id,
         subtitle: input.subtitle ?? null,
         directions: input.directions ?? null,
