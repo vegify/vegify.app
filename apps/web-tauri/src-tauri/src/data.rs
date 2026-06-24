@@ -929,22 +929,32 @@ impl VegifyData for Db {
 
     fn sync(&self) -> Result<(), DataError> {
         let conn = self.conn.lock().unwrap();
-        for id in self.blobs.list()? {
-            let seen: Option<String> = conn
-                .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [&id], |r| r.get(0))
-                .optional()?;
-            if seen.is_some() {
-                continue;
+        // A changeset applies table-by-table, so on a fresh replica a child row (e.g. an
+        // ingredient_in_recipe) can land before its parent, and SQLite raises a foreign-key
+        // conflict at the end of apply. Our conflict handler returns REPLACE, which is only valid
+        // for DATA/CONFLICT conflicts — for an FK conflict it makes apply return SQLITE_MISUSE (21).
+        // The changeset is internally consistent, so disable FK enforcement across the apply.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
+        let res: Result<(), DataError> = (|| {
+            for id in self.blobs.list()? {
+                let seen: Option<String> = conn
+                    .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [&id], |r| r.get(0))
+                    .optional()?;
+                if seen.is_some() {
+                    continue;
+                }
+                let bytes = self.blobs.get(&id)?;
+                conn.apply_strm(
+                    &mut &bytes[..],
+                    None::<fn(&str) -> bool>,
+                    |_conflict, _item| ConflictAction::SQLITE_CHANGESET_REPLACE,
+                )?;
+                conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
             }
-            let bytes = self.blobs.get(&id)?;
-            conn.apply_strm(
-                &mut &bytes[..],
-                None::<fn(&str) -> bool>,
-                |_conflict, _item| ConflictAction::SQLITE_CHANGESET_REPLACE,
-            )?;
-            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
-        }
-        Ok(())
+            Ok(())
+        })();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
+        res
     }
 
     /// Compaction: squash every changeset blob into ONE via SQLite's changegroup, bounding the
@@ -1181,6 +1191,55 @@ mod tests {
         for name in made {
             assert!(names.contains(&name.to_string()), "C missing {name:?} after compacted sync");
         }
+    }
+
+    // Regression for the SQLITE_MISUSE (21) found during the 2026-06-23 window click-through: a
+    // compacted changeset that contains an ingredient_in_recipe row applies child-before-parent on
+    // a fresh replica; with foreign_keys ON, the REPLACE conflict handler returns SQLITE_MISUSE.
+    // sync() now disables FK across apply. (compaction_squashes_changesets_losslessly used empty
+    // items, so it never built an ingredient_in_recipe row and missed this.)
+    #[test]
+    fn fresh_replica_replays_recipe_with_items() {
+        let tmp = std::env::temp_dir();
+        let a_db = tmp.join("vegify-fkrepl-A.db");
+        let c_db = tmp.join("vegify-fkrepl-C.db");
+        let blobs = tmp.join("vegify-fkrepl-blobs");
+        let _ = fs::remove_file(&a_db);
+        let _ = fs::remove_file(&c_db);
+        let _ = fs::remove_dir_all(&blobs);
+        fs::copy(crate::db_path(), &a_db).expect("seed A");
+        fs::copy(crate::db_path(), &c_db).expect("seed C");
+
+        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
+        // item references a SEED ingredient → the changeset includes an ingredient_in_recipe row
+        let flour = VegifyData::search_ingredients(&a, "Flour".into())
+            .expect("search")
+            .into_iter()
+            .next()
+            .expect("seed flour exists");
+        VegifyData::save_recipe(
+            &a,
+            SaveRecipeInput {
+                id: None,
+                name: "FK Replay Loaf".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(250.0),
+                batch_grams: Some(500.0),
+                items: vec![RecipeItemInput { ingredient_id: flour.id, grams: 500.0, unit: None }],
+            },
+        )
+        .expect("A save with item");
+        VegifyData::compact(&a).expect("compact");
+
+        // Fresh device C: seed + sync the compacted changeset. Without the FK fix this returns
+        // SQLITE_MISUSE; with it, C rebuilds the recipe and its replayed ingredient link.
+        let c = Db::open(c_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open C");
+        VegifyData::sync(&c).expect("C sync must not return SQLITE_MISUSE");
+        let made = VegifyData::list_recipes(&c).expect("C list");
+        let loaf = made.iter().find(|r| r.name == "FK Replay Loaf").expect("C missing FK Replay Loaf");
+        let view = VegifyData::recipe(&c, loaf.id.clone()).expect("C recipe").expect("exists");
+        assert_eq!(view.items.len(), 1, "the ingredient_in_recipe row should have replayed");
     }
 
     // Real S3 transport (the production sync path), verified against MinIO. #[ignore]'d so the
