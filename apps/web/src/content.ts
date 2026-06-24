@@ -200,3 +200,93 @@ export async function getIngredientEdit(id: string, me: string | null): Promise<
   if (!isOwner(ing.userId, me)) return null
   return toIngredientEditData(ing)
 }
+
+// --- pull (the desktop sync engine's bulk read) ---
+
+// Each row is the desktop's SaveRecipeInput / SaveIngredientInput PLUS its owner (`userId`). The
+// owner is essential: the desktop applies each via do_save_* and must stamp the row's REAL owner (not
+// the local session user) so its per-viewer visibility gates mirror the server — see the step-5 note.
+export type PullRecipe = {
+  id: string
+  asIngredientId: string
+  userId: string | null
+  visibility: Visibility
+  name: string
+  subtitle: string | null
+  directions: string | null
+  servingGrams: number | null
+  batchGrams: number | null
+  items: { ingredientId: string; grams: number; unit: string | null }[]
+}
+export type PullIngredient = {
+  id: string
+  userId: string | null
+  visibility: Visibility
+  name: string
+  description: string | null
+  price: number | null
+  caloriesPer100g: number | null
+  servingGrams: number | null
+  packageGrams: number | null
+  nutrients: Reading[]
+}
+export type PullContent = { recipes: PullRecipe[]; ingredients: PullIngredient[] }
+
+// Full pull of the viewer's listed world (isListed: public + their own at any visibility), in mutation
+// shape. `recipes` carry their as-ingredient id (the desktop apply creates the as-ingredient WITH it,
+// keeping nested Biga/Dough item FKs stable); `ingredients` are LEAF rows only (recipe as-ingredients
+// are created by applying the recipe, so excluding them avoids a double-create). v1 is a full pull;
+// a delta/changes feed comes later. Edge (acceptable + correct): a visible recipe whose item points at
+// a sub-row the viewer can't see (e.g. someone's public recipe consuming their private sub-recipe)
+// pulls without that sub-row — the item resolves to "unknown" locally, which is the right privacy outcome.
+export async function pullContent(me: string | null): Promise<PullContent> {
+  const { db, isListed } = await import('@vegify/db')
+  const [recipeRows, allIngredients] = await Promise.all([
+    db.query.recipes.findMany({
+      with: {
+        asIngredient: { with: { servingSize: true, batchSize: true } },
+        items: { orderBy: (iir, { asc }) => [asc(iir.order)], with: { amount: true } },
+      },
+    }),
+    db.query.ingredients.findMany({
+      with: { servingSize: true, batchSize: true, nutrients: { with: { nutrient: true } } },
+    }),
+  ])
+
+  const recipes: PullRecipe[] = recipeRows
+    .filter((r) => isListed(r.asIngredient.visibility, r.asIngredient.userId, me))
+    .map((r) => ({
+      id: r.id,
+      asIngredientId: r.asIngredientId,
+      userId: r.asIngredient.userId,
+      visibility: r.asIngredient.visibility,
+      name: r.asIngredient.name,
+      subtitle: r.subtitle,
+      directions: r.directions,
+      servingGrams: r.asIngredient.servingSize?.grams ?? null,
+      batchGrams: r.asIngredient.batchSize?.grams ?? null,
+      items: r.items.flatMap((it) =>
+        it.ingredientId
+          ? [{ ingredientId: it.ingredientId, grams: it.amount?.grams ?? 0, unit: it.amount?.unit ?? null }]
+          : [],
+      ),
+    }))
+
+  const recipeAsIngredientIds = new Set(recipeRows.map((r) => r.asIngredientId))
+  const ingredients: PullIngredient[] = allIngredients
+    .filter((i) => !recipeAsIngredientIds.has(i.id) && isListed(i.visibility, i.userId, me))
+    .map((i) => ({
+      id: i.id,
+      userId: i.userId,
+      visibility: i.visibility,
+      name: i.name,
+      description: i.description,
+      price: i.price,
+      caloriesPer100g: i.caloriesPer100g,
+      servingGrams: i.servingSize?.grams ?? null,
+      packageGrams: i.batchSize?.grams ?? null,
+      nutrients: i.nutrients.map((n) => ({ name: n.nutrient.name, amountPer100g: n.amountPer100g, unit: n.unit })),
+    }))
+
+  return { recipes, ingredients }
+}

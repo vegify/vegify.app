@@ -24,6 +24,7 @@ import { Route as ApiContentSearchRouteImport } from './routes/api.content.searc
 import { Route as ApiContentRecipesRouteImport } from './routes/api.content.recipes'
 import { Route as ApiContentRecipeEditRouteImport } from './routes/api.content.recipe-edit'
 import { Route as ApiContentRecipeDetailRouteImport } from './routes/api.content.recipe-detail'
+import { Route as ApiContentPullRouteImport } from './routes/api.content.pull'
 import { Route as ApiContentIngredientsRouteImport } from './routes/api.content.ingredients'
 import { Route as ApiContentIngredientEditRouteImport } from './routes/api.content.ingredient-edit'
 import { Route as ApiContentIngredientDetailRouteImport } from './routes/api.content.ingredient-detail'
@@ -109,6 +110,11 @@ const ApiContentRecipeDetailRoute = ApiContentRecipeDetailRouteImport.update({
   path: '/api/content/recipe-detail',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiContentPullRoute = ApiContentPullRouteImport.update({
+  id: '/api/content/pull',
+  path: '/api/content/pull',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiContentIngredientsRoute = ApiContentIngredientsRouteImport.update({
   id: '/api/content/ingredients',
   path: '/api/content/ingredients',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
   '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
   '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/pull': typeof ApiContentPullRoute
   '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
   '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
   '/api/content/recipes': typeof ApiContentRecipesRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
   '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
   '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/pull': typeof ApiContentPullRoute
   '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
   '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
   '/api/content/recipes': typeof ApiContentRecipesRoute
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
   '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
   '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/pull': typeof ApiContentPullRoute
   '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
   '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
   '/api/content/recipes': typeof ApiContentRecipesRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/api/content/ingredient-detail'
     | '/api/content/ingredient-edit'
     | '/api/content/ingredients'
+    | '/api/content/pull'
     | '/api/content/recipe-detail'
     | '/api/content/recipe-edit'
     | '/api/content/recipes'
@@ -261,6 +271,7 @@ export interface FileRouteTypes {
     | '/api/content/ingredient-detail'
     | '/api/content/ingredient-edit'
     | '/api/content/ingredients'
+    | '/api/content/pull'
     | '/api/content/recipe-detail'
     | '/api/content/recipe-edit'
     | '/api/content/recipes'
@@ -285,6 +296,7 @@ export interface FileRouteTypes {
     | '/api/content/ingredient-detail'
     | '/api/content/ingredient-edit'
     | '/api/content/ingredients'
+    | '/api/content/pull'
     | '/api/content/recipe-detail'
     | '/api/content/recipe-edit'
     | '/api/content/recipes'
@@ -310,6 +322,7 @@ export interface RootRouteChildren {
   ApiContentIngredientDetailRoute: typeof ApiContentIngredientDetailRoute
   ApiContentIngredientEditRoute: typeof ApiContentIngredientEditRoute
   ApiContentIngredientsRoute: typeof ApiContentIngredientsRoute
+  ApiContentPullRoute: typeof ApiContentPullRoute
   ApiContentRecipeDetailRoute: typeof ApiContentRecipeDetailRoute
   ApiContentRecipeEditRoute: typeof ApiContentRecipeEditRoute
   ApiContentRecipesRoute: typeof ApiContentRecipesRoute
@@ -427,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiContentRecipeDetailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/content/pull': {
+      id: '/api/content/pull'
+      path: '/api/content/pull'
+      fullPath: '/api/content/pull'
+      preLoaderRoute: typeof ApiContentPullRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/content/ingredients': {
       id: '/api/content/ingredients'
       path: '/api/content/ingredients'
@@ -494,6 +514,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiContentIngredientDetailRoute: ApiContentIngredientDetailRoute,
   ApiContentIngredientEditRoute: ApiContentIngredientEditRoute,
   ApiContentIngredientsRoute: ApiContentIngredientsRoute,
+  ApiContentPullRoute: ApiContentPullRoute,
   ApiContentRecipeDetailRoute: ApiContentRecipeDetailRoute,
   ApiContentRecipeEditRoute: ApiContentRecipeEditRoute,
   ApiContentRecipesRoute: ApiContentRecipesRoute,
