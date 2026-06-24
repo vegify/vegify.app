@@ -5,7 +5,9 @@ import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegi
 const getRecipeFn = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
   .handler(async ({ data }) => {
-    const { db, getIngredientNutrition } = await import('@vegify/db')
+    const { db, getIngredientNutrition, isOwner } = await import('@vegify/db')
+    const { currentUserId } = await import('../auth')
+    const me = await currentUserId()
     const id = data
     const recipe = await db.query.recipes.findFirst({
       where: (r, { eq }) => eq(r.id, id),
@@ -18,6 +20,7 @@ const getRecipeFn = createServerFn({ method: 'GET' })
       },
     })
     if (!recipe) throw notFound()
+    if (!isOwner(recipe.asIngredient.userId, me)) throw notFound()
     const items = []
     for (const it of recipe.items) {
       if (!it.ingredient) continue
@@ -39,7 +42,8 @@ const searchFn = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
     const { searchIngredients } = await import('@vegify/db')
-    return searchIngredients(data)
+    const { currentUserId } = await import('../auth')
+    return searchIngredients(data, await currentUserId())
   })
 
 const saveFn = createServerFn({ method: 'POST' })
@@ -54,7 +58,8 @@ const deleteFn = createServerFn({ method: 'POST' })
   .validator((id: string) => id)
   .handler(async ({ data }) => {
     const { deleteRecipe } = await import('@vegify/db')
-    await deleteRecipe(data)
+    const { currentUserId } = await import('../auth')
+    await deleteRecipe(data, await currentUserId())
   })
 
 export const Route = createFileRoute('/recipes/$recipeId/edit')({
@@ -67,6 +72,7 @@ function EditRecipe() {
   const router = useRouter()
   const defaults: RecipeFormDefaults = {
     id: recipe.id,
+    visibility: recipe.asIngredient.visibility,
     name: recipe.asIngredient.name,
     subtitle: recipe.subtitle,
     directions: recipe.directions,

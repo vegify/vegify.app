@@ -6,7 +6,9 @@ import { LinkAdapter } from '../link'
 const getIngredient = createServerFn({ method: 'GET' })
   .validator((ingredientId: string) => ingredientId)
   .handler(async ({ data }): Promise<IngredientDetailVM> => {
-    const { db } = await import('@vegify/db')
+    const { db, canView } = await import('@vegify/db')
+    const { currentUserId } = await import('../auth')
+    const me = await currentUserId()
     const ingredient = await db.query.ingredients.findFirst({
       where: (i, { eq }) => eq(i.id, data),
       with: {
@@ -17,6 +19,7 @@ const getIngredient = createServerFn({ method: 'GET' })
       },
     })
     if (!ingredient) throw notFound()
+    if (!canView(ingredient.visibility, ingredient.userId, me)) throw notFound()
 
     const nutrition: NutritionFactsData = {
       heading: 'This Ingredient',

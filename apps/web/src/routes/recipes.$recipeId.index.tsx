@@ -6,7 +6,9 @@ import { LinkAdapter } from '../link'
 const getRecipe = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
   .handler(async ({ data }): Promise<RecipeDetailVM> => {
-    const { db, getRecipeNutrition } = await import('@vegify/db')
+    const { db, getRecipeNutrition, canView } = await import('@vegify/db')
+    const { currentUserId } = await import('../auth')
+    const me = await currentUserId()
     const id = data
     const recipe = await db.query.recipes.findFirst({
       where: (r, { eq }) => eq(r.id, id),
@@ -19,6 +21,7 @@ const getRecipe = createServerFn({ method: 'GET' })
       },
     })
     if (!recipe) throw notFound()
+    if (!canView(recipe.asIngredient.visibility, recipe.asIngredient.userId, me)) throw notFound()
     const agg = await getRecipeNutrition(id)
 
     // An item whose ingredient is itself a recipe's as-ingredient links to the recipe page, not

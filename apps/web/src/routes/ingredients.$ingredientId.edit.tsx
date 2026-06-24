@@ -9,7 +9,9 @@ import {
 const getIngredientFn = createServerFn({ method: 'GET' })
   .validator((id: string) => id)
   .handler(async ({ data }) => {
-    const { db } = await import('@vegify/db')
+    const { db, isOwner } = await import('@vegify/db')
+    const { currentUserId } = await import('../auth')
+    const me = await currentUserId()
     const ingredient = await db.query.ingredients.findFirst({
       where: (i, { eq }) => eq(i.id, data),
       with: {
@@ -19,6 +21,7 @@ const getIngredientFn = createServerFn({ method: 'GET' })
       },
     })
     if (!ingredient) throw notFound()
+    if (!isOwner(ingredient.userId, me)) throw notFound()
     return ingredient
   })
 
@@ -34,7 +37,8 @@ const deleteIngredientFn = createServerFn({ method: 'POST' })
   .validator((id: string) => id)
   .handler(async ({ data }) => {
     const { deleteIngredient } = await import('@vegify/db')
-    await deleteIngredient(data)
+    const { currentUserId } = await import('../auth')
+    await deleteIngredient(data, await currentUserId())
   })
 
 export const Route = createFileRoute('/ingredients/$ingredientId/edit')({
@@ -50,6 +54,7 @@ function EditIngredient() {
   const scale = servingGrams ? servingGrams / 100 : 1
   const defaults: IngredientFormDefaults = {
     id: ingredient.id,
+    visibility: ingredient.visibility,
     name: ingredient.name,
     description: ingredient.description,
     priceCents: ingredient.price,

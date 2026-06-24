@@ -97,11 +97,17 @@ export type IngredientSearchResult = AggregatedNutrition & {
 /** Search ingredients by name, each with its effective per-100g nutrition (for live recipe aggregation). */
 export async function searchIngredients(
   query: string,
+  userId?: string | null,
   limit = 12,
 ): Promise<IngredientSearchResult[]> {
   const q = query.trim();
   const rows = await db.query.ingredients.findMany({
-    where: q ? (i, { like }) => like(i.name, `%${q}%`) : undefined,
+    // public catalog + your own (any visibility), name-filtered
+    where: (i, { and, or, eq, like }) =>
+      and(
+        q ? like(i.name, `%${q}%`) : undefined,
+        or(eq(i.visibility, "public"), userId ? eq(i.userId, userId) : undefined),
+      ),
     with: { servingSize: true },
     orderBy: (i, { asc }) => [asc(i.name)],
     limit,

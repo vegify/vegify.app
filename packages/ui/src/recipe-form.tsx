@@ -13,6 +13,7 @@ import {
 import { cn } from "./cn";
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData, type NutritionReading } from "./nutrition-facts";
+import { VisibilityField, type Visibility } from "./visibility-field";
 
 export type IngredientSearchItem = {
   id: string;
@@ -25,6 +26,7 @@ export type IngredientSearchItem = {
 /** Storage shape passed to onSave. */
 export type RecipeFormInput = {
   id?: string;
+  visibility: Visibility;
   name: string;
   subtitle: string | null;
   directions: string | null;
@@ -35,6 +37,7 @@ export type RecipeFormInput = {
 
 export type RecipeFormDefaults = {
   id?: string;
+  visibility?: Visibility;
   name?: string;
   subtitle?: string | null;
   directions?: string | null;
@@ -75,6 +78,7 @@ export function RecipeForm({
   const [name, setName] = useState(defaults?.name ?? "");
   const [subtitle, setSubtitle] = useState(defaults?.subtitle ?? "");
   const [directions, setDirections] = useState(defaults?.directions ?? "");
+  const [visibility, setVisibility] = useState<Visibility>(defaults?.visibility ?? "public");
   const [servings, setServings] = useState(
     defaults?.servings != null ? clean(defaults.servings) : "1",
   );
@@ -166,6 +170,7 @@ export function RecipeForm({
   function buildInput(): RecipeFormInput {
     return {
       id: defaults?.id,
+      visibility,
       name: name.trim(),
       subtitle: subtitle.trim() || null,
       directions: directions.trim() || null,
@@ -258,6 +263,10 @@ export function RecipeForm({
                 className="h-11 w-24"
               />
             </label>
+          </div>
+
+          <div className="mt-4">
+            <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
           <h2 className="mt-8 mb-3 text-center text-xl font-bold">Ingredients</h2>

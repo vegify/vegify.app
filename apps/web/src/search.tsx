@@ -12,7 +12,9 @@ import {
 const searchAll = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
-    const { db } = await import('@vegify/db')
+    const { db, isListed } = await import('@vegify/db')
+    const { currentUserId } = await import('./auth')
+    const me = await currentUserId()
     const q = data.toLowerCase()
     const [recipes, ingredients] = await Promise.all([
       db.query.recipes.findMany({ with: { asIngredient: true } }),
@@ -20,10 +22,17 @@ const searchAll = createServerFn({ method: 'GET' })
     ])
     const recipeIngredientIds = new Set(recipes.map((r) => r.asIngredientId))
     const recipeHits: RecipeListItem[] = recipes
-      .filter((r) => r.asIngredient.name.toLowerCase().includes(q))
+      .filter(
+        (r) =>
+          isListed(r.asIngredient.visibility, r.asIngredient.userId, me) &&
+          r.asIngredient.name.toLowerCase().includes(q),
+      )
       .map((r) => ({ id: r.id, name: r.asIngredient.name, subtitle: r.subtitle }))
     const ingredientHits: IngredientListItem[] = ingredients
-      .filter((i) => !recipeIngredientIds.has(i.id) && i.name.toLowerCase().includes(q))
+      .filter(
+        (i) =>
+          !recipeIngredientIds.has(i.id) && isListed(i.visibility, i.userId, me) && i.name.toLowerCase().includes(q),
+      )
       .map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))
     return { recipes: recipeHits, ingredients: ingredientHits }
   })

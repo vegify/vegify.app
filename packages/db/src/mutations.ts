@@ -8,6 +8,7 @@ import {
   nutrients,
   recipes,
 } from "./schema";
+import { isOwner, type Visibility } from "./access";
 
 // Shared domain mutations. Each app wraps these in its own framework-idiomatic
 // transport (Next server action / TanStack createServerFn) — the logic lives once.
@@ -21,6 +22,7 @@ export type IngredientNutrientInput = {
 export type SaveIngredientInput = {
   id?: string;
   userId?: string | null;
+  visibility?: Visibility;
   name: string;
   description?: string | null;
   price?: number | null; // cents
@@ -70,6 +72,8 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
     const existing = await db.query.ingredients.findFirst({
       where: (t, { eq }) => eq(t.id, input.id!),
     });
+    if (existing && !isOwner(existing.userId, input.userId))
+      throw new Error("You can only edit your own ingredients.");
     const servingSizeId = await upsertAmount(existing?.servingSizeId, input.servingGrams, "serving");
     const batchSizeId = await upsertAmount(existing?.batchSizeId, input.packageGrams, "package");
     await db
@@ -79,6 +83,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
         description: input.description ?? null,
         price: input.price ?? null,
         caloriesPer100g: input.caloriesPer100g ?? null,
+        visibility: input.visibility ?? "public",
         servingSizeId,
         batchSizeId,
       })
@@ -92,6 +97,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
       .insert(ingredients)
       .values({
         userId: input.userId ?? null,
+        visibility: input.visibility ?? "public",
         name: input.name,
         description: input.description ?? null,
         isVegan: true,
@@ -120,7 +126,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
   return ingredientId;
 }
 
-export async function deleteIngredient(id: string): Promise<void> {
+export async function deleteIngredient(id: string, userId?: string | null): Promise<void> {
   // ingredient_in_recipe / ingredient_img are onDelete:"restrict" — deleting an in-use
   // ingredient throws (intended). Its serving/batch `amounts` are not cascaded, so clean
   // them up after the row is gone.
@@ -128,6 +134,8 @@ export async function deleteIngredient(id: string): Promise<void> {
     where: (t, { eq }) => eq(t.id, id),
   });
   if (!existing) return;
+  if (!isOwner(existing.userId, userId))
+    throw new Error("You can only delete your own ingredients.");
   await db.delete(ingredients).where(eq(ingredients.id, id));
   await deleteAmounts([existing.servingSizeId, existing.batchSizeId]);
 }
@@ -138,6 +146,7 @@ export type RecipeItemInput = { ingredientId: string; grams: number; unit?: stri
 export type SaveRecipeInput = {
   id?: string;
   userId?: string | null;
+  visibility?: Visibility;
   name: string;
   subtitle?: string | null;
   directions?: string | null;
@@ -155,11 +164,13 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
       with: { asIngredient: true },
     });
     if (!existing) throw new Error(`recipe ${input.id} not found`);
+    if (!isOwner(existing.asIngredient.userId, input.userId))
+      throw new Error("You can only edit your own recipes.");
     const servingSizeId = await upsertAmount(existing.asIngredient.servingSizeId, input.servingGrams, "serving");
     const batchSizeId = await upsertAmount(existing.asIngredient.batchSizeId, input.batchGrams, "batch");
     await db
       .update(ingredients)
-      .set({ name: input.name, servingSizeId, batchSizeId })
+      .set({ name: input.name, visibility: input.visibility ?? "public", servingSizeId, batchSizeId })
       .where(eq(ingredients.id, existing.asIngredientId));
     await db
       .update(recipes)
@@ -182,6 +193,7 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
       .insert(ingredients)
       .values({
         userId: input.userId ?? null,
+        visibility: input.visibility ?? "public",
         name: input.name,
         isVegan: true,
         servingSizeId,
@@ -216,12 +228,14 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
   return recipeId;
 }
 
-export async function deleteRecipe(id: string): Promise<void> {
+export async function deleteRecipe(id: string, userId?: string | null): Promise<void> {
   const recipe = await db.query.recipes.findFirst({
     where: (r, { eq }) => eq(r.id, id),
     with: { asIngredient: true },
   });
   if (!recipe) return;
+  if (!isOwner(recipe.asIngredient.userId, userId))
+    throw new Error("You can only delete your own recipes.");
 
   // Capture the item amounts before the recipe delete cascades the join rows away (the
   // amounts themselves are not cascaded — FK is amount→join).

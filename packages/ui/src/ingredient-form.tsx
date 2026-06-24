@@ -5,10 +5,12 @@ import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
 import { cn } from "./cn";
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
+import { VisibilityField, type Visibility } from "./visibility-field";
 
 /** What `onSave` receives — the storage shape (per-100g), already converted. */
 export type IngredientFormInput = {
   id?: string;
+  visibility: Visibility;
   name: string;
   description: string | null;
   price: number | null; // cents
@@ -21,6 +23,7 @@ export type IngredientFormInput = {
 /** Initial values for edit mode (per-serving, as the user entered them). */
 export type IngredientFormDefaults = {
   id?: string;
+  visibility?: Visibility;
   name?: string;
   description?: string | null;
   priceCents?: number | null;
@@ -47,6 +50,7 @@ export function IngredientForm({
 }) {
   const [name, setName] = useState(defaults?.name ?? "");
   const [description, setDescription] = useState(defaults?.description ?? "");
+  const [visibility, setVisibility] = useState<Visibility>(defaults?.visibility ?? "public");
   const [price, setPrice] = useState(
     defaults?.priceCents != null ? clean(defaults.priceCents / 100) : "",
   );
@@ -90,6 +94,7 @@ export function IngredientForm({
   function buildInput(): IngredientFormInput {
     return {
       id: defaults?.id,
+      visibility,
       name: name.trim(),
       description: description.trim() || null,
       price: price.trim() ? Math.round(Number(price) * 100) : null,
@@ -216,6 +221,10 @@ export function IngredientForm({
               onChange={(e) => setCalories(e.target.value)}
               className="h-11"
             />
+          </div>
+
+          <div className="mt-4">
+            <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
           <h2 className="mt-8 mb-3 text-center text-lg font-bold">Nutrients</h2>

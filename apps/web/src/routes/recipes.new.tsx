@@ -6,7 +6,8 @@ const searchFn = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
     const { searchIngredients } = await import('@vegify/db')
-    return searchIngredients(data)
+    const { currentUserId } = await import('../auth')
+    return searchIngredients(data, await currentUserId())
   })
 
 const saveFn = createServerFn({ method: 'POST' })

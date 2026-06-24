@@ -4,11 +4,13 @@ import { RecipeListView, type RecipeListItem } from '@vegify/ui'
 import { LinkAdapter } from '../link'
 
 const getRecipes = createServerFn({ method: 'GET' }).handler(async () => {
-  const { db } = await import('@vegify/db')
+  const { db, isListed } = await import('@vegify/db')
+  const { currentUserId } = await import('../auth')
+  const me = await currentUserId()
   const recipes = await db.query.recipes.findMany({ with: { asIngredient: true } })
-  return recipes.map(
-    (r): RecipeListItem => ({ id: r.id, name: r.asIngredient.name, subtitle: r.subtitle }),
-  )
+  return recipes
+    .filter((r) => isListed(r.asIngredient.visibility, r.asIngredient.userId, me))
+    .map((r): RecipeListItem => ({ id: r.id, name: r.asIngredient.name, subtitle: r.subtitle }))
 })
 
 export const Route = createFileRoute('/recipes/')({
