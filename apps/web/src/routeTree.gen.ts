@@ -20,6 +20,13 @@ import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$reci
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
 import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
 import { Route as IngredientsIngredientIdEditRouteImport } from './routes/ingredients.$ingredientId.edit'
+import { Route as ApiContentSearchRouteImport } from './routes/api.content.search'
+import { Route as ApiContentRecipesRouteImport } from './routes/api.content.recipes'
+import { Route as ApiContentRecipeEditRouteImport } from './routes/api.content.recipe-edit'
+import { Route as ApiContentRecipeDetailRouteImport } from './routes/api.content.recipe-detail'
+import { Route as ApiContentIngredientsRouteImport } from './routes/api.content.ingredients'
+import { Route as ApiContentIngredientEditRouteImport } from './routes/api.content.ingredient-edit'
+import { Route as ApiContentIngredientDetailRouteImport } from './routes/api.content.ingredient-detail'
 import { Route as ApiAuthSignupRouteImport } from './routes/api.auth.signup'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
@@ -82,6 +89,43 @@ const IngredientsIngredientIdEditRoute =
     path: '/ingredients/$ingredientId/edit',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiContentSearchRoute = ApiContentSearchRouteImport.update({
+  id: '/api/content/search',
+  path: '/api/content/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiContentRecipesRoute = ApiContentRecipesRouteImport.update({
+  id: '/api/content/recipes',
+  path: '/api/content/recipes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiContentRecipeEditRoute = ApiContentRecipeEditRouteImport.update({
+  id: '/api/content/recipe-edit',
+  path: '/api/content/recipe-edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiContentRecipeDetailRoute = ApiContentRecipeDetailRouteImport.update({
+  id: '/api/content/recipe-detail',
+  path: '/api/content/recipe-detail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiContentIngredientsRoute = ApiContentIngredientsRouteImport.update({
+  id: '/api/content/ingredients',
+  path: '/api/content/ingredients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiContentIngredientEditRoute =
+  ApiContentIngredientEditRouteImport.update({
+    id: '/api/content/ingredient-edit',
+    path: '/api/content/ingredient-edit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiContentIngredientDetailRoute =
+  ApiContentIngredientDetailRouteImport.update({
+    id: '/api/content/ingredient-detail',
+    path: '/api/content/ingredient-detail',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
   id: '/api/auth/signup',
   path: '/api/auth/signup',
@@ -115,6 +159,13 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
+  '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
+  '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
+  '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
+  '/api/content/recipes': typeof ApiContentRecipesRoute
+  '/api/content/search': typeof ApiContentSearchRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -132,6 +183,13 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
+  '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
+  '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
+  '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
+  '/api/content/recipes': typeof ApiContentRecipesRoute
+  '/api/content/search': typeof ApiContentSearchRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId': typeof IngredientsIngredientIdIndexRoute
@@ -150,6 +208,13 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/content/ingredient-detail': typeof ApiContentIngredientDetailRoute
+  '/api/content/ingredient-edit': typeof ApiContentIngredientEditRoute
+  '/api/content/ingredients': typeof ApiContentIngredientsRoute
+  '/api/content/recipe-detail': typeof ApiContentRecipeDetailRoute
+  '/api/content/recipe-edit': typeof ApiContentRecipeEditRoute
+  '/api/content/recipes': typeof ApiContentRecipesRoute
+  '/api/content/search': typeof ApiContentSearchRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -169,6 +234,13 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
+    | '/api/content/ingredient-detail'
+    | '/api/content/ingredient-edit'
+    | '/api/content/ingredients'
+    | '/api/content/recipe-detail'
+    | '/api/content/recipe-edit'
+    | '/api/content/recipes'
+    | '/api/content/search'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -186,6 +258,13 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
+    | '/api/content/ingredient-detail'
+    | '/api/content/ingredient-edit'
+    | '/api/content/ingredients'
+    | '/api/content/recipe-detail'
+    | '/api/content/recipe-edit'
+    | '/api/content/recipes'
+    | '/api/content/search'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId'
@@ -203,6 +282,13 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/signup'
+    | '/api/content/ingredient-detail'
+    | '/api/content/ingredient-edit'
+    | '/api/content/ingredients'
+    | '/api/content/recipe-detail'
+    | '/api/content/recipe-edit'
+    | '/api/content/recipes'
+    | '/api/content/search'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -221,6 +307,13 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSignupRoute: typeof ApiAuthSignupRoute
+  ApiContentIngredientDetailRoute: typeof ApiContentIngredientDetailRoute
+  ApiContentIngredientEditRoute: typeof ApiContentIngredientEditRoute
+  ApiContentIngredientsRoute: typeof ApiContentIngredientsRoute
+  ApiContentRecipeDetailRoute: typeof ApiContentRecipeDetailRoute
+  ApiContentRecipeEditRoute: typeof ApiContentRecipeEditRoute
+  ApiContentRecipesRoute: typeof ApiContentRecipesRoute
+  ApiContentSearchRoute: typeof ApiContentSearchRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
   RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
   IngredientsIngredientIdIndexRoute: typeof IngredientsIngredientIdIndexRoute
@@ -306,6 +399,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IngredientsIngredientIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/content/search': {
+      id: '/api/content/search'
+      path: '/api/content/search'
+      fullPath: '/api/content/search'
+      preLoaderRoute: typeof ApiContentSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/recipes': {
+      id: '/api/content/recipes'
+      path: '/api/content/recipes'
+      fullPath: '/api/content/recipes'
+      preLoaderRoute: typeof ApiContentRecipesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/recipe-edit': {
+      id: '/api/content/recipe-edit'
+      path: '/api/content/recipe-edit'
+      fullPath: '/api/content/recipe-edit'
+      preLoaderRoute: typeof ApiContentRecipeEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/recipe-detail': {
+      id: '/api/content/recipe-detail'
+      path: '/api/content/recipe-detail'
+      fullPath: '/api/content/recipe-detail'
+      preLoaderRoute: typeof ApiContentRecipeDetailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/ingredients': {
+      id: '/api/content/ingredients'
+      path: '/api/content/ingredients'
+      fullPath: '/api/content/ingredients'
+      preLoaderRoute: typeof ApiContentIngredientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/ingredient-edit': {
+      id: '/api/content/ingredient-edit'
+      path: '/api/content/ingredient-edit'
+      fullPath: '/api/content/ingredient-edit'
+      preLoaderRoute: typeof ApiContentIngredientEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/content/ingredient-detail': {
+      id: '/api/content/ingredient-detail'
+      path: '/api/content/ingredient-detail'
+      fullPath: '/api/content/ingredient-detail'
+      preLoaderRoute: typeof ApiContentIngredientDetailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/signup': {
       id: '/api/auth/signup'
       path: '/api/auth/signup'
@@ -349,6 +491,13 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSignupRoute: ApiAuthSignupRoute,
+  ApiContentIngredientDetailRoute: ApiContentIngredientDetailRoute,
+  ApiContentIngredientEditRoute: ApiContentIngredientEditRoute,
+  ApiContentIngredientsRoute: ApiContentIngredientsRoute,
+  ApiContentRecipeDetailRoute: ApiContentRecipeDetailRoute,
+  ApiContentRecipeEditRoute: ApiContentRecipeEditRoute,
+  ApiContentRecipesRoute: ApiContentRecipesRoute,
+  ApiContentSearchRoute: ApiContentSearchRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
   RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,
   IngredientsIngredientIdIndexRoute: IngredientsIngredientIdIndexRoute,
