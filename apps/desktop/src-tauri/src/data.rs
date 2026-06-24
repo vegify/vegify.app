@@ -186,7 +186,7 @@ pub struct IngredientEditData {
 
 // ---- write/input wire types (mirror @vegify/db mutation inputs) ----
 
-#[derive(Deserialize, Type)]
+#[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct IngredientNutrientInput {
     pub name: String,
@@ -194,7 +194,7 @@ pub struct IngredientNutrientInput {
     pub unit: String,
 }
 
-#[derive(Deserialize, Type)]
+#[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveIngredientInput {
     pub id: Option<String>,
@@ -208,7 +208,7 @@ pub struct SaveIngredientInput {
     pub nutrients: Vec<IngredientNutrientInput>,
 }
 
-#[derive(Deserialize, Type)]
+#[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RecipeItemInput {
     pub ingredient_id: String,
@@ -216,7 +216,7 @@ pub struct RecipeItemInput {
     pub unit: Option<String>,
 }
 
-#[derive(Deserialize, Type)]
+#[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveRecipeInput {
     pub id: Option<String>,
@@ -784,6 +784,24 @@ impl BlobStore for S3BlobStore {
     }
 }
 
+/// Desktop-local meta tables, created on open and NEVER synced — they're written outside the changeset
+/// capture, so they never ride a changeset to another device. `_applied_changesets` dedupes applied
+/// blobs; `_outbox` is the push queue: one semantic mutation `{op, payload}` per local content write,
+/// drained FIFO by the sync engine to the content API. `seq` AUTOINCREMENT gives deterministic order
+/// (ULIDs aren't monotonic within a millisecond) and is never reused after a drained row is deleted.
+fn init_meta_tables(conn: &Connection) -> Result<(), DataError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);
+         CREATE TABLE IF NOT EXISTS _outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL, payload TEXT NOT NULL);",
+    )?;
+    Ok(())
+}
+
+/// Serialize a mutation input to its content-API JSON body (camelCase). Used to build an outbox payload.
+fn to_json<T: Serialize>(v: &T) -> Result<serde_json::Value, DataError> {
+    serde_json::to_value(v).map_err(|e| DataError::Db(e.to_string()))
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
     blobs: Box<dyn BlobStore>,
@@ -795,7 +813,7 @@ impl Db {
         let conn = Connection::open(db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
+        init_meta_tables(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             blobs: Box::new(LocalBlobStore::new(blob_dir)?),
@@ -808,7 +826,7 @@ impl Db {
         let conn = Connection::open(db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
+        init_meta_tables(&conn)?;
         Ok(Self { conn: Mutex::new(conn), blobs, auth: Mutex::new(keychain_load()) })
     }
 
@@ -831,6 +849,18 @@ impl Db {
             conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
         }
         Ok(value)
+    }
+
+    /// Append a semantic mutation `{op, payload}` to the push queue. Recorded OUTSIDE write_capture's
+    /// changeset (like _applied_changesets) so it never rides a synced changeset to another device —
+    /// _outbox is device-local. The sync engine drains it in `seq` order and deletes pushed rows.
+    fn enqueue(&self, op: &str, payload: serde_json::Value) -> Result<(), DataError> {
+        let json = serde_json::to_string(&payload).map_err(|e| DataError::Db(e.to_string()))?;
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("INSERT INTO _outbox(op, payload) VALUES (?1, ?2)", params![op, json])?;
+        Ok(())
     }
 
     fn current_uid(&self) -> Option<String> {
@@ -1202,24 +1232,44 @@ impl VegifyData for Db {
         }))
     }
 
-    fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError> {
+    fn save_ingredient(&self, mut input: SaveIngredientInput) -> Result<String, DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_save_ingredient(conn, &input, uid.as_deref()))
+        // Mint the client id up front for a create so the local row, the outbox entry, and (after
+        // push) the server row all share ONE id — the local-first model (client ULIDs authoritative).
+        if input.id.is_none() {
+            input.id = Some(new_id());
+        }
+        let id = self.write_capture(|conn| do_save_ingredient(conn, &input, uid.as_deref()))?;
+        self.enqueue("saveIngredient", to_json(&input)?)?;
+        Ok(id)
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_delete_ingredient(conn, &id, uid.as_deref()))
+        self.write_capture(|conn| do_delete_ingredient(conn, &id, uid.as_deref()))?;
+        self.enqueue("deleteIngredient", serde_json::json!({ "id": id }))?;
+        Ok(())
     }
 
-    fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError> {
+    fn save_recipe(&self, mut input: SaveRecipeInput) -> Result<String, DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_save_recipe(conn, &input, uid.as_deref()))
+        // Mint client ids up front for a create (see save_ingredient). A nested recipe also needs its
+        // as-ingredient id stable cross-replica, so mint that alongside — else the push would let the
+        // server mint a different one and the consuming item's FK would diverge.
+        if input.id.is_none() {
+            input.id = Some(new_id());
+            input.as_ingredient_id = Some(new_id());
+        }
+        let id = self.write_capture(|conn| do_save_recipe(conn, &input, uid.as_deref()))?;
+        self.enqueue("saveRecipe", to_json(&input)?)?;
+        Ok(id)
     }
 
     fn delete_recipe(&self, id: String) -> Result<(), DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_delete_recipe(conn, &id, uid.as_deref()))
+        self.write_capture(|conn| do_delete_recipe(conn, &id, uid.as_deref()))?;
+        self.enqueue("deleteRecipe", serde_json::json!({ "id": id }))?;
+        Ok(())
     }
 
     fn sync(&self) -> Result<(), DataError> {
@@ -2047,5 +2097,98 @@ mod tests {
         let again = VegifyData::recipe(&db, dough_rid.clone()).expect("read").expect("exists");
         assert_eq!(again.items.len(), 1, "re-apply did not duplicate the item");
         eprintln!("upsert-by-id: supplied ids honored; nested biga/dough FK stable across re-apply");
+    }
+
+    // Step 3: every local content write records a semantic mutation in the _outbox push queue, FIFO,
+    // with the resolved client id (a create's minted id, captured up front). A recipe's payload also
+    // carries the as-ingredient id matching the LOCAL row, so a later push creates the server row with
+    // the same id (cross-replica stability). The server stamps userId from the session, so it's absent.
+    #[test]
+    fn writes_record_semantic_outbox() {
+        let blobs = std::env::temp_dir().join("vegify-outbox-blobs");
+        let db_path = std::env::temp_dir().join("vegify-outbox.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        sign_in_seed(&db);
+
+        let outbox = |db: &Db| -> Vec<(String, serde_json::Value)> {
+            let conn = db.conn.lock().unwrap();
+            let mut stmt = conn.prepare("SELECT op, payload FROM _outbox ORDER BY seq").unwrap();
+            let v = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .unwrap()
+                .map(|row| {
+                    let (op, p) = row.unwrap();
+                    (op, serde_json::from_str(&p).unwrap())
+                })
+                .collect::<Vec<_>>();
+            v
+        };
+
+        let rid = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: None,
+                name: "Outbox Recipe".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(200.0),
+                items: vec![],
+            },
+        )
+        .expect("save recipe");
+        // capture the local as-ingredient id BEFORE the delete removes the row
+        let local_ai: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&rid], |r| r.get(0))
+            .expect("local recipe row");
+
+        let iid = VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Private),
+                name: "Outbox Ingredient".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(10.0),
+                serving_grams: Some(50.0),
+                package_grams: None,
+                nutrients: vec![],
+            },
+        )
+        .expect("save ingredient");
+        VegifyData::delete_recipe(&db, rid.clone()).expect("delete recipe");
+
+        let rows = outbox(&db);
+        let ops: Vec<&str> = rows.iter().map(|(op, _)| op.as_str()).collect();
+        assert_eq!(ops, ["saveRecipe", "saveIngredient", "deleteRecipe"], "one FIFO entry per write");
+
+        // saveRecipe payload = the content-API body: resolved recipe id, camelCase fields, NO userId.
+        let recipe_payload = &rows[0].1;
+        assert_eq!(recipe_payload["id"], serde_json::json!(rid), "carries the resolved recipe id");
+        assert_eq!(recipe_payload["name"], "Outbox Recipe");
+        assert!(recipe_payload.get("userId").is_none(), "userId omitted — the server stamps it");
+        assert_eq!(
+            recipe_payload["asIngredientId"],
+            serde_json::json!(local_ai),
+            "outbox as-ingredient id == the local row's (so a push keeps it stable cross-replica)"
+        );
+
+        // saveIngredient payload carries its resolved id + the chosen visibility (serialized lowercase).
+        let ing_payload = &rows[1].1;
+        assert_eq!(ing_payload["id"], serde_json::json!(iid));
+        assert_eq!(ing_payload["visibility"], "private");
+
+        // deleteRecipe payload = { id } (drives DELETE /api/content/recipes?id=…).
+        assert_eq!(rows[2].1["id"], serde_json::json!(rid));
+        eprintln!("outbox FIFO {ops:?}; recipe payload's as-ingredient id matches the local row");
     }
 }
