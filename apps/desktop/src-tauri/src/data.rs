@@ -183,12 +183,14 @@ pub struct SaveRecipeInput {
 #[derive(Debug, ttipc::Error)]
 pub enum DataError {
     Db(String),
+    Auth(String),
 }
 
 impl std::fmt::Display for DataError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataError::Db(m) => write!(f, "{m}"),
+            DataError::Auth(m) => write!(f, "{m}"),
         }
     }
 }
@@ -201,6 +203,96 @@ impl From<rusqlite::Error> for DataError {
 
 fn io_err(e: std::io::Error) -> DataError {
     DataError::Db(e.to_string())
+}
+
+// ---- auth (desktop sign-in over HTTPS → token in the OS keychain) ----
+
+/// The current user, mirrored from the web auth response. Stamped on local writes, and upserted
+/// into the local `users` table so the foreign key (and the recipe `creator`) resolves on-device.
+#[derive(Serialize, Deserialize, Type, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthUser {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+}
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SignInInput {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SignUpInput {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+}
+
+/// What the OS keychain holds: the opaque session token + the user profile. The token authorizes
+/// server-side logout (and sync, in A3); the cached profile lets `current_user` work offline.
+#[derive(Serialize, Deserialize, Clone)]
+struct StoredSession {
+    token: String,
+    user: AuthUser,
+}
+
+#[derive(Deserialize)]
+struct AuthErrorBody {
+    error: String,
+}
+
+const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
+const KEYCHAIN_ACCOUNT: &str = "session";
+
+/// Base URL of the web shell that owns the credential store. Override with VEGIFY_AUTH_URL (dev → a
+/// local `bun serve-bun.mjs`); default = the deployed CloudFront origin.
+fn auth_base_url() -> String {
+    std::env::var("VEGIFY_AUTH_URL")
+        .unwrap_or_else(|_| "https://EXAMPLEDISTOLD.cloudfront.net".to_string())
+}
+
+fn keychain_entry() -> Result<keyring::Entry, DataError> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|e| DataError::Auth(e.to_string()))
+}
+
+fn keychain_load() -> Option<StoredSession> {
+    let json = keychain_entry().ok()?.get_password().ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+fn keychain_store(s: &StoredSession) -> Result<(), DataError> {
+    let json = serde_json::to_string(s).map_err(|e| DataError::Auth(e.to_string()))?;
+    keychain_entry()?
+        .set_password(&json)
+        .map_err(|e| DataError::Auth(e.to_string()))
+}
+
+fn keychain_clear() {
+    if let Ok(e) = keychain_entry() {
+        let _ = e.delete_credential();
+    }
+}
+
+/// POST credentials to the web shell's JSON auth route; on success returns the session to store.
+fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataError> {
+    let url = format!("{}/api/auth/{path}", auth_base_url());
+    match ureq::post(&url).send_json(body) {
+        Ok(resp) => resp
+            .into_json::<StoredSession>()
+            .map_err(|e| DataError::Auth(e.to_string())),
+        Err(ureq::Error::Status(_, resp)) => {
+            let msg = resp
+                .into_json::<AuthErrorBody>()
+                .map(|e| e.error)
+                .unwrap_or_else(|_| "Authentication failed.".to_string());
+            Err(DataError::Auth(msg))
+        }
+        Err(e) => Err(DataError::Auth(format!("Network error: {e}"))),
+    }
 }
 
 /// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g (text ids).
@@ -280,7 +372,11 @@ fn find_or_create_nutrient(conn: &Connection, name: &str) -> Result<String, Data
     Ok(id)
 }
 
-fn do_save_ingredient(conn: &Connection, input: &SaveIngredientInput) -> Result<String, DataError> {
+fn do_save_ingredient(
+    conn: &Connection,
+    input: &SaveIngredientInput,
+    user_id: Option<&str>,
+) -> Result<String, DataError> {
     let ingredient_id: String = if let Some(id) = &input.id {
         let (serving, batch): (Option<String>, Option<String>) = conn
             .query_row("SELECT serving_size_id, batch_size_id FROM ingredients WHERE id = ?1", [id], |r| {
@@ -311,7 +407,7 @@ fn do_save_ingredient(conn: &Connection, input: &SaveIngredientInput) -> Result<
         let id = new_id();
         conn.execute(
             "INSERT INTO ingredients(id, user_id, name, description, is_vegan, price, calories_per_100g,
-             serving_size_id, batch_size_id) VALUES (?1, NULL, ?2, ?3, 1, ?4, ?5, ?6, ?7)",
+             serving_size_id, batch_size_id) VALUES (?1, ?8, ?2, ?3, 1, ?4, ?5, ?6, ?7)",
             params![
                 id,
                 input.name,
@@ -319,7 +415,8 @@ fn do_save_ingredient(conn: &Connection, input: &SaveIngredientInput) -> Result<
                 input.price,
                 input.calories_per_100g,
                 serving_size_id,
-                batch_size_id
+                batch_size_id,
+                user_id
             ],
         )?;
         id
@@ -356,7 +453,11 @@ fn do_delete_ingredient(conn: &Connection, id: &str) -> Result<(), DataError> {
     delete_amounts(conn, &[serving, batch])
 }
 
-fn do_save_recipe(conn: &Connection, input: &SaveRecipeInput) -> Result<String, DataError> {
+fn do_save_recipe(
+    conn: &Connection,
+    input: &SaveRecipeInput,
+    user_id: Option<&str>,
+) -> Result<String, DataError> {
     let recipe_id: String = if let Some(id) = &input.id {
         let (as_ing_id, serving, batch): (String, Option<String>, Option<String>) = conn.query_row(
             "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id
@@ -390,8 +491,8 @@ fn do_save_recipe(conn: &Connection, input: &SaveRecipeInput) -> Result<String, 
         let as_ing_id = new_id();
         conn.execute(
             "INSERT INTO ingredients(id, user_id, name, is_vegan, serving_size_id, batch_size_id)
-             VALUES (?1, NULL, ?2, 1, ?3, ?4)",
-            params![as_ing_id, input.name, serving_size_id, batch_size_id],
+             VALUES (?1, ?5, ?2, 1, ?3, ?4)",
+            params![as_ing_id, input.name, serving_size_id, batch_size_id, user_id],
         )?;
         let rid = new_id();
         conn.execute(
@@ -582,6 +683,7 @@ impl BlobStore for S3BlobStore {
 pub struct Db {
     conn: Mutex<Connection>,
     blobs: Box<dyn BlobStore>,
+    auth: Mutex<Option<StoredSession>>,
 }
 
 impl Db {
@@ -590,7 +692,11 @@ impl Db {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
-        Ok(Self { conn: Mutex::new(conn), blobs: Box::new(LocalBlobStore::new(blob_dir)?) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+            blobs: Box::new(LocalBlobStore::new(blob_dir)?),
+            auth: Mutex::new(keychain_load()),
+        })
     }
 
     /// Open with an explicit blob store (e.g. an S3BlobStore) instead of the local-dir default.
@@ -599,7 +705,7 @@ impl Db {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);")?;
-        Ok(Self { conn: Mutex::new(conn), blobs })
+        Ok(Self { conn: Mutex::new(conn), blobs, auth: Mutex::new(keychain_load()) })
     }
 
     fn write_capture<T>(
@@ -621,6 +727,23 @@ impl Db {
             conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
         }
         Ok(value)
+    }
+
+    fn current_uid(&self) -> Option<String> {
+        self.auth.lock().unwrap().as_ref().map(|s| s.user.id.clone())
+    }
+
+    /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
+    /// recipe `creator`) resolve on-device. Runs outside `write_capture` — identity isn't synced
+    /// content. Idempotent.
+    fn ensure_user_local(&self, user: &AuthUser) -> Result<(), DataError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO users(id, name, email) VALUES (?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email",
+            params![user.id, user.name, user.email],
+        )?;
+        Ok(())
     }
 }
 
@@ -665,6 +788,10 @@ pub trait VegifyData {
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
     fn sync(&self) -> Result<(), DataError>;
     fn compact(&self) -> Result<(), DataError>;
+    fn current_user(&self) -> Result<Option<AuthUser>, DataError>;
+    fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
+    fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError>;
+    fn sign_out(&self) -> Result<(), DataError>;
 }
 
 impl VegifyData for Db {
@@ -912,7 +1039,8 @@ impl VegifyData for Db {
     }
 
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError> {
-        self.write_capture(|conn| do_save_ingredient(conn, &input))
+        let uid = self.current_uid();
+        self.write_capture(|conn| do_save_ingredient(conn, &input, uid.as_deref()))
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
@@ -920,7 +1048,8 @@ impl VegifyData for Db {
     }
 
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError> {
-        self.write_capture(|conn| do_save_recipe(conn, &input))
+        let uid = self.current_uid();
+        self.write_capture(|conn| do_save_recipe(conn, &input, uid.as_deref()))
     }
 
     fn delete_recipe(&self, id: String) -> Result<(), DataError> {
@@ -980,6 +1109,52 @@ impl VegifyData for Db {
             self.blobs.delete(id)?;
         }
         conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&new])?;
+        Ok(())
+    }
+
+    fn current_user(&self) -> Result<Option<AuthUser>, DataError> {
+        let user = self.auth.lock().unwrap().as_ref().map(|s| s.user.clone());
+        if let Some(u) = &user {
+            // Restored from the keychain on launch — make sure the local row exists before any write.
+            self.ensure_user_local(u)?;
+        }
+        Ok(user)
+    }
+
+    fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError> {
+        let session = post_auth(
+            "login",
+            serde_json::json!({ "email": input.email, "password": input.password }),
+        )?;
+        let user = session.user.clone();
+        self.ensure_user_local(&user)?;
+        keychain_store(&session)?;
+        *self.auth.lock().unwrap() = Some(session);
+        Ok(user)
+    }
+
+    fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError> {
+        let session = post_auth(
+            "signup",
+            serde_json::json!({ "name": input.name, "email": input.email, "password": input.password }),
+        )?;
+        let user = session.user.clone();
+        self.ensure_user_local(&user)?;
+        keychain_store(&session)?;
+        *self.auth.lock().unwrap() = Some(session);
+        Ok(user)
+    }
+
+    fn sign_out(&self) -> Result<(), DataError> {
+        let token = self.auth.lock().unwrap().as_ref().map(|s| s.token.clone());
+        if let Some(token) = token {
+            // best-effort server-side revoke; ignore network errors so logout always works locally
+            let _ = ureq::post(&format!("{}/api/auth/logout", auth_base_url()))
+                .set("authorization", &format!("Bearer {token}"))
+                .call();
+        }
+        keychain_clear();
+        *self.auth.lock().unwrap() = None;
         Ok(())
     }
 }
@@ -1326,5 +1501,94 @@ mod tests {
         let remaining = mk().list().expect("list after compact").len();
         eprintln!("S3 objects after compact: {remaining}");
         assert_eq!(remaining, 1, "compaction should leave a single S3 object");
+    }
+
+    // A signed-in user's writes are stamped with their id. foreign_keys=ON requires that user to
+    // exist locally — which ensure_user_local guarantees in the real flow; here we use a seed user.
+    #[test]
+    fn writes_stamp_signed_in_user() {
+        let blobs = std::env::temp_dir().join("vegify-stamp-blobs");
+        let db_path = std::env::temp_dir().join("vegify-stamp.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+
+        let uid: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT id FROM users LIMIT 1", [], |r| r.get(0))
+            .expect("a seed user exists");
+        *db.auth.lock().unwrap() = Some(StoredSession {
+            token: "t".into(),
+            user: AuthUser { id: uid.clone(), name: "Seed".into(), email: "seed@x".into() },
+        });
+
+        let rid = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: None,
+                name: "Owned Recipe".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(200.0),
+                items: vec![],
+            },
+        )
+        .expect("save");
+
+        let owner: Option<String> = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT i.user_id FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
+                [&rid],
+                |r| r.get(0),
+            )
+            .expect("query owner");
+        assert_eq!(owner.as_deref(), Some(uid.as_str()), "recipe is stamped with the signed-in user");
+    }
+
+    // Full sign-in path against a running web shell (real network + OS keychain). #[ignore]'d so the
+    // default suite needs neither. Run with the web build served on $VEGIFY_AUTH_URL:
+    //   VEGIFY_AUTH_URL=http://localhost:39008 \
+    //     cargo test --lib sign_in_round_trip -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn sign_in_round_trip_against_web() {
+        let blobs = std::env::temp_dir().join("vegify-signin-blobs");
+        let db_path = std::env::temp_dir().join("vegify-signin.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let _ = VegifyData::sign_out(&db); // start from a clean keychain slot
+
+        let user = VegifyData::sign_in(
+            &db,
+            SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+        )
+        .expect("sign in");
+        assert_eq!(user.email, "dev@example.com");
+        eprintln!("signed in as {} ({})", user.name, user.id);
+
+        // A fresh Db (simulating relaunch) restores the session from the keychain — offline-capable.
+        let db2 = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("reopen");
+        let restored =
+            VegifyData::current_user(&db2).expect("current").expect("restored from keychain");
+        assert_eq!(restored.id, user.id, "session persisted to the keychain across reopen");
+
+        // Wrong password is rejected (the server's message surfaces as DataError::Auth).
+        let bad = VegifyData::sign_in(
+            &db,
+            SignInInput { email: "dev@example.com".into(), password: "nope".into() },
+        );
+        assert!(bad.is_err(), "wrong password should be rejected");
+
+        VegifyData::sign_out(&db).expect("sign out");
+        assert!(VegifyData::current_user(&db).expect("current").is_none(), "cleared after sign out");
     }
 }

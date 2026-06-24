@@ -34,3 +34,7 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
 ulid = "1"
 rust-s3 = { version = "0.37.2", default-features = false, features = ["blocking", "tokio-rustls-tls"] }
+# Desktop sign-in: a blocking HTTP client (matches the sync DAL) to the web shell's JSON auth routes,
+# and the OS keychain for the session token.
+ureq = { version = "2", features = ["json"] }
+keyring = { version = "3", features = ["apple-native"] }

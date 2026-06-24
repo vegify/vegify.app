@@ -88,9 +88,33 @@ export const vegifyData = {
   compact(): Promise<null> {
     return invoke("compact");
   },
+
+  /** @throws {DataError} */
+  currentUser(): Promise<{
+	id: string,
+	name: string,
+	email: string,
+} | null> {
+    return invoke("current_user");
+  },
+
+  /** @throws {DataError} */
+  signIn(input: SignInInput): Promise<AuthUser> {
+    return invoke("sign_in", { input });
+  },
+
+  /** @throws {DataError} */
+  signUp(input: SignUpInput): Promise<AuthUser> {
+    return invoke("sign_up", { input });
+  },
+
+  /** @throws {DataError} */
+  signOut(): Promise<null> {
+    return invoke("sign_out");
+  },
 };
 
-export type DataError = { type: "db"; message: string };
+export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };
 
 export type AggregatedNutrition = {
 	caloriesPer100g: number | null,
@@ -101,6 +125,16 @@ export type Amount = {
 	amount: number | null,
 	unit: string | null,
 	grams: number | null,
+};
+
+/**
+ *  The current user, mirrored from the web auth response. Stamped on local writes, and upserted
+ *  into the local `users` table so the foreign key (and the recipe `creator`) resolves on-device.
+ */
+export type AuthUser = {
+	id: string,
+	name: string,
+	email: string,
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
@@ -214,4 +248,15 @@ export type SaveRecipeInput = {
 	servingGrams: number | null,
 	batchGrams: number | null,
 	items: RecipeItemInput[],
+};
+
+export type SignInInput = {
+	email: string,
+	password: string,
+};
+
+export type SignUpInput = {
+	name: string,
+	email: string,
+	password: string,
 };

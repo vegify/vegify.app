@@ -20,6 +20,9 @@ import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$reci
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
 import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
 import { Route as IngredientsIngredientIdEditRouteImport } from './routes/ingredients.$ingredientId.edit'
+import { Route as ApiAuthSignupRouteImport } from './routes/api.auth.signup'
+import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
+import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -78,6 +81,21 @@ const IngredientsIngredientIdEditRoute =
     path: '/ingredients/$ingredientId/edit',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
+  id: '/api/auth/signup',
+  path: '/api/auth/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
+  id: '/api/auth/logout',
+  path: '/api/auth/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
+  id: '/api/auth/login',
+  path: '/api/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -87,6 +105,9 @@ export interface FileRoutesByFullPath {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/signup': typeof ApiAuthSignupRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -100,6 +121,9 @@ export interface FileRoutesByTo {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients': typeof IngredientsIndexRoute
   '/recipes': typeof RecipesIndexRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/signup': typeof ApiAuthSignupRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId': typeof IngredientsIngredientIdIndexRoute
@@ -114,6 +138,9 @@ export interface FileRoutesById {
   '/recipes/new': typeof RecipesNewRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/signup': typeof ApiAuthSignupRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -129,6 +156,9 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients/'
     | '/recipes/'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/auth/signup'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -142,6 +172,9 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients'
     | '/recipes'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/auth/signup'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId'
@@ -155,6 +188,9 @@ export interface FileRouteTypes {
     | '/recipes/new'
     | '/ingredients/'
     | '/recipes/'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/auth/signup'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -169,6 +205,9 @@ export interface RootRouteChildren {
   RecipesNewRoute: typeof RecipesNewRoute
   IngredientsIndexRoute: typeof IngredientsIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
+  ApiAuthLoginRoute: typeof ApiAuthLoginRoute
+  ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
+  ApiAuthSignupRoute: typeof ApiAuthSignupRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
   RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
   IngredientsIngredientIdIndexRoute: typeof IngredientsIngredientIdIndexRoute
@@ -254,6 +293,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IngredientsIngredientIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/signup': {
+      id: '/api/auth/signup'
+      path: '/api/auth/signup'
+      fullPath: '/api/auth/signup'
+      preLoaderRoute: typeof ApiAuthSignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/logout': {
+      id: '/api/auth/logout'
+      path: '/api/auth/logout'
+      fullPath: '/api/auth/logout'
+      preLoaderRoute: typeof ApiAuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/login': {
+      id: '/api/auth/login'
+      path: '/api/auth/login'
+      fullPath: '/api/auth/login'
+      preLoaderRoute: typeof ApiAuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -265,6 +325,9 @@ const rootRouteChildren: RootRouteChildren = {
   RecipesNewRoute: RecipesNewRoute,
   IngredientsIndexRoute: IngredientsIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
+  ApiAuthLoginRoute: ApiAuthLoginRoute,
+  ApiAuthLogoutRoute: ApiAuthLogoutRoute,
+  ApiAuthSignupRoute: ApiAuthSignupRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
   RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,
   IngredientsIngredientIdIndexRoute: IngredientsIngredientIdIndexRoute,

@@ -5,10 +5,12 @@ import {
   IngredientDetailView,
   IngredientForm,
   IngredientListView,
+  LoginView,
   RecipeDetailView,
   RecipeForm,
   RecipeListView,
   SearchResultsView,
+  SignupView,
   type AppShellLinkProps,
   type IngredientDetailVM,
   type IngredientFormDefaults,
@@ -21,7 +23,13 @@ import {
   type RecipeFormInput,
   type RecipeListItem,
 } from '@vegify/ui'
-import { vegifyData, type IngredientEditData, type RecipeCard, type RecipeView } from './bindings'
+import {
+  vegifyData,
+  type AuthUser,
+  type IngredientEditData,
+  type RecipeCard,
+  type RecipeView,
+} from './bindings'
 
 // SAME shared screens (@vegify/ui) the web app renders — but every read AND write goes through the
 // on-device Rust DAL over typed IPC (vegifyData), not a server. This file is the desktop ADAPTER:
@@ -175,6 +183,75 @@ function useHistory(initial: View) {
 }
 
 export function App() {
+  // undefined = checking the keychain; null = signed out; AuthUser = signed in.
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined)
+  useEffect(() => {
+    vegifyData
+      .currentUser()
+      .then((u) => setUser(u ?? null))
+      .catch(() => setUser(null))
+  }, [])
+
+  if (user === undefined) return null
+  if (!user) return <AuthGate onAuthed={setUser} />
+  return (
+    <AuthedApp
+      user={user}
+      onSignOut={async () => {
+        await vegifyData.signOut().catch(() => {})
+        setUser(null)
+      }}
+    />
+  )
+}
+
+// Require-an-account gate. Toggles the shared Login/Signup screens with a local mode flag (no
+// router) and authenticates via the on-device DAL → web auth route. Survives a TanStack Router
+// migration intact (it would become a route guard).
+function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const authLink = useCallback(
+    ({ href, children, className, ...rest }: AppShellLinkProps) => (
+      <button
+        type="button"
+        className={className}
+        onClick={() => setMode(href === '/signup' ? 'signup' : 'login')}
+        {...rest}
+      >
+        {children}
+      </button>
+    ),
+    [],
+  )
+  const toError = (e: unknown) => ({
+    error: String((e as { message?: string })?.message ?? e ?? 'Something went wrong.'),
+  })
+  return mode === 'login' ? (
+    <LoginView
+      LinkComponent={authLink}
+      onSubmit={async ({ email, password }) => {
+        try {
+          onAuthed(await vegifyData.signIn({ email, password }))
+        } catch (e) {
+          return toError(e)
+        }
+      }}
+    />
+  ) : (
+    <SignupView
+      LinkComponent={authLink}
+      onSubmit={async ({ name, email, password }) => {
+        try {
+          onAuthed(await vegifyData.signUp({ name, email, password }))
+        } catch (e) {
+          return toError(e)
+        }
+      }}
+    />
+  )
+}
+
+function AuthedApp({ user, onSignOut }: { user: AuthUser; onSignOut: () => void }) {
   const { view, setView, back, forward } = useHistory({ mode: 'list' })
   const [recipes, setRecipes] = useState<RecipeCard[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -274,6 +351,8 @@ export function App() {
       ingredientsNav
       searchValue={search}
       onSearchChange={setSearch}
+      user={{ name: user.name, email: user.email }}
+      onSignOut={onSignOut}
     >
       {error ? (
         <div className="m-6 flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
