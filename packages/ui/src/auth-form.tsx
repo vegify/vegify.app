@@ -38,7 +38,7 @@ function LabeledInput({
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <Input id={id} className="h-11" {...props} />
+      <Input id={id} name={id} className="h-11" {...props} />
     </div>
   );
 }
