@@ -38,6 +38,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build design tokens (theme.css is gitignored)
         run: pnpm --filter @vegify/tokens build
+      - name: Create + seed the DB (.data is gitignored; assemble-bundle bakes it as the EFS seed)
+        run: pnpm db:push && pnpm db:seed
       - name: Build web-start AWS bundle
         run: pnpm --filter web-start build:aws
       - uses: aws-actions/configure-aws-credentials@v4
