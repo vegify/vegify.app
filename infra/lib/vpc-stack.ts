@@ -3,9 +3,12 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import type { Construct } from "constructs";
 
 /**
- * One VPC, NO NAT gateway (a NAT is ~$32/mo — avoided). Fargate runs in public subnets
- * with a public IP for egress (image pull); the app Lambdas run in private-isolated
- * subnets and reach AWS services through VPC endpoints instead of the internet.
+ * One VPC, NO NAT gateway (a NAT is ~$32/mo — avoided) and NO paid interface endpoints.
+ *
+ * The free-tier web stack (WebStartStack) only needs the VPC so its Lambda can mount EFS, which is
+ * reached via in-subnet mount targets — no endpoints required (a VPC Lambda's logs are shipped by
+ * the Lambda service, not from inside the VPC). Public subnets are kept for the Fargate path
+ * (web-start-fargate-stack.ts) to pull images without a NAT when/if revenue justifies switching.
  */
 export class VpcStack extends Stack {
   readonly vpc: ec2.Vpc;
@@ -21,17 +24,5 @@ export class VpcStack extends Stack {
         { name: "private", subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
     });
-
-    // S3 is a free gateway endpoint — OpenNext server/image Lambdas read assets/cache from S3.
-    this.vpc.addGatewayEndpoint("S3", { service: ec2.GatewayVpcEndpointAwsService.S3 });
-
-    // Interface endpoints so in-VPC Lambdas can reach these without a NAT (each ~$7/mo;
-    // trim any the apps don't actually use at runtime).
-    for (const [id, service] of [
-      ["SecretsManager", ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER],
-      ["CloudWatchLogs", ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS],
-    ] as const) {
-      this.vpc.addInterfaceEndpoint(id, { service });
-    }
   }
 }

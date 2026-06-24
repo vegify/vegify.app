@@ -2,82 +2,67 @@
 
 All vegify hosting is **AWS, defined here in AWS CDK**. No Vercel, no Cloudflare.
 
-> **Status: scaffold.** The stacks compile (`pnpm --filter @vegify/infra build`) and the two
-> app→AWS build paths are verified locally (OpenNext builds web-next; the Lambda adapter serves
-> web-start). It has **not** been `cdk deploy`-ed — that needs your AWS account + the deploy-prep
-> steps below, and CDK infra always wants a round of `cdk diff`/iteration before it's real.
+## Hosting decision (2026-06-23): free tier first, Fargate when there's revenue
 
-## Decision (2026-06-18): runtime + hosting shape
+**Principle: a zero-revenue app deploys to the free tier / scale-to-zero. No standing costs.** This supersedes the 2026-06-18 "Bun on Fargate" decision below — that choice buys a real but unneeded performance win at a standing monthly cost, which is the wrong trade until the app earns.
 
-The framework bake-off resolved (see `docs/benchmark.md`): **TanStack Start (React) on the Bun runtime is the winner**; Next.js is eliminated, and the Rust spikes (web-fast/web-leptos) stay as perf references, not deploy targets. This supersedes parts of the scaffold below:
+**web-start ships on the free tier:** TanStack Start's WinterCG handler on a scale-to-zero **Lambda** (Function URL) behind **CloudFront**, with built client assets on **S3** and the libSQL DB as a **file on EFS**. At zero/low traffic this is ~$0/mo — Lambda + CloudFront + S3 sit in the always-free tier, and EFS is 5 GB free for 12 months (a sub-1 GB DB ≈ pennies after). The stack is `lib/web-start-stack.ts`.
 
-- **web-start → a long-running Bun server on Fargate/ECS (NOT Lambda).** Bun's measured win (~+10% throughput, ~10× tighter p99.9 tail) is a *sustained-concurrency-on-one-process* property; Lambda isolates requests one-per-instance, so it cannot capture that tail win — and Lambda has no first-class Bun runtime anyway (it would mean a container image plus cold starts). A long-running Bun task realizes the win and fits the VPC where the DB already lives. Entry point: `apps/web-start/serve-bun.mjs` (`Bun.serve` over the WinterCG build), containerized from the `oven/bun` image; `@libsql/client` resolves natively (verified).
-- **`VegifyWebNext` is dead** — Next.js was eliminated; drop the stack (and OpenNext) when the CDK is reworked.
-- **DB shape, two options:** (i) keep the separate `sqld` Fargate task and have web-start reach it in-VPC (one in-cluster hop), or (ii) **collapse** — run libSQL embedded in-process inside the web-start Fargate task against a mounted EBS volume (no separate DB service, no socket hop). (ii) is fastest + simplest + cheapest (one task, not two; mirrors the proven web-fast in-process model) and single-writer is fine at this scale; (i) is the lower-risk increment from today's scaffold. **Target (ii).**
+**Why EFS for the DB.** A Lambda is stateless, so the SQLite file needs to live somewhere persistent and writable. The options weighed:
+- **Read-only (baked SQLite in the Lambda)** — truly $0, but web writes don't persist. **Rejected:** the web shell must be writable, not a read showcase.
+- **Turso free tier (managed libSQL)** — writable + free, but a managed third-party dependency and not self-hosted. **Rejected:** not desirable.
+- **EFS + Lambda** — writable, persists, free-forever, keeps the libSQL/Drizzle stack (no rewrite). **Chosen.** Two EFS gotchas are handled in code: the Lambda is pinned to `reservedConcurrentExecutions: 1` (single writer — SQLite over NFS is lock-finicky), and the DB runs in **rollback-journal (DELETE) mode, not WAL** (WAL needs shared memory NFS can't provide). The seed DB is baked in DELETE mode (`apps/web-start/aws/assemble-bundle.mjs`) and copied onto EFS on first cold start (`apps/web-start/aws/lambda-handler.mjs`).
+- **Free-tier EC2 micro** (libSQL in-process on local disk) was the runner-up — more robust writes, but a VM to manage and free only for 12 months. EFS+Lambda wins on free-forever + no-VM.
 
-**Implementation status:** decided + documented; the CDK below still reflects the old Lambda plan (`WebStartStack` packages `aws/lambda-handler.mjs`). Reworking `WebStartStack` into a Bun Fargate service (and folding in EBS for option ii) is the next infra task — gated on the same AWS creds as any deploy.
+**The Bun-on-Fargate path is kept ready, not deployed.** It's the measured bake-off winner (Bun: ~+10% read throughput, ~10× tighter p99.9 tail vs Node — `docs/benchmark.md`), but a long-running task + ALB is a standing ~$25–30/mo. It lives complete in `lib/web-start-fargate-stack.ts` (+ `apps/web-start/Dockerfile`, `docker-entrypoint.sh`). **To flip when revenue justifies the tail win:** swap `WebStartStack` for `WebStartFargateStack` in `bin/vegify.ts`, `pnpm --filter web-start build:aws`, `cdk deploy VegifyVpc VegifyWebStart`. That path uses option (ii) "collapse" — libSQL embedded in-process on a mounted EBS volume (WAL works on EBS), one task, no separate DB service.
 
-## Architecture
+**web-next is dropped** (Next.js lost the bake-off) and the separate **sqld-on-Fargate `DbStack` is gone** (the DB is now the Lambda's EFS file / the Fargate task's EBS file). The old OpenNext/sqld scaffold notes below are retained only for historical context.
+
+## Architecture (deployed)
 
 ```
-                         ┌─────────────── CloudFront ───────────────┐
-  browser ──► CloudFront │  default → app Lambda (Function URL)      │
-                         │  /_next/static, /assets → S3 (OAC)        │
-                         │  /_next/image → image Lambda (web-next)   │
-                         └───────────────────────────────────────────┘
-                                        │ (app Lambdas in VPC, private-isolated subnets)
-                                        ▼
-                         libSQL (sqld) on ECS Fargate + EBS
-                         discoverable at http://sqld.vegify.internal:8080
-                         (public subnet for image-pull egress; SG locks 8080 to app Lambdas)
-  No NAT gateway. S3 via gateway endpoint; Secrets/Logs via interface endpoints.
+            ┌──────────────── CloudFront ────────────────┐
+ browser ─► │  default → web-start Lambda (Function URL)  │
+            │  /assets/* → S3 (OAC, cached)               │
+            └─────────────────────────────────────────────┘
+                          │  (Lambda in VPC, private-isolated subnets, reserved concurrency 1)
+                          ▼
+              EFS access point /vegify  →  file:/mnt/data/vegify.db  (libSQL, rollback journal)
+ No NAT. No paid interface endpoints. EFS reached via in-subnet mount targets.
+
+ Desktop sync (separate, independent): S3 changeset bucket + least-privilege IAM client (VegifySync).
 ```
 
-Stacks (`lib/`): `VegifyVpc` → `VegifyDb` → `VegifyWebNext`, `VegifyWebStart`. (Per the 2026-06-18 decision above, `VegifyWebNext` is to be dropped and `VegifyWebStart` reworked from Lambda to a long-running Bun Fargate service — the diagram below still shows the old Lambda shape.)
+Stacks (`lib/`): `VegifyVpc` (VPC, no NAT/endpoints) → `VegifyWebStart` (Lambda + EFS + CloudFront + S3). `VegifySync` (desktop local-first S3 changeset store) is independent. `web-start-fargate-stack.ts` is the ready-but-unwired performance path.
 
 ## Prerequisites
 
-- AWS account + credentials (`aws configure` / SSO). Pick a region (default `us-east-1`).
-- Node 22, pnpm. Docker (for building the web-start Lambda bundle on the Lambda arch — see below).
+- AWS account + credentials (`aws configure` / SSO). Region defaults to `us-east-1`.
+- Node 22, pnpm. **Docker** (the CDK bundles `@libsql/client` for the Lambda arch in a container).
 - One-time per account/region: `pnpm --filter @vegify/infra bootstrap`.
 
-## Deploy runbook
+## Deploy runbook (free-tier web)
 
 ```sh
-# 1. Build the app AWS artifacts
-pnpm --filter web-next build:aws          # → apps/web-next/.open-next/
-pnpm --filter web-start build:aws         # → apps/web-start/dist/  (then assemble the bundle, below)
-
-# 2. Assemble the web-start Lambda bundle → apps/web-start/.aws-lambda/
-#    { handler.mjs (from aws/lambda-handler.mjs), server/ (from dist/server),
-#      node_modules with @libsql/client built for the Lambda arch }
-#    Do this on the target arch — easiest is Docker bundling (see "Native modules").
-
-# 3. Deploy
-cd infra
-pnpm install
-pnpm synth                                # sanity-check the CloudFormation
-pnpm deploy                               # cdk deploy --all
+pnpm --filter web-start build:aws     # → apps/web-start/dist/ + apps/web-start/.aws-lambda/
+                                      #   (.aws-lambda = handler + server + package.json + DELETE-mode seed)
+cd infra && pnpm install
+pnpm synth                            # sanity-check (also runs the Docker bundling)
+cdk deploy VegifyVpc VegifyWebStart   # ~10 min (EFS mount targets + CloudFront)
 ```
 
-## Gotchas / TODO before this is production-real
+The CloudFront URL is the `VegifyWebStart.Url` output.
 
-- **Native modules (`@libsql/client`).** Both app Lambdas import it; its native binary must match
-  the Lambda arch (we target `arm64`). Building the bundle on macOS yields a darwin binary that
-  won't run on Lambda. Fix at deploy: build inside a Lambda-arch container (CDK `Code.fromAsset(...,
-  { bundling: { image: lambda.Runtime.NODEJS_22_X.bundlingImage } })`) or install the linux-arm64
-  prebuilt. OpenNext traces this for web-next; the web-start bundle assembly must handle it too.
-- **Function URL exposure.** Function URLs are `authType: NONE` so CloudFront can reach them — that
-  also makes them publicly reachable directly. Harden with **OAC** (`FunctionUrlOrigin.withOriginAccessControl`
-  + IAM auth) before prod.
-- **sqld auth.** Today access is network-only (SG limits port 8080 to the app Lambdas). Add JWT auth
-  (`SQLD_AUTH_JWT_KEY`) + a Secrets Manager `DATABASE_AUTH_TOKEN` (wire into Lambda env / runtime
-  fetch) for defense-in-depth. Pin the `libsql-server` image to a digest.
-- **Single writer.** sqld is one Fargate task (SQLite is single-writer) — `desiredCount: 1`,
-  `maxHealthyPercent: 100`. Don't scale it horizontally. Back up the EBS volume (snapshots).
-- **Cost.** Designed to be cheap: no NAT (~$32/mo saved). Standing cost ≈ 1 small Fargate task +
-  EBS + a couple of interface endpoints (~$7/mo each — trim unused). Lambdas + CloudFront + S3 scale
-  to ~zero. Re-measure `docs/benchmark.md` against the real deploy once live.
-- **CloudFront behaviors (web-next).** The scaffold wires the common ones; reconcile the full set
-  against `apps/web-next/.open-next/open-next.output.json`.
-```
+## Gotchas / TODO
+
+- **Native `@libsql/client`.** Kept external from the SSR bundle (`vite ssr.external`); the CDK installs the matching binding at deploy via Docker bundling (x86_64 Lambda → x86 binding). `HOME=/tmp` in the bundling command so npm's cache is writable (the container runs as the host uid).
+- **SQLite on EFS.** Reserved concurrency 1 + rollback journal (above). This caps write throughput at one-at-a-time — fine at low traffic; heavy write concurrency is the signal to switch to the Fargate/EBS path.
+- **Function URL exposure.** `authType: NONE` so CloudFront can reach it — also directly reachable. Harden with **OAC** (`FunctionUrlOrigin.withOriginAccessControl` + IAM) before any real launch.
+- **EFS removal policy.** Currently `DESTROY` (dev teardown re-seeds from the baked copy). Set to `RETAIN` before storing data you can't lose.
+- **Cost.** No NAT (~$32/mo saved), no interface endpoints (~$7/mo each saved). The web stack is ~$0/mo idle. The desktop `VegifySync` bucket is scale-to-zero (~$0 + ~$0.40/mo for its Secrets Manager secret).
+
+---
+
+### Historical: 2026-06-18 scaffold notes (superseded)
+
+The original scaffold targeted OpenNext (web-next) + a TanStack Start Lambda adapter, both reaching a self-hosted `sqld` on Fargate+EBS over the VPC, with Secrets/Logs interface endpoints. That shape is retired (see the hosting decision above): web-next is gone, the DB is no longer a separate service, and the paid endpoints were trimmed. The Bun-on-Fargate reasoning from that date survives in `web-start-fargate-stack.ts`.
