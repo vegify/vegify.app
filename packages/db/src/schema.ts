@@ -73,6 +73,13 @@ export const ingredients = sqliteTable(
   {
     id: pk(),
     userId: text("user_id").references(() => users.id),
+    // UGC visibility (the app is public-default sharing): public = anyone lists+reads; unlisted =
+    // readable by direct link but not listed; private = owner only. A recipe IS an ingredient
+    // (as_ingredient_id), so this one field covers recipes too — the recipe form's visibility fills
+    // through to its as-ingredient. Ownership (`userId`) gates EDITING, not reading.
+    visibility: text("visibility", { enum: ["public", "private", "unlisted"] })
+      .notNull()
+      .default("public"),
     name: text("name").notNull(),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),

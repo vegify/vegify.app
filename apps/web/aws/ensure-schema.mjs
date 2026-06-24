@@ -28,6 +28,11 @@ export async function ensureAuthSchema(dbPath) {
       CREATE UNIQUE INDEX IF NOT EXISTS sessions_hashed_token_unique ON sessions (hashed_token);
       CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);
     `);
+    // UGC visibility (A4): public-default. Existing live ingredients become public on add.
+    const ingCols = await db.execute('PRAGMA table_info(ingredients)');
+    if (!ingCols.rows.some((r) => r.name === 'visibility')) {
+      await db.execute("ALTER TABLE ingredients ADD COLUMN visibility text NOT NULL DEFAULT 'public'");
+    }
   } finally {
     db.close();
   }
