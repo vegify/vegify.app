@@ -262,6 +262,12 @@ export type SaveIngredientInput = {
 
 export type SaveRecipeInput = {
 	id: string | null,
+	/**
+	 *  The recipe's as-ingredient id. Threaded so a nested recipe (a Biga consumed by a Dough as an
+	 *  item) keeps a stable id cross-replica — else the consuming item's FK orphans after a pull.
+	 *  `None` on a fresh local create (minted); set by the sync pull when mirroring server rows.
+	 */
+	asIngredientId: string | null,
 	visibility: Visibility | null,
 	name: string,
 	subtitle: string | null,

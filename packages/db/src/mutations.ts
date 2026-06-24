@@ -147,6 +147,7 @@ export async function deleteIngredient(id: string, userId?: string | null): Prom
 export type RecipeItemInput = { ingredientId: string; grams: number; unit?: string | null };
 export type SaveRecipeInput = {
   id?: string;
+  asIngredientId?: string;
   userId?: string | null;
   visibility?: Visibility;
   name: string;
@@ -159,8 +160,10 @@ export type SaveRecipeInput = {
 
 export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
   // Upsert by id (see saveIngredient). A provided-but-absent recipe id inserts WITH that id (offline
-  // create / pulled row); the recipe's internal as-ingredient id stays server-minted (it's never
-  // referenced cross-replica — only the recipe id needs to be stable). Owner guard only when present.
+  // create / pulled row). The as-ingredient id is threaded too (input.asIngredientId): a nested
+  // recipe is consumed by id as a recipe item (a Biga inside a Dough), so its as-ingredient id must
+  // also stay stable cross-replica or the consuming item's FK orphans after a pull. Owner guard only
+  // when the row already exists.
   const existing = input.id
     ? await db.query.recipes.findFirst({
         where: (r, { eq }) => eq(r.id, input.id!),
@@ -198,6 +201,7 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
     const [ing] = await db
       .insert(ingredients)
       .values({
+        id: input.asIngredientId, // honor a client/pull-supplied as-ingredient id; undefined → mint
         userId: input.userId ?? null,
         visibility: input.visibility ?? "public",
         name: input.name,

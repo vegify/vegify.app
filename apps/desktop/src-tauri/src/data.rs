@@ -220,6 +220,10 @@ pub struct RecipeItemInput {
 #[serde(rename_all = "camelCase")]
 pub struct SaveRecipeInput {
     pub id: Option<String>,
+    /// The recipe's as-ingredient id. Threaded so a nested recipe (a Biga consumed by a Dough as an
+    /// item) keeps a stable id cross-replica — else the consuming item's FK orphans after a pull.
+    /// `None` on a fresh local create (minted); set by the sync pull when mirroring server rows.
+    pub as_ingredient_id: Option<String>,
     pub visibility: Option<Visibility>,
     pub name: String,
     pub subtitle: Option<String>,
@@ -304,7 +308,20 @@ fn auth_base_url() -> String {
         .unwrap_or_else(|_| "https://EXAMPLEDISTOLD.cloudfront.net".to_string())
 }
 
+/// In test builds, route ALL keychain access to keyring's in-memory mock store instead of the real
+/// macOS Keychain. Installed exactly once, before the first `Entry` is created (every keychain op
+/// funnels through `keychain_entry`). This stops `cargo test` from triggering an OS keychain-access
+/// prompt on every run — each unsigned test binary is a fresh identity, so the macOS "Always Allow"
+/// grant never sticks — and makes tests hermetic: the mock starts empty, so a Db opened in a test
+/// never inherits a developer's real signed-in desktop session.
+#[cfg(test)]
+static TEST_KEYCHAIN_INIT: std::sync::Once = std::sync::Once::new();
+
 fn keychain_entry() -> Result<keyring::Entry, DataError> {
+    #[cfg(test)]
+    TEST_KEYCHAIN_INIT.call_once(|| {
+        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+    });
     keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|e| DataError::Auth(e.to_string()))
 }
 
@@ -427,21 +444,25 @@ fn do_save_ingredient(
     user_id: Option<&str>,
 ) -> Result<String, DataError> {
     let visibility = input.visibility.unwrap_or(Visibility::Public).as_str();
-    let ingredient_id: String = if let Some(id) = &input.id {
-        let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
+    // Upsert by id: an existing row updates (owner-gated); a supplied-but-absent id inserts WITH that
+    // id (an offline create's client ULID, or a row mirrored from the server by the sync pull); no id
+    // mints a fresh ULID and inserts. Look up the row only when an id was supplied.
+    let existing: Option<(Option<String>, Option<String>, Option<String>)> = match &input.id {
+        Some(id) => conn
             .query_row(
                 "SELECT serving_size_id, batch_size_id, user_id FROM ingredients WHERE id = ?1",
                 [id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .optional()?;
-        // Owner-gated edit (only when the row exists; a missing id no-ops, matching the web).
-        if let Some((_, _, owner)) = &existing {
-            if !is_owner(owner.as_deref(), user_id) {
-                return Err(DataError::Db("You can only edit your own ingredients.".into()));
-            }
+            .optional()?,
+        None => None,
+    };
+
+    let ingredient_id: String = if let Some((serving, batch, owner)) = existing {
+        let id = input.id.as_deref().expect("existing row implies a supplied id");
+        if !is_owner(owner.as_deref(), user_id) {
+            return Err(DataError::Db("You can only edit your own ingredients.".into()));
         }
-        let (serving, batch) = existing.map(|(s, b, _)| (s, b)).unwrap_or((None, None));
         let serving_size_id = upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.package_grams, "package")?;
         conn.execute(
@@ -459,11 +480,11 @@ fn do_save_ingredient(
             ],
         )?;
         conn.execute("DELETE FROM ingredient_nutrient WHERE ingredient_id = ?1", [id])?;
-        id.clone()
+        id.to_string()
     } else {
         let serving_size_id = upsert_amount(conn, None, input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, None, input.package_grams, "package")?;
-        let id = new_id();
+        let id = input.id.clone().unwrap_or_else(new_id);
         conn.execute(
             "INSERT INTO ingredients(id, user_id, visibility, name, description, is_vegan, price,
              calories_per_100g, serving_size_id, batch_size_id) VALUES (?1, ?8, ?9, ?2, ?3, 1, ?4, ?5, ?6, ?7)",
@@ -524,14 +545,23 @@ fn do_save_recipe(
     user_id: Option<&str>,
 ) -> Result<String, DataError> {
     let visibility = input.visibility.unwrap_or(Visibility::Public).as_str();
-    let recipe_id: String = if let Some(id) = &input.id {
-        let (as_ing_id, serving, batch, owner): (String, Option<String>, Option<String>, Option<String>) =
-            conn.query_row(
+    // Upsert by id (see do_save_ingredient). A supplied-but-absent recipe id inserts WITH that id; the
+    // as-ingredient id is threaded too (input.as_ingredient_id) so a nested recipe stays addressable
+    // cross-replica (Biga-in-Dough). No id mints both. The owner gate applies only to an existing recipe.
+    let existing: Option<(String, Option<String>, Option<String>, Option<String>)> = match &input.id {
+        Some(id) => conn
+            .query_row(
                 "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id, i.user_id
                  FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
                 [id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )?;
+            )
+            .optional()?,
+        None => None,
+    };
+
+    let recipe_id: String = if let Some((as_ing_id, serving, batch, owner)) = existing {
+        let id = input.id.as_deref().expect("existing recipe implies a supplied id");
         // The recipe's owner is its as-ingredient's owner; only the owner may edit.
         if !is_owner(owner.as_deref(), user_id) {
             return Err(DataError::Db("You can only edit your own recipes.".into()));
@@ -555,17 +585,17 @@ fn do_save_recipe(
         };
         conn.execute("DELETE FROM ingredient_in_recipe WHERE recipe_id = ?1", [id])?;
         delete_amounts(conn, &prev)?;
-        id.clone()
+        id.to_string()
     } else {
         let serving_size_id = upsert_amount(conn, None, input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, None, input.batch_grams, "batch")?;
-        let as_ing_id = new_id();
+        let as_ing_id = input.as_ingredient_id.clone().unwrap_or_else(new_id);
         conn.execute(
             "INSERT INTO ingredients(id, user_id, visibility, name, is_vegan, serving_size_id, batch_size_id)
              VALUES (?1, ?5, ?6, ?2, 1, ?3, ?4)",
             params![as_ing_id, input.name, serving_size_id, batch_size_id, user_id, visibility],
         )?;
-        let rid = new_id();
+        let rid = input.id.clone().unwrap_or_else(new_id);
         conn.execute(
             "INSERT INTO recipes(id, as_ingredient_id, subtitle, directions) VALUES (?1, ?2, ?3, ?4)",
             params![rid, as_ing_id, input.subtitle.as_deref(), input.directions.as_deref()],
@@ -1360,6 +1390,7 @@ mod tests {
 
         let input = SaveRecipeInput {
             id: None,
+            as_ingredient_id: None,
             visibility: None,
             name: "Synced New Recipe".into(),
             subtitle: Some("made offline on A".into()),
@@ -1401,6 +1432,7 @@ mod tests {
             &db,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: None,
                 name: "UI Flow Bread".into(),
                 subtitle: None,
@@ -1495,6 +1527,7 @@ mod tests {
                 &a,
                 SaveRecipeInput {
                     id: None,
+                    as_ingredient_id: None,
                     visibility: None,
                     name: name.into(),
                     subtitle: None,
@@ -1558,6 +1591,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: None,
                 name: "FK Replay Loaf".into(),
                 subtitle: None,
@@ -1625,6 +1659,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: None,
                 name: "Synced via S3".into(),
                 subtitle: None,
@@ -1652,6 +1687,7 @@ mod tests {
             &a,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: None,
                 name: "S3 R2".into(),
                 subtitle: None,
@@ -1685,6 +1721,7 @@ mod tests {
             &db,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: None,
                 name: "Owned Recipe".into(),
                 subtitle: None,
@@ -1795,6 +1832,7 @@ mod tests {
             &db,
             SaveRecipeInput {
                 id: None,
+                as_ingredient_id: None,
                 visibility: Some(Visibility::Private),
                 name: "John Secret Recipe".into(),
                 subtitle: None,
@@ -1890,5 +1928,124 @@ mod tests {
         .expect("owner edits own");
         VegifyData::delete_ingredient(&db, public).expect("owner deletes own");
         eprintln!("visibility: public shared, private hidden from non-owner, edit/delete owner-gated");
+    }
+
+    // Upsert-by-id + as-ingredient-id threading (step 1 of the sync engine). A supplied-but-absent id
+    // must CREATE the row WITH that id (not silently no-op an UPDATE), and the recipe's as-ingredient
+    // id must be honorable so a nested recipe consumed by another (a Biga inside a Dough) keeps a
+    // stable cross-replica id — the exact shape the sync pull applies. Re-applying is idempotent.
+    #[test]
+    fn upsert_by_id_honors_supplied_ids_for_pull() {
+        let blobs = std::env::temp_dir().join("vegify-upsert-blobs");
+        let db_path = std::env::temp_dir().join("vegify-upsert.db");
+        let _ = fs::remove_dir_all(&blobs);
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        sign_in_seed(&db); // own the rows so the owner-gated edit-load returns them
+
+        // --- ingredient: a supplied-but-absent id is created WITH that id, then updated in place ---
+        let ing_id = new_id();
+        let returned = VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: Some(ing_id.clone()),
+                visibility: None,
+                name: "Pulled Ingredient".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(42.0),
+                serving_grams: Some(100.0),
+                package_grams: None,
+                nutrients: vec![],
+            },
+        )
+        .expect("save with a supplied id");
+        assert_eq!(returned, ing_id, "the supplied id is honored, not minted");
+        let loaded = VegifyData::ingredient_for_edit(&db, ing_id.clone())
+            .expect("ok")
+            .expect("row was created WITH the supplied id (not a no-op UPDATE)");
+        assert_eq!(loaded.name, "Pulled Ingredient");
+
+        // re-apply the SAME id with a changed field → updates in place (idempotent, no duplicate row)
+        VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: Some(ing_id.clone()),
+                visibility: None,
+                name: "Pulled Ingredient v2".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(43.0),
+                serving_grams: Some(100.0),
+                package_grams: None,
+                nutrients: vec![],
+            },
+        )
+        .expect("re-apply updates");
+        let pulled: Vec<String> = VegifyData::list_ingredients(&db)
+            .expect("list")
+            .into_iter()
+            .filter(|c| c.name.starts_with("Pulled Ingredient"))
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(pulled, vec!["Pulled Ingredient v2".to_string()], "one row, updated in place");
+
+        // --- recipe + nesting: a Biga (its as-ingredient id supplied) consumed by a Dough as an item ---
+        let biga_rid = new_id();
+        let biga_aiid = new_id();
+        let returned_biga = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: Some(biga_rid.clone()),
+                as_ingredient_id: Some(biga_aiid.clone()),
+                visibility: None,
+                name: "Pulled Biga".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(300.0),
+                items: vec![],
+            },
+        )
+        .expect("apply biga with supplied ids");
+        assert_eq!(returned_biga, biga_rid, "the supplied recipe id is honored");
+
+        let dough_rid = new_id();
+        let dough_aiid = new_id();
+        // The Dough item references the BIGA's as-ingredient id — the nested-recipe FK that orphans
+        // cross-replica unless the as-ingredient id is threaded and stable. Built fresh per apply so
+        // the same pull can be replayed (the input type isn't Clone).
+        let build_dough = || SaveRecipeInput {
+            id: Some(dough_rid.clone()),
+            as_ingredient_id: Some(dough_aiid.clone()),
+            visibility: None,
+            name: "Pulled Dough".into(),
+            subtitle: None,
+            directions: None,
+            serving_grams: Some(250.0),
+            batch_grams: Some(500.0),
+            items: vec![RecipeItemInput { ingredient_id: biga_aiid.clone(), grams: 300.0, unit: None }],
+        };
+        let returned_dough =
+            VegifyData::save_recipe(&db, build_dough()).expect("apply dough consuming the biga");
+        assert_eq!(returned_dough, dough_rid, "the supplied recipe id is honored");
+
+        let view = VegifyData::recipe(&db, dough_rid.clone()).expect("read").expect("exists");
+        assert_eq!(view.items.len(), 1, "the nested biga item resolved (FK intact via threaded as-ing id)");
+        assert_eq!(view.items[0].name, "Pulled Biga", "the item resolves to the biga's as-ingredient");
+
+        // re-apply the SAME dough (an idempotent pull) → still ONE dough with that id, ONE item
+        VegifyData::save_recipe(&db, build_dough()).expect("re-apply dough");
+        let doughs: Vec<String> = VegifyData::list_recipes(&db)
+            .expect("list")
+            .into_iter()
+            .filter(|c| c.name == "Pulled Dough")
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(doughs, vec![dough_rid.clone()], "idempotent: one dough with the supplied id");
+        let again = VegifyData::recipe(&db, dough_rid.clone()).expect("read").expect("exists");
+        assert_eq!(again.items.len(), 1, "re-apply did not duplicate the item");
+        eprintln!("upsert-by-id: supplied ids honored; nested biga/dough FK stable across re-apply");
     }
 }

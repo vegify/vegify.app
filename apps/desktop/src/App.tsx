@@ -66,6 +66,7 @@ const searchForForm = async (q: string) => {
 const saveRecipeFromForm = (input: RecipeFormInput) =>
   vegifyData.saveRecipe({
     id: input.id ?? null,
+    asIngredientId: null, // form never sets it; the sync pull supplies it when mirroring server rows
     visibility: input.visibility,
     name: input.name,
     subtitle: input.subtitle,
