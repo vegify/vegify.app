@@ -70,7 +70,7 @@ export class ServerStack extends Stack {
     sg.addIngressRule(
       ec2.Peer.prefixList(CLOUDFRONT_ORIGIN_PL),
       ec2.Port.tcp(APP_PORT),
-      "CloudFront origin-facing → app port",
+      "CloudFront origin-facing to the app port",
     );
 
     const userData = ec2.UserData.forLinux();
