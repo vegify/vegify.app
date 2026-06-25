@@ -1227,8 +1227,7 @@ dependencies = [
 [[package]]
 name = "glib"
 version = "0.18.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5"
+source = "git+https://github.com/johncarmack1984/gtk-rs-core?branch=lux/glib-0.18-patch#0869c7efc510daf87622847bcf3ea8db48373a64"
 dependencies = [
  "bitflags 2.13.0",
  "futures-channel",

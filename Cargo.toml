@@ -9,3 +9,12 @@ members = [
   "crates/vegify-server",
   "apps/desktop/src-tauri",
 ]
+
+# Patch glib 0.18.5 → a fork branch that backports the RUSTSEC-2024-0429 fix (unsoundness in
+# glib::VariantStrIter's Iterator/DoubleEndedIterator impls; Dependabot alert #12). Tauri's Linux GTK
+# stack pins glib 0.18, so the upstream fix (only in glib 0.20) can't be adopted without moving the
+# whole gtk-rs generation; this 0.18.x branch resolves its sibling crates from crates.io, so patching
+# `glib` alone is sufficient (no need to patch glib-macros/gio). glib is the LINUX webview backend —
+# macOS uses WebKit, Windows uses WebView2 — so it only compiles on Linux desktop builds.
+[patch.crates-io]
+glib = { git = "https://github.com/johncarmack1984/gtk-rs-core", branch = "lux/glib-0.18-patch" }

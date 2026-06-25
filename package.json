@@ -8,7 +8,10 @@
       "lightningcss",
       "@tailwindcss/oxide",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "@esbuild-kit/core-utils>esbuild": "^0.25.0"
+    }
   },
   "scripts": {
     "build": "turbo run build",
