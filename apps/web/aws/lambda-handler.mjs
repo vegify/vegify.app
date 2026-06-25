@@ -1,34 +1,7 @@
-// AWS Lambda adapter for TanStack Start's WinterCG fetch handler — the FREE-TIER hosting path.
-//
-// The CDK WebStartStack packages this bundle as { handler.mjs, server/, vegify-seed.db,
-// node_modules/@libsql/client } and mounts EFS at /mnt/data. The DB lives on EFS (the only
-// persistent store a stateless, scale-to-zero Lambda can WRITE to for free) at
-// DATABASE_URL=file:/mnt/data/vegify.db.
-//
-// Two EFS-specific details, both load-bearing:
-//   1. Seed-on-first-boot. EFS starts empty, so on the first cold start we copy the baked
-//      vegify-seed.db onto EFS, then import the server (which opens the DB). The import is
-//      DYNAMIC and below the copy so @vegify/db connects only after the file exists.
-//   2. Rollback journal, not WAL. The seed is baked in DELETE (rollback) journal mode because
-//      WAL needs an mmap'd shared-memory file that NFS/EFS can't provide. The Lambda is pinned to
-//      reserved concurrency 1 (CDK), so a single writer over EFS is safe.
-import { existsSync, copyFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ensureAuthSchema } from "./ensure-schema.mjs";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const dbPath = (process.env.DATABASE_URL ?? "file:/mnt/data/vegify.db").replace(/^file:/, "");
-if (!existsSync(dbPath)) {
-  mkdirSync(dirname(dbPath), { recursive: true });
-  copyFileSync(`${here}/vegify-seed.db`, dbPath); // seed EFS from the baked rollback-mode copy
-}
-
-// EFS persists across deploys and the seed-copy above only runs on an EMPTY volume, so a DB seeded
-// before the auth schema existed must be migrated in place (additive, idempotent) before the app opens it.
-await ensureAuthSchema(dbPath);
-
-// Dynamic import AFTER the seed copy + migration — @vegify/db connects at module load.
+// AWS Lambda adapter for TanStack Start's WinterCG fetch handler. The web is a STATELESS SSR shell
+// (P4: web-SSR-calls-Axum) — it holds no database; all auth + content is fetched from the standing
+// vegify-server over HTTP (VEGIFY_API_URL, set by the CDK). This adapter just bridges the Lambda
+// Function-URL event to the bundled, self-contained WinterCG handler.
 const app = await import("./server/server.js");
 const target = app.default ?? app;
 const fetchHandler = typeof target === "function" ? target : target.fetch.bind(target);

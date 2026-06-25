@@ -36,14 +36,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: sqlite3 (assemble-bundle bakes the EFS seed with it)
-        run: sudo apt-get update && sudo apt-get install -y sqlite3
       - run: pnpm install --frozen-lockfile
       - name: Build design tokens (theme.css is gitignored)
         run: pnpm --filter @vegify/tokens build
-      - name: Create + seed the DB (.data is gitignored; assemble-bundle bakes it as the EFS seed)
+      - name: Create + seed the DB (.data is gitignored; staged below as the vegify-server seed)
         run: pnpm db:push && pnpm db:seed
-      - name: Build web-start AWS bundle
+      - name: Build web-start AWS bundle (self-contained SSR; no native deps)
         run: pnpm --filter web build:aws
       - name: Build vegify-server (aarch64 musl static, for the t4g/Graviton box) + stage the seed
         run: |
