@@ -1,0 +1,28 @@
+[package]
+name = "vegify-server"
+version = "0.1.0"
+edition = "2021"
+description = "Vegify standing backend — Axum over SQLite-WAL, serving the SAME /api/auth + /api/content contract the clients already speak. Owns the single source-of-truth DB; consumes vegify-core."
+
+[dependencies]
+# The shared DAL — the same content model + viewer-scoped reads the desktop uses.
+vegify-core = { path = "../vegify-core" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+# Must match vegify-core's rusqlite (0.32) so the Connection type unifies; `bundled` compiles SQLite in.
+rusqlite = { version = "0.32", features = ["bundled"] }
+# WAL connection pool: concurrent readers + a serialized writer (rusqlite is sync → spawn_blocking).
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Auth port: argon2id (PHC strings cross-compatible with hash-wasm) + sha256-hashed opaque tokens.
+argon2 = "0.5"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+[[bin]]
+name = "vegify-server"
+path = "src/main.rs"
