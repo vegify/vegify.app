@@ -934,15 +934,38 @@ impl Db {
     }
 
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
-    /// recipe `creator`) resolve on-device. Identity is auth state, not synced content. Idempotent.
+    /// recipe `creator`) resolve on-device. Identity is auth state, not synced content.
+    ///
+    /// Reconcile by email: if a DIFFERENT local id already holds this email — a separately-seeded
+    /// cache, e.g. the dev seed's john (`01KVX…`) vs the server's john (`01KVE…`), the id-divergence
+    /// bug class — re-point that user's content to the server id and drop the stale row, so the cache
+    /// adopts the server's authoritative identity (else the insert trips `UNIQUE users.email`). FK off
+    /// so the content reassignment + the PK swap don't trip mid-update; the bootstrap pull then
+    /// rebuilds content under the server owner anyway.
     fn ensure_user_local(&self, user: &AuthUser) -> Result<(), DataError> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO users(id, name, email) VALUES (?1, ?2, ?3)
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email",
-            params![user.id, user.name, user.email],
-        )?;
-        Ok(())
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
+        let res = (|| -> Result<(), DataError> {
+            let stale: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM users WHERE email = ?1 AND id <> ?2",
+                    params![user.email, user.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(stale_id) = stale {
+                conn.execute("UPDATE ingredients SET user_id = ?1 WHERE user_id = ?2", params![user.id, stale_id])?;
+                conn.execute("DELETE FROM users WHERE id = ?1", params![stale_id])?;
+            }
+            conn.execute(
+                "INSERT INTO users(id, name, email) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email",
+                params![user.id, user.name, user.email],
+            )?;
+            Ok(())
+        })();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
+        res
     }
 }
 
@@ -2094,5 +2117,49 @@ mod tests {
             "the item resolves to A's Biga as-ingredient — nested FK stable cross-replica"
         );
         eprintln!("two-replica round-trip OK: A wrote nested Biga/Dough → pushed → B pulled + converged");
+    }
+
+    // Regression for the email-collision the GUI sign-in surfaced (P5 identity reconciliation): a
+    // separately-seeded cache already holds this email under a DIFFERENT id (the dev seed's john vs
+    // the server's john). ensure_user_local must adopt the server id + re-point the stale user's
+    // content, NOT trip `UNIQUE users.email`.
+    #[test]
+    fn signin_reconciles_email_collision() {
+        let db_path = std::env::temp_dir().join("vegify-reconcile.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+
+        let (seed_id, email): (String, String) = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT id, email FROM users LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .expect("a seed user");
+        let owned_before: i64 = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM ingredients WHERE user_id = ?1", [&seed_id], |r| r.get(0))
+            .expect("count");
+        assert!(owned_before > 0, "the seed user owns some content");
+
+        // sign in as the SAME email under a different (server) id — must reconcile, not collide.
+        let server_id = new_id();
+        db.ensure_user_local(&AuthUser { id: server_id.clone(), name: "John".into(), email: email.clone() })
+            .expect("reconcile, not UNIQUE users.email");
+
+        let conn = db.conn.lock().unwrap();
+        let id_for_email: String =
+            conn.query_row("SELECT id FROM users WHERE email = ?1", [&email], |r| r.get(0)).expect("one user");
+        assert_eq!(id_for_email, server_id, "the cache adopted the server id");
+        let stale_rows: i64 =
+            conn.query_row("SELECT count(*) FROM users WHERE id = ?1", [&seed_id], |r| r.get(0)).unwrap();
+        assert_eq!(stale_rows, 0, "the stale seed user row is gone");
+        let owned_after: i64 = conn
+            .query_row("SELECT count(*) FROM ingredients WHERE user_id = ?1", [&server_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(owned_after, owned_before, "the seed user's content now belongs to the server id");
+        eprintln!("reconcile OK: email collision resolved, content re-pointed {seed_id} → {server_id}");
     }
 }
