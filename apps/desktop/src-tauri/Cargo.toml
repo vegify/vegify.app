@@ -22,6 +22,9 @@ path = "src/bin/gen_bindings.rs"
 tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
+# The shared DAL (content types, mutations, nutrition CTE, visibility, viewer-scoped reads) — the
+# SAME crate the standing server consumes, so the two can never drift. No Tauri/HTTP in it.
+vegify-core = { path = "../../../crates/vegify-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -32,7 +35,6 @@ tauri-plugin-log = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
-ulid = "1"
 # Desktop sign-in + content-API sync: a blocking HTTP client (matches the sync DAL) to the web shell's
 # JSON auth + content routes, and the OS keychain for the session token.
 ureq = { version = "2", features = ["json"] }

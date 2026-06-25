@@ -13,6 +13,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Rust workspace build output (one shared target dir at the repo root)
+/target/
+
 # local sqlite
 .data/
 

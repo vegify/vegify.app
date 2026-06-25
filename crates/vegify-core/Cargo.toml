@@ -1,0 +1,15 @@
+[package]
+name = "vegify-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Vegify shared DAL — SQLite-backed content model (recipes/ingredients/nutrition/visibility + the UGC access policy), consumed by the desktop and the server. No Tauri, no HTTP — just the data layer."
+
+[dependencies]
+# `bundled` compiles SQLite in. Same version the desktop pins, so Cargo unifies to one libsqlite3-sys.
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+# Pinned to match the desktop's ttipc/specta so the `Type` impls are the SAME trait the
+# `#[procedures]` macro consumes (a version skew would make them distinct traits and fail to compile).
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+ulid = "1"

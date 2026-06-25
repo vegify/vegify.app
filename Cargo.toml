@@ -1,0 +1,10 @@
+# Rust workspace. The shared DAL (`vegify-core`) is consumed by BOTH the desktop
+# (apps/desktop/src-tauri) and the standing server (`crates/vegify-server`, added in P1b) —
+# the @vegify/db analogue for the Rust side. One Cargo.lock + one ./target for the whole tree.
+# (This coexists with the pnpm/Turborepo JS workspace — different files, no overlap.)
+[workspace]
+resolver = "2"
+members = [
+  "crates/vegify-core",
+  "apps/desktop/src-tauri",
+]
