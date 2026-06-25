@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { RecipeListView, type RecipeListItem } from '@vegify/ui'
 import { LinkAdapter } from '../link'
+import { withRetry } from '../retry'
 
 const getRecipes = createServerFn({ method: 'GET' }).handler(async () => {
   const { db, isListed } = await import('@vegify/db')
@@ -17,7 +18,7 @@ const getRecipes = createServerFn({ method: 'GET' }).handler(async () => {
 })
 
 export const Route = createFileRoute('/recipes/')({
-  loader: () => getRecipes(),
+  loader: () => withRetry(() => getRecipes()),
   component: RecipesPage,
 })
 

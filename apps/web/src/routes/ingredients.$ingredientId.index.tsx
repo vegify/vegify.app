@@ -2,6 +2,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { IngredientDetailView, type IngredientDetailVM, type NutritionFactsData } from '@vegify/ui'
 import { LinkAdapter } from '../link'
+import { withRetry } from '../retry'
 
 const getIngredient = createServerFn({ method: 'GET' })
   .validator((ingredientId: string) => ingredientId)
@@ -55,10 +56,12 @@ const getIngredient = createServerFn({ method: 'GET' })
   })
 
 export const Route = createFileRoute('/ingredients/$ingredientId/')({
-  loader: ({ params }) => getIngredient({ data: params.ingredientId }),
+  loader: ({ params }) => withRetry(() => getIngredient({ data: params.ingredientId })),
   component: IngredientPage,
 })
 
 function IngredientPage() {
-  return <IngredientDetailView ingredient={Route.useLoaderData()} LinkComponent={LinkAdapter} />
+  const ingredient = Route.useLoaderData()
+  if (!ingredient) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
+  return <IngredientDetailView ingredient={ingredient} LinkComponent={LinkAdapter} />
 }

@@ -5,6 +5,7 @@ import {
   type IngredientFormDefaults,
   type IngredientFormInput,
 } from '@vegify/ui'
+import { withRetry } from '../retry'
 
 const getIngredientFn = createServerFn({ method: 'GET' })
   .validator((id: string) => id)
@@ -42,7 +43,7 @@ const deleteIngredientFn = createServerFn({ method: 'POST' })
   })
 
 export const Route = createFileRoute('/ingredients/$ingredientId/edit')({
-  loader: ({ params }) => getIngredientFn({ data: params.ingredientId }),
+  loader: ({ params }) => withRetry(() => getIngredientFn({ data: params.ingredientId })),
   component: EditIngredient,
 })
 

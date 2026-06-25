@@ -14,6 +14,7 @@ import { AppShell, themeScript } from '@vegify/ui'
 import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
 import { fetchUser, logoutFn } from '../auth'
+import { withRetry } from '../retry'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
@@ -47,14 +48,34 @@ export const Route = createRootRoute({
     ],
   }),
   beforeLoad: async ({ location }) => {
-    const user = await fetchUser()
+    const user = await withRetry(() => fetchUser())
     const isPublic = PUBLIC_PATHS.has(location.pathname)
     if (!user && !isPublic) throw redirect({ to: '/login' })
     if (user && isPublic) throw redirect({ to: '/' })
     return { user }
   },
+  errorComponent: RootErrorBoundary,
   shellComponent: RootDocument,
 })
+
+// Graceful catch-all: a loader that fails after retries (or any render error) shows this instead of a
+// white screen. Retry re-runs the route's loaders — usually enough for a transient throttle.
+function RootErrorBoundary() {
+  const router = useRouter()
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-8 text-center">
+      <p className="text-lg font-medium">Something went wrong loading this page.</p>
+      <p className="text-sm text-muted-foreground">It may have been a brief hiccup.</p>
+      <button
+        type="button"
+        onClick={() => router.invalidate()}
+        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+      >
+        Retry
+      </button>
+    </div>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { user } = Route.useRouteContext()

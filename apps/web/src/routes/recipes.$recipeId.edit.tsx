@@ -1,6 +1,7 @@
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegify/ui'
+import { withRetry } from '../retry'
 
 const getRecipeFn = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
@@ -63,7 +64,7 @@ const deleteFn = createServerFn({ method: 'POST' })
   })
 
 export const Route = createFileRoute('/recipes/$recipeId/edit')({
-  loader: ({ params }) => getRecipeFn({ data: params.recipeId }),
+  loader: ({ params }) => withRetry(() => getRecipeFn({ data: params.recipeId })),
   component: EditRecipe,
 })
 

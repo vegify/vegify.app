@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { IngredientListView, type IngredientListItem } from '@vegify/ui'
 import { LinkAdapter } from '../link'
+import { withRetry } from '../retry'
 
 // Standalone ingredients = those not used as a recipe's as-ingredient (those are recipes).
 const getIngredients = createServerFn({ method: 'GET' }).handler(async () => {
@@ -19,7 +20,7 @@ const getIngredients = createServerFn({ method: 'GET' }).handler(async () => {
 })
 
 export const Route = createFileRoute('/ingredients/')({
-  loader: () => getIngredients(),
+  loader: () => withRetry(() => getIngredients()),
   component: IngredientsPage,
 })
 
