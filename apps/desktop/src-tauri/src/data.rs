@@ -766,6 +766,78 @@ fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> Resul
     Ok(())
 }
 
+/// Extract the `id` from a delete outbox payload (`{ "id": "…" }`).
+#[allow(dead_code)]
+fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
+    p.get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| DataError::Db("outbox delete payload missing id".into()))
+}
+
+/// Reconcile the local content cache to a server pull. Inside ONE transaction (FK already disabled by
+/// the caller — PRAGMA foreign_keys is a no-op mid-transaction), clear the content tables — keeping
+/// `users`, the `nutrients` name catalog, and the meta tables — then re-apply every pulled row via
+/// do_save_* stamped with its REAL owner (so per-viewer gates mirror the server). Pruning falls out:
+/// anything the pull no longer returns simply isn't recreated. The caller pushes first, so no unpushed
+/// local create is lost. Atomic: any error rolls the transaction back, leaving the cache untouched.
+#[allow(dead_code)]
+fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> Result<(), DataError> {
+    let tx = conn.transaction()?;
+    tx.execute_batch(
+        "DELETE FROM ingredient_in_recipe;
+         DELETE FROM ingredient_nutrient;
+         DELETE FROM recipes;
+         DELETE FROM ingredients;
+         DELETE FROM amounts;",
+    )?;
+    for ing in &payload.ingredients {
+        let input = SaveIngredientInput {
+            id: Some(ing.id.clone()),
+            visibility: Some(ing.visibility),
+            name: ing.name.clone(),
+            description: ing.description.clone(),
+            price: ing.price,
+            calories_per_100g: ing.calories_per_100g,
+            serving_grams: ing.serving_grams,
+            package_grams: ing.package_grams,
+            nutrients: ing
+                .nutrients
+                .iter()
+                .map(|n| IngredientNutrientInput {
+                    name: n.name.clone(),
+                    amount_per_100g: n.amount_per_100g,
+                    unit: n.unit.clone(),
+                })
+                .collect(),
+        };
+        do_save_ingredient(&tx, &input, ing.user_id.as_deref())?;
+    }
+    for r in &payload.recipes {
+        let input = SaveRecipeInput {
+            id: Some(r.id.clone()),
+            as_ingredient_id: Some(r.as_ingredient_id.clone()),
+            visibility: Some(r.visibility),
+            name: r.name.clone(),
+            subtitle: r.subtitle.clone(),
+            directions: r.directions.clone(),
+            serving_grams: r.serving_grams,
+            batch_grams: r.batch_grams,
+            items: r
+                .items
+                .iter()
+                .map(|it| RecipeItemInput {
+                    ingredient_id: it.ingredient_id.clone(),
+                    grams: it.grams,
+                    unit: it.unit.clone(),
+                })
+                .collect(),
+        };
+        do_save_recipe(&tx, &input, r.user_id.as_deref())?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// Where changeset blobs live. A local dir today (LocalBlobStore); an S3 bucket in production
 /// (S3BlobStore) — same trait, so the sync/compact logic is storage-agnostic. Blob id = ULID.
 pub trait BlobStore: Send + Sync {
@@ -976,6 +1048,59 @@ impl Db {
     /// The current opaque session token (for the content API's Bearer auth + server-side logout).
     fn current_token(&self) -> Option<String> {
         self.auth.lock().unwrap().as_ref().map(|s| s.token.clone())
+    }
+
+    /// Push: drain the outbox to the content API in FIFO (`seq`) order, deleting each row on success.
+    /// Stops at the first failure — the unpushed tail stays queued, so order holds and a re-push is
+    /// idempotent (every payload carries its client id → the server upserts). The connection mutex is
+    /// NOT held during the HTTP call. An empty outbox is a no-op (no token required).
+    #[allow(dead_code)]
+    fn push(&self) -> Result<(), DataError> {
+        loop {
+            let next: Option<(i64, String, String)> = {
+                let conn = self.conn.lock().unwrap();
+                conn.query_row(
+                    "SELECT seq, op, payload FROM _outbox ORDER BY seq LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?
+            };
+            let Some((seq, op, payload_json)) = next else { return Ok(()) };
+            let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
+            let payload: serde_json::Value =
+                serde_json::from_str(&payload_json).map_err(|e| DataError::Db(e.to_string()))?;
+            match op.as_str() {
+                "saveRecipe" => content_client::post(&token, "recipes", &payload)?,
+                "saveIngredient" => content_client::post(&token, "ingredients", &payload)?,
+                "deleteRecipe" => content_client::delete(&token, "recipes", payload_id(&payload)?)?,
+                "deleteIngredient" => content_client::delete(&token, "ingredients", payload_id(&payload)?)?,
+                other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
+            }
+            self.conn.lock().unwrap().execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
+        }
+    }
+
+    /// Pull: replace the local content cache with the server's listed world for this viewer (apply +
+    /// prune in one FK-off transaction — see apply_pull). MUST run after a full push, so a local create
+    /// sitting in the outbox is already on the server (hence in the pull) before the rebuild.
+    #[allow(dead_code)]
+    fn pull(&self) -> Result<(), DataError> {
+        let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
+        let payload = content_client::pull(&token)?;
+        let mut conn = self.conn.lock().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
+        let res = apply_pull(&mut conn, &payload);
+        conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
+        res
+    }
+
+    /// One sync pass: push local writes, THEN pull/reconcile — push-first so the pull's prune can't
+    /// drop an unpushed local create. The (future) Sync button + the step-7 auto-fire both call this.
+    #[allow(dead_code)]
+    fn sync_now(&self) -> Result<(), DataError> {
+        self.push()?;
+        self.pull()
     }
 
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
@@ -2349,5 +2474,100 @@ mod tests {
         assert!(!p3.recipes.iter().any(|r| r.id == rid), "deleted recipe is gone");
         VegifyData::sign_out(&db).ok();
         eprintln!("content client round-trip OK: pull → post → pull → delete → pull");
+    }
+
+    // Step 5/9: the full sync engine across TWO replicas of one account, against a running web shell.
+    // A writes a nested Biga/Dough and syncs (push); B syncs (pull) and must converge to A's content
+    // with the nested item FK intact — the end-to-end proof the whole arc was built for. #[ignore]'d
+    // (needs the bun web build on $VEGIFY_AUTH_URL):
+    //   VEGIFY_AUTH_URL=http://localhost:39008 \
+    //     cargo test --lib two_replica_round_trip -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn two_replica_round_trip_against_web() {
+        let tmp = std::env::temp_dir();
+        let mk = |tag: &str| {
+            let db = tmp.join(format!("vegify-2rep-{tag}.db"));
+            let blobs = tmp.join(format!("vegify-2rep-{tag}-blobs"));
+            let _ = fs::remove_file(&db);
+            let _ = fs::remove_dir_all(&blobs);
+            fs::copy(crate::db_path(), &db).expect("seed");
+            Db::open(db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open")
+        };
+        let a = mk("A");
+        let b = mk("B");
+        for dev in [&a, &b] {
+            let _ = VegifyData::sign_out(dev);
+            VegifyData::sign_in(
+                dev,
+                SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+            )
+            .expect("sign in");
+        }
+
+        // A creates a nested pair: a Biga, and a Dough that consumes the Biga's as-ingredient as an
+        // item. Names carry a unique run tag so repeated runs against one served copy don't collide.
+        let uniq = &new_id()[..10];
+        let biga_name = format!("2rep Biga {uniq}");
+        let dough_name = format!("2rep Dough {uniq}");
+        let biga_rid = VegifyData::save_recipe(
+            &a,
+            SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: biga_name.clone(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(100.0),
+                batch_grams: Some(300.0),
+                items: vec![],
+            },
+        )
+        .expect("A saves biga");
+        let biga_ai: String = a
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&biga_rid], |r| r.get(0))
+            .expect("biga as-ingredient");
+        VegifyData::save_recipe(
+            &a,
+            SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: dough_name.clone(),
+                subtitle: None,
+                directions: None,
+                serving_grams: Some(250.0),
+                batch_grams: Some(500.0),
+                items: vec![RecipeItemInput { ingredient_id: biga_ai.clone(), grams: 300.0, unit: None }],
+            },
+        )
+        .expect("A saves dough consuming the biga");
+
+        // A pushes to the server; B pulls and reconciles.
+        a.sync_now().expect("A sync (push + pull)");
+        b.sync_now().expect("B sync (push-empty + pull)");
+
+        let names: Vec<String> =
+            VegifyData::list_recipes(&b).expect("B list").into_iter().map(|c| c.name).collect();
+        assert!(names.contains(&biga_name), "B converged on A's Biga");
+        assert!(names.contains(&dough_name), "B converged on A's Dough");
+
+        // the nested FK survived the cross-replica round-trip: B's Dough item resolves to A's Biga.
+        let dough = VegifyData::list_recipes(&b)
+            .expect("list")
+            .into_iter()
+            .find(|c| c.name == dough_name)
+            .expect("dough on B");
+        let view = VegifyData::recipe(&b, dough.id).expect("B recipe").expect("exists");
+        assert_eq!(view.items.len(), 1, "B's Dough kept its item through push→pull");
+        assert_eq!(
+            view.items[0].name, biga_name,
+            "the item resolves to A's Biga as-ingredient — nested FK stable cross-replica"
+        );
+        eprintln!("two-replica round-trip OK: A wrote nested Biga/Dough → pushed → B pulled + converged");
     }
 }
