@@ -27,7 +27,7 @@ export {
   type RecipeFormDefaults,
   type IngredientSearchItem,
 } from "./recipe-form";
-export { LoginView, SignupView, type AuthSubmitResult } from "./auth-form";
+export { LoginView, SignupView, SIGNUPS_ENABLED, type AuthSubmitResult } from "./auth-form";
 export { VisibilityField, type Visibility } from "./visibility-field";
 export {
   HomeView,

@@ -15,6 +15,14 @@ import { VegifyLogo } from "./vegify-logo";
  */
 export type AuthSubmitResult = { error?: string } | void;
 
+/**
+ * Signups are disabled (invite-only). The server is the authority (`POST /api/auth/signup` → 403);
+ * this gates the UI entry points so neither shell advertises a dead path. To re-open: set this to
+ * `true` AND set `VEGIFY_SIGNUPS_OPEN=1` on the server. Typed `boolean` (not the `false` literal) so
+ * the always-false guards below don't read as constant-condition dead code.
+ */
+export const SIGNUPS_ENABLED: boolean = false;
+
 function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12 text-foreground">
@@ -109,12 +117,14 @@ export function LoginView({
         >
           {pending ? "Signing in…" : "Sign in"}
         </button>
-        <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <LinkComponent href="/signup" className="font-semibold text-primary hover:underline">
-            Sign up
-          </LinkComponent>
-        </p>
+        {SIGNUPS_ENABLED ? (
+          <p className="text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <LinkComponent href="/signup" className="font-semibold text-primary hover:underline">
+              Sign up
+            </LinkComponent>
+          </p>
+        ) : null}
       </form>
     </AuthLayout>
   );

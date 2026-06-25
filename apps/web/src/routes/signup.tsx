@@ -1,10 +1,14 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { SignupView } from '@vegify/ui'
+import { SignupView, SIGNUPS_ENABLED } from '@vegify/ui'
 import { LinkAdapter } from '../link'
 import { signupFn } from '../auth'
 
 export const Route = createFileRoute('/signup')({
+  // Signups are disabled (invite-only) — bounce direct URL nav to login so no one lands on a dead form.
+  beforeLoad: () => {
+    if (!SIGNUPS_ENABLED) throw redirect({ to: '/login' })
+  },
   component: SignupPage,
 })
 

@@ -14,6 +14,8 @@ pub enum AppError {
     /// Login with bad credentials (distinct message from the generic 401).
     InvalidCredentials,
     BadRequest(String),
+    /// The request is understood but refused (e.g. signups are disabled) → 403.
+    Forbidden(String),
     Conflict(String),
     NotFound(String),
     Internal(String),
@@ -34,6 +36,7 @@ impl IntoResponse for AppError {
                 (StatusCode::UNAUTHORIZED, "Invalid email or password.".to_string())
             }
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),

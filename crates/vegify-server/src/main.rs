@@ -94,6 +94,11 @@ struct SignupBody {
 }
 
 async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> Result<Json<Value>, AppError> {
+    // Signups are disabled by default (invite-only while the app isn't open to the public). The server
+    // is the authority — set VEGIFY_SIGNUPS_OPEN=1 to re-open (and flip SIGNUPS_ENABLED in @vegify/ui).
+    if std::env::var("VEGIFY_SIGNUPS_OPEN").as_deref() != Ok("1") {
+        return Err(AppError::Forbidden("Signups are disabled.".into()));
+    }
     let name = body.name.unwrap_or_default().trim().to_string();
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
