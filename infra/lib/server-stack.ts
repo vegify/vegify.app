@@ -81,7 +81,8 @@ export class ServerStack extends Stack {
       // volume is RETAIN → the DB survives instance replacement). Find the non-root NVMe disk by name.
       "for i in $(seq 1 60); do [ $(lsblk -dno NAME | grep -c nvme) -ge 2 ] && break || sleep 2; done",
       "ROOTDISK=/dev/$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -1)",
-      "DATADEV=$(lsblk -dpno NAME,TYPE | awk '$2==\"disk\"{print $1}' | grep -vx \"$ROOTDISK\" | head -1)",
+      // Restrict to NVMe disks — excludes AL2023's zram0 swap device, which lsblk also reports as a disk.
+      "DATADEV=$(lsblk -dpno NAME,TYPE | awk '$2==\"disk\"{print $1}' | grep /dev/nvme | grep -vx \"$ROOTDISK\" | head -1)",
       "blkid \"$DATADEV\" || mkfs.ext4 -L vegifydata \"$DATADEV\"",
       "mkdir -p /data",
       "mount LABEL=vegifydata /data",
@@ -102,9 +103,10 @@ export class ServerStack extends Stack {
       "        path: vegify.db",
       `        region: ${this.region}`,
       "EOF",
-      // Restore from S3 if a replica exists; otherwise lay down the baked seed (first-ever boot).
+      // Restore from S3 if a replica exists; otherwise lay down the baked seed. NOT -if-replica-exists:
+      // with no replica that's a no-op SUCCESS, so the `|| seed` fallback would never fire (empty DB).
       "if [ ! -f /data/vegify.db ]; then",
-      "  litestream restore -if-replica-exists -config /etc/litestream.yml /data/vegify.db || \\",
+      "  litestream restore -config /etc/litestream.yml /data/vegify.db || \\",
       `    aws s3 cp s3://${seedDb.s3BucketName}/${seedDb.s3ObjectKey} /data/vegify.db`,
       "fi",
       // systemd: litestream supervises the server (-exec) so every write is captured to S3.

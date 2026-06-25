@@ -353,7 +353,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/pull", get(pull))
         .with_state(state);
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // Bind all interfaces so CloudFront can reach the origin (the SG locks the port to CloudFront's
+    // prefix list — that's the access control, not the bind address). 127.0.0.1 would be loopback-only.
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("vegify-server listening on http://{addr} (db: {db_path})");
     axum::serve(listener, app).await?;
