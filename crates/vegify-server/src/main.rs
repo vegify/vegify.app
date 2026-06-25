@@ -135,6 +135,14 @@ async fn bootstrap(State(state): State<AppState>, Json(body): Json<BootstrapBody
     Ok(Json(json!({ "ok": true, "email": normalized })))
 }
 
+/// Whoami: resolve the bearer token to its user (401 if absent/invalid). The web SSR shell calls this
+/// to turn its session cookie into the signed-in user for the auth gate + chrome.
+async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<User>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let user = db(&state, move |conn| auth::validate_session(conn, &token)).await?;
+    user.map(Json).ok_or(AppError::Unauthorized)
+}
+
 // ---- content routes (Bearer-authed; userId always stamped server-side from the session) ----
 
 async fn list_recipes(
@@ -337,6 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/signup", post(signup))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/bootstrap", post(bootstrap))
+        .route("/api/auth/session", get(session))
         .route(
             "/api/content/recipes",
             get(list_recipes).post(save_recipe).delete(delete_recipe),
