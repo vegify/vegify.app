@@ -5,41 +5,30 @@ import {
   type IngredientFormDefaults,
   type IngredientFormInput,
 } from '@vegify/ui'
+import type { IngredientEditData } from '../content'
 import { withRetry } from '../retry'
 
 const getIngredientFn = createServerFn({ method: 'GET' })
   .validator((id: string) => id)
-  .handler(async ({ data }) => {
-    const { db, isOwner } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    const me = await currentUserId()
-    const ingredient = await db.query.ingredients.findFirst({
-      where: (i, { eq }) => eq(i.id, data),
-      with: {
-        servingSize: true,
-        batchSize: true,
-        nutrients: { with: { nutrient: true } },
-      },
-    })
+  .handler(async ({ data }): Promise<IngredientEditData> => {
+    const { getIngredientEdit } = await import('../content')
+    const ingredient = await getIngredientEdit(data) // backend gates isOwner; null => not owner / missing
     if (!ingredient) throw notFound()
-    if (!isOwner(ingredient.userId, me)) throw notFound()
     return ingredient
   })
 
 const saveIngredientFn = createServerFn({ method: 'POST' })
   .validator((input: IngredientFormInput) => input)
   .handler(async ({ data }) => {
-    const { saveIngredient } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    return saveIngredient({ ...data, userId: await currentUserId() })
+    const { saveIngredient } = await import('../content')
+    return saveIngredient(data)
   })
 
 const deleteIngredientFn = createServerFn({ method: 'POST' })
   .validator((id: string) => id)
   .handler(async ({ data }) => {
-    const { deleteIngredient } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    await deleteIngredient(data, await currentUserId())
+    const { deleteIngredient } = await import('../content')
+    await deleteIngredient(data)
   })
 
 export const Route = createFileRoute('/ingredients/$ingredientId/edit')({
@@ -51,7 +40,7 @@ function EditIngredient() {
   const ingredient = Route.useLoaderData()
   const router = useRouter()
 
-  const servingGrams = ingredient.servingSize?.grams ?? null
+  const servingGrams = ingredient.servingGrams
   const scale = servingGrams ? servingGrams / 100 : 1
   const defaults: IngredientFormDefaults = {
     id: ingredient.id,
@@ -60,11 +49,11 @@ function EditIngredient() {
     description: ingredient.description,
     priceCents: ingredient.price,
     servingGrams,
-    packageGrams: ingredient.batchSize?.grams ?? null,
+    packageGrams: ingredient.packageGrams,
     caloriesPerServing:
       ingredient.caloriesPer100g != null ? ingredient.caloriesPer100g * scale : null,
     nutrients: ingredient.nutrients.map((n) => ({
-      name: n.nutrient.name,
+      name: n.name,
       amountPerServing: n.amountPer100g * scale,
       unit: n.unit,
     })),

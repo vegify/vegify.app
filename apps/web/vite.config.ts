@@ -9,9 +9,9 @@ import tailwindcss from '@tailwindcss/vite'
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
   // Bundle every dep INTO the SSR build (incl. react + the @vegify/* workspace packages) so the
-  // deployed server.js is self-contained; only the native @libsql/client stays external (it can't
-  // be bundled and is the one thing the Lambda/Fargate bundle installs from node_modules).
-  ssr: { external: ['@libsql/client'], noExternal: true },
+  // deployed server.js is self-contained. The web holds no database — it calls the Axum backend over
+  // HTTP (VEGIFY_API_URL) — so there's no native @libsql binding left to keep external.
+  ssr: { noExternal: true },
   // React Compiler runs as a Babel plugin inside @vitejs/plugin-react (target React 19 → no runtime dep).
   plugins: [
     devtools(),

@@ -7,50 +7,26 @@ import { withRetry } from '../retry'
 const getIngredient = createServerFn({ method: 'GET' })
   .validator((ingredientId: string) => ingredientId)
   .handler(async ({ data }): Promise<IngredientDetailVM> => {
-    const { db, canView } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    const me = await currentUserId()
-    const ingredient = await db.query.ingredients.findFirst({
-      where: (i, { eq }) => eq(i.id, data),
-      with: {
-        creator: true,
-        servingSize: true,
-        batchSize: true,
-        nutrients: { with: { nutrient: true } },
-      },
-    })
-    if (!ingredient) throw notFound()
-    if (!canView(ingredient.visibility, ingredient.userId, me)) throw notFound()
+    const { getIngredientView } = await import('../content')
+    const ing = await getIngredientView(data) // backend gates canView; null => forbidden/missing
+    if (!ing) throw notFound()
 
+    const scale = ing.servingGrams ? ing.servingGrams / 100 : 1
     const nutrition: NutritionFactsData = {
       heading: 'This Ingredient',
-      caloriesPerServing:
-        ingredient.caloriesPer100g != null
-          ? ingredient.caloriesPer100g *
-            (ingredient.servingSize?.grams ? ingredient.servingSize.grams / 100 : 1)
-          : null,
-      serving: ingredient.servingSize
-        ? {
-            amount: ingredient.servingSize.amount,
-            unit: ingredient.servingSize.unit,
-            grams: ingredient.servingSize.grams,
-          }
-        : null,
+      caloriesPerServing: ing.caloriesPer100g != null ? ing.caloriesPer100g * scale : null,
+      // The backend's IngredientEditData carries serving GRAMS only (no amount/unit) — the same shape
+      // the desktop renders. Enriching it with the serving amount/unit is a possible follow-up.
+      serving: ing.servingGrams != null ? { amount: null, unit: null, grams: ing.servingGrams } : null,
       servingsPerBatch:
-        ingredient.batchSize && ingredient.servingSize?.grams
-          ? ingredient.batchSize.grams / ingredient.servingSize.grams
-          : null,
-      readings: ingredient.nutrients.map((n) => ({
-        name: n.nutrient.name,
-        amountPer100g: n.amountPer100g,
-        unit: n.unit,
-      })),
+        ing.packageGrams != null && ing.servingGrams ? ing.packageGrams / ing.servingGrams : null,
+      readings: ing.nutrients,
     }
 
     return {
-      id: ingredient.id,
-      name: ingredient.name,
-      description: ingredient.description,
+      id: ing.id,
+      name: ing.name,
+      description: ing.description,
       nutrition,
     }
   })

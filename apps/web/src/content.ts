@@ -1,8 +1,10 @@
-// Server-side assembly for the P1 content API (server source of truth — [[server-source-of-truth]]).
-// Produces the DESKTOP DAL's exact JSON shapes from @vegify/db, so the desktop client + its offline
-// cache speak one shape and the desktop's existing view-model mappers keep working. @vegify/db is
-// dynamic-imported inside each fn (server-only — keeps the libsql client out of the client bundle,
-// matching the route handlers). Reads are scoped per-viewer; the routes pass the session user id.
+// The web's typed view of the standing Axum backend's content API. Every function is a thin HTTP call
+// to vegify-server (via ./api, which forwards the session cookie as a Bearer token); the shapes below
+// mirror vegify-core's wire types (proven byte-parity with the desktop's DAL). The web SSR loaders +
+// mutation server-fns call these — the web holds NO database of its own. See [[server-source-of-truth]].
+
+import { api } from './api'
+import type { RecipeFormInput, IngredientFormInput, IngredientSearchItem } from '@vegify/ui'
 
 type Visibility = 'public' | 'private' | 'unlisted'
 type Reading = { name: string; amountPer100g: number; unit: string }
@@ -51,242 +53,31 @@ export type IngredientEditData = {
   nutrients: Reading[]
 }
 
-export async function listRecipeCards(me: string | null): Promise<RecipeCard[]> {
-  const { db, isListed } = await import('@vegify/db')
-  const recipes = await db.query.recipes.findMany({ with: { asIngredient: true } })
-  return recipes
-    .filter((r) => isListed(r.asIngredient.visibility, r.asIngredient.userId, me))
-    .map((r) => ({ id: r.id, name: r.asIngredient.name, subtitle: r.subtitle }))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-}
+const byId = (id: string) => `?id=${encodeURIComponent(id)}`
 
-export async function getRecipeView(id: string, me: string | null): Promise<RecipeView | null> {
-  const { db, getRecipeNutrition, canView } = await import('@vegify/db')
-  const recipe = await db.query.recipes.findFirst({
-    where: (r, { eq }) => eq(r.id, id),
-    with: {
-      asIngredient: { with: { creator: true, servingSize: true, batchSize: true } },
-      items: { orderBy: (iir, { asc }) => [asc(iir.order)], with: { ingredient: true, amount: true } },
-    },
-  })
-  if (!recipe) return null
-  if (!canView(recipe.asIngredient.visibility, recipe.asIngredient.userId, me)) return null
-  const agg = await getRecipeNutrition(id)
-  // An item whose ingredient is itself a recipe's as-ingredient links to that recipe, not the
-  // ingredient page (mirrors the desktop) — resolve those in one extra query.
-  const itemIngredientIds = recipe.items
-    .map((it) => it.ingredient?.id)
-    .filter((x): x is string => Boolean(x))
-  const subRecipes = itemIngredientIds.length
-    ? await db.query.recipes.findMany({
-        columns: { id: true, asIngredientId: true },
-        where: (r, { inArray }) => inArray(r.asIngredientId, itemIngredientIds),
-      })
-    : []
-  const recipeByIngredient = new Map(subRecipes.map((r) => [r.asIngredientId, r.id]))
-  const s = recipe.asIngredient.servingSize
-  return {
-    id: recipe.id,
-    name: recipe.asIngredient.name,
-    subtitle: recipe.subtitle,
-    directions: recipe.directions,
-    creator: recipe.asIngredient.creator?.name ?? null,
-    serving: s ? { amount: s.amount, unit: s.unit, grams: s.grams } : null,
-    batchGrams: recipe.asIngredient.batchSize?.grams ?? null,
-    items: recipe.items.map((item) => {
-      const ing = item.ingredient
-      const a = item.amount
-      return {
-        id: item.id,
-        name: ing?.name ?? '(unknown)',
-        amount: { amount: a?.amount ?? null, unit: a?.unit ?? null, grams: a?.grams ?? 0 },
-        recipeId: (ing && recipeByIngredient.get(ing.id)) ?? null,
-      }
-    }),
-    nutrition: agg,
-  }
-}
+// --- reads (the backend scopes each to the session user, from the forwarded Bearer token) ---
 
-export async function getRecipeEdit(id: string, me: string | null): Promise<RecipeEditData | null> {
-  const { db, getIngredientNutrition, isOwner } = await import('@vegify/db')
-  const recipe = await db.query.recipes.findFirst({
-    where: (r, { eq }) => eq(r.id, id),
-    with: {
-      asIngredient: { with: { servingSize: true, batchSize: true } },
-      items: { orderBy: (iir, { asc }) => [asc(iir.order)], with: { ingredient: true, amount: true } },
-    },
-  })
-  if (!recipe) return null
-  if (!isOwner(recipe.asIngredient.userId, me)) return null
-  const items: RecipeEditItem[] = []
-  for (const it of recipe.items) {
-    if (!it.ingredient) continue
-    const n = await getIngredientNutrition(it.ingredient.id)
-    items.push({
-      ingredientId: it.ingredient.id,
-      name: it.ingredient.name,
-      grams: it.amount?.grams ?? 0,
-      caloriesPer100g: n.caloriesPer100g,
-      readings: n.readings,
-    })
-  }
-  const sg = recipe.asIngredient.servingSize?.grams ?? null
-  const bg = recipe.asIngredient.batchSize?.grams ?? null
-  return {
-    id: recipe.id,
-    name: recipe.asIngredient.name,
-    subtitle: recipe.subtitle,
-    directions: recipe.directions,
-    servings: sg && bg ? bg / sg : null,
-    visibility: recipe.asIngredient.visibility,
-    items,
-  }
-}
+export const listRecipeCards = () => api<RecipeCard[]>('/api/content/recipes')
+export const getRecipeView = (id: string) => api<RecipeView | null>(`/api/content/recipe-detail${byId(id)}`)
+export const getRecipeEdit = (id: string) => api<RecipeEditData | null>(`/api/content/recipe-edit${byId(id)}`)
+export const listIngredientCards = () => api<IngredientCard[]>('/api/content/ingredients')
+export const getIngredientView = (id: string) =>
+  api<IngredientEditData | null>(`/api/content/ingredient-detail${byId(id)}`)
+export const getIngredientEdit = (id: string) =>
+  api<IngredientEditData | null>(`/api/content/ingredient-edit${byId(id)}`)
+export const searchIngredients = (q: string) =>
+  api<IngredientSearchItem[]>(`/api/content/search?q=${encodeURIComponent(q)}`)
 
-export async function listIngredientCards(me: string | null): Promise<IngredientCard[]> {
-  const { db, isListed } = await import('@vegify/db')
-  const [all, recipes] = await Promise.all([
-    db.query.ingredients.findMany({ orderBy: (i, { asc }) => asc(i.name) }),
-    db.query.recipes.findMany({ columns: { asIngredientId: true } }),
-  ])
-  const recipeIngredientIds = new Set(recipes.map((r) => r.asIngredientId))
-  return all
-    .filter((i) => !recipeIngredientIds.has(i.id) && isListed(i.visibility, i.userId, me))
-    .map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))
-}
+// --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 
-async function loadIngredient(id: string) {
-  const { db } = await import('@vegify/db')
-  return db.query.ingredients.findFirst({
-    where: (i, { eq }) => eq(i.id, id),
-    with: { servingSize: true, batchSize: true, nutrients: { with: { nutrient: true } } },
-  })
-}
-
-function toIngredientEditData(
-  ing: NonNullable<Awaited<ReturnType<typeof loadIngredient>>>,
-): IngredientEditData {
-  return {
-    id: ing.id,
-    name: ing.name,
-    description: ing.description,
-    price: ing.price,
-    caloriesPer100g: ing.caloriesPer100g,
-    servingGrams: ing.servingSize?.grams ?? null,
-    packageGrams: ing.batchSize?.grams ?? null,
-    visibility: ing.visibility,
-    nutrients: ing.nutrients.map((n) => ({
-      name: n.nutrient.name,
-      amountPer100g: n.amountPer100g,
-      unit: n.unit,
-    })),
-  }
-}
-
-/** Ingredient detail (canView): public/unlisted/own. Mirrors the desktop `ingredient` proc. */
-export async function getIngredientView(id: string, me: string | null): Promise<IngredientEditData | null> {
-  const { canView } = await import('@vegify/db')
-  const ing = await loadIngredient(id)
-  if (!ing) return null
-  if (!canView(ing.visibility, ing.userId, me)) return null
-  return toIngredientEditData(ing)
-}
-
-/** Ingredient edit-load (isOwner). Mirrors the desktop `ingredient_for_edit` proc. */
-export async function getIngredientEdit(id: string, me: string | null): Promise<IngredientEditData | null> {
-  const { isOwner } = await import('@vegify/db')
-  const ing = await loadIngredient(id)
-  if (!ing) return null
-  if (!isOwner(ing.userId, me)) return null
-  return toIngredientEditData(ing)
-}
-
-// --- pull (the desktop sync engine's bulk read) ---
-
-// Each row is the desktop's SaveRecipeInput / SaveIngredientInput PLUS its owner (`userId`). The
-// owner is essential: the desktop applies each via do_save_* and must stamp the row's REAL owner (not
-// the local session user) so its per-viewer visibility gates mirror the server — see the step-5 note.
-export type PullRecipe = {
-  id: string
-  asIngredientId: string
-  userId: string | null
-  visibility: Visibility
-  name: string
-  subtitle: string | null
-  directions: string | null
-  servingGrams: number | null
-  batchGrams: number | null
-  items: { ingredientId: string; grams: number; unit: string | null }[]
-}
-export type PullIngredient = {
-  id: string
-  userId: string | null
-  visibility: Visibility
-  name: string
-  description: string | null
-  price: number | null
-  caloriesPer100g: number | null
-  servingGrams: number | null
-  packageGrams: number | null
-  nutrients: Reading[]
-}
-export type PullContent = { recipes: PullRecipe[]; ingredients: PullIngredient[] }
-
-// Full pull of the viewer's listed world (isListed: public + their own at any visibility), in mutation
-// shape. `recipes` carry their as-ingredient id (the desktop apply creates the as-ingredient WITH it,
-// keeping nested Biga/Dough item FKs stable); `ingredients` are LEAF rows only (recipe as-ingredients
-// are created by applying the recipe, so excluding them avoids a double-create). v1 is a full pull;
-// a delta/changes feed comes later. Edge (acceptable + correct): a visible recipe whose item points at
-// a sub-row the viewer can't see (e.g. someone's public recipe consuming their private sub-recipe)
-// pulls without that sub-row — the item resolves to "unknown" locally, which is the right privacy outcome.
-export async function pullContent(me: string | null): Promise<PullContent> {
-  const { db, isListed } = await import('@vegify/db')
-  const [recipeRows, allIngredients] = await Promise.all([
-    db.query.recipes.findMany({
-      with: {
-        asIngredient: { with: { servingSize: true, batchSize: true } },
-        items: { orderBy: (iir, { asc }) => [asc(iir.order)], with: { amount: true } },
-      },
-    }),
-    db.query.ingredients.findMany({
-      with: { servingSize: true, batchSize: true, nutrients: { with: { nutrient: true } } },
-    }),
-  ])
-
-  const recipes: PullRecipe[] = recipeRows
-    .filter((r) => isListed(r.asIngredient.visibility, r.asIngredient.userId, me))
-    .map((r) => ({
-      id: r.id,
-      asIngredientId: r.asIngredientId,
-      userId: r.asIngredient.userId,
-      visibility: r.asIngredient.visibility,
-      name: r.asIngredient.name,
-      subtitle: r.subtitle,
-      directions: r.directions,
-      servingGrams: r.asIngredient.servingSize?.grams ?? null,
-      batchGrams: r.asIngredient.batchSize?.grams ?? null,
-      items: r.items.flatMap((it) =>
-        it.ingredientId
-          ? [{ ingredientId: it.ingredientId, grams: it.amount?.grams ?? 0, unit: it.amount?.unit ?? null }]
-          : [],
-      ),
-    }))
-
-  const recipeAsIngredientIds = new Set(recipeRows.map((r) => r.asIngredientId))
-  const ingredients: PullIngredient[] = allIngredients
-    .filter((i) => !recipeAsIngredientIds.has(i.id) && isListed(i.visibility, i.userId, me))
-    .map((i) => ({
-      id: i.id,
-      userId: i.userId,
-      visibility: i.visibility,
-      name: i.name,
-      description: i.description,
-      price: i.price,
-      caloriesPer100g: i.caloriesPer100g,
-      servingGrams: i.servingSize?.grams ?? null,
-      packageGrams: i.batchSize?.grams ?? null,
-      nutrients: i.nutrients.map((n) => ({ name: n.nutrient.name, amountPer100g: n.amountPer100g, unit: n.unit })),
-    }))
-
-  return { recipes, ingredients }
-}
+// RecipeFormInput / IngredientFormInput are wire-compatible with vegify-core's SaveRecipeInput /
+// SaveIngredientInput (camelCase; the extra optional asIngredientId + item unit default server-side),
+// so the form input POSTs as-is. A supplied `id` upserts (edit); its absence mints one (create).
+export const saveRecipe = (input: RecipeFormInput): Promise<string> =>
+  api<{ id: string }>('/api/content/recipes', { method: 'POST', body: input }).then((r) => r.id)
+export const deleteRecipe = (id: string): Promise<void> =>
+  api(`/api/content/recipes${byId(id)}`, { method: 'DELETE' }).then(() => undefined)
+export const saveIngredient = (input: IngredientFormInput): Promise<string> =>
+  api<{ id: string }>('/api/content/ingredients', { method: 'POST', body: input }).then((r) => r.id)
+export const deleteIngredient = (id: string): Promise<void> =>
+  api(`/api/content/ingredients${byId(id)}`, { method: 'DELETE' }).then(() => undefined)

@@ -1,12 +1,12 @@
 // Production runtime for web: serves the built WinterCG fetch handler on Bun.
 //   pnpm --filter web build           # produces dist/server + dist/client
-//   pnpm --filter web start:bun        # serve the build on Bun (PORT, DATABASE_URL via env)
+//   pnpm --filter web start:bun        # serve the build on Bun (PORT, VEGIFY_API_URL via env)
 //
 // Why Bun: measured ~+10% read throughput and a ~10x tighter p99.9 tail vs Node serving the SAME
 // build under sustained concurrency — the win is the runtime (JSC vs V8), not native serving (a
 // node:http bridge on Bun captures nearly all of it). See docs/benchmark.md "Runtime: Node vs Bun".
-// Native @libsql/client loads fine on Bun. This file is also the basis for the AWS Fargate
-// entrypoint (a long-running Bun server in the DB's VPC — the model where the win is realized).
+// The web holds no database — it calls the standing Axum backend over HTTP (VEGIFY_API_URL); this
+// file is also the basis for the AWS Fargate entrypoint (a long-running Bun server).
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 

@@ -5,17 +5,15 @@ import { RecipeForm, type RecipeFormInput } from '@vegify/ui'
 const searchFn = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
-    const { searchIngredients } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    return searchIngredients(data, await currentUserId())
+    const { searchIngredients } = await import('../content')
+    return searchIngredients(data)
   })
 
 const saveFn = createServerFn({ method: 'POST' })
   .validator((input: RecipeFormInput) => input)
   .handler(async ({ data }) => {
-    const { saveRecipe } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    return saveRecipe({ ...data, userId: await currentUserId() })
+    const { saveRecipe } = await import('../content')
+    return saveRecipe(data)
   })
 
 export const Route = createFileRoute('/recipes/new')({

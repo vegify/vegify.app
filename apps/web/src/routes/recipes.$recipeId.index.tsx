@@ -7,67 +7,36 @@ import { withRetry } from '../retry'
 const getRecipe = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
   .handler(async ({ data }): Promise<RecipeDetailVM> => {
-    const { db, getRecipeNutrition, canView } = await import('@vegify/db')
-    const { currentUserId } = await import('../auth')
-    const me = await currentUserId()
-    const id = data
-    const recipe = await db.query.recipes.findFirst({
-      where: (r, { eq }) => eq(r.id, id),
-      with: {
-        asIngredient: { with: { creator: true, servingSize: true, batchSize: true } },
-        items: {
-          orderBy: (iir, { asc }) => [asc(iir.order)],
-          with: { ingredient: true, amount: true },
-        },
-      },
-    })
+    const { getRecipeView } = await import('../content')
+    const recipe = await getRecipeView(data) // backend gates canView; null => forbidden/missing
     if (!recipe) throw notFound()
-    if (!canView(recipe.asIngredient.visibility, recipe.asIngredient.userId, me)) throw notFound()
-    const agg = await getRecipeNutrition(id)
 
-    // An item whose ingredient is itself a recipe's as-ingredient links to the recipe page, not
-    // the ingredient page (mirrors the desktop) — resolve those in one extra query.
-    const itemIngredientIds = recipe.items
-      .map((it) => it.ingredient?.id)
-      .filter((x): x is string => Boolean(x))
-    const subRecipes = itemIngredientIds.length
-      ? await db.query.recipes.findMany({
-          columns: { id: true, asIngredientId: true },
-          where: (r, { inArray }) => inArray(r.asIngredientId, itemIngredientIds),
-        })
-      : []
-    const recipeByIngredient = new Map(subRecipes.map((r) => [r.asIngredientId, r.id]))
-
-    const serving = recipe.asIngredient.servingSize
+    const serving = recipe.serving
     const nutrition: NutritionFactsData = {
       heading: 'This Recipe',
-      serving: serving ? { amount: serving.amount, unit: serving.unit, grams: serving.grams } : null,
+      serving,
       servingsPerBatch:
-        recipe.asIngredient.batchSize && serving?.grams
-          ? recipe.asIngredient.batchSize.grams / serving.grams
-          : null,
+        recipe.batchGrams != null && serving?.grams ? recipe.batchGrams / serving.grams : null,
       caloriesPerServing:
-        agg.caloriesPer100g != null && serving?.grams
-          ? (agg.caloriesPer100g * serving.grams) / 100
-          : agg.caloriesPer100g,
-      readings: agg.readings,
+        recipe.nutrition.caloriesPer100g != null && serving?.grams
+          ? (recipe.nutrition.caloriesPer100g * serving.grams) / 100
+          : recipe.nutrition.caloriesPer100g,
+      readings: recipe.nutrition.readings,
     }
 
     return {
       id: recipe.id,
-      name: recipe.asIngredient.name,
+      name: recipe.name,
       subtitle: recipe.subtitle,
-      creator: recipe.asIngredient.creator?.name,
+      creator: recipe.creator ?? undefined,
       directions: recipe.directions,
-      items: recipe.items.map((item) => {
-        const ing = item.ingredient
-        const subRecipeId = ing ? recipeByIngredient.get(ing.id) : undefined
-        return {
-          key: item.id,
-          label: `${item.amount?.amount ?? ''} ${item.amount?.unit ?? ''} ${ing?.name ?? '(unknown)'}`.trim(),
-          href: subRecipeId ? `/recipes/${subRecipeId}` : `/ingredients/${ing?.id ?? ''}`,
-        }
-      }),
+      // An item that is itself a recipe links to the recipe page (the backend resolves recipeId); a
+      // leaf ingredient links to its ingredient page. item.id is the ingredient id (vegify-core shape).
+      items: recipe.items.map((item, i) => ({
+        key: `${item.id}-${i}`,
+        label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
+        href: item.recipeId ? `/recipes/${item.recipeId}` : `/ingredients/${item.id}`,
+      })),
       nutrition,
     }
   })

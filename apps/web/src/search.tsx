@@ -12,28 +12,13 @@ import {
 const searchAll = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
-    const { db, isListed } = await import('@vegify/db')
-    const { currentUserId } = await import('./auth')
-    const me = await currentUserId()
+    // The backend's lists are already viewer-scoped (recipe as-ingredients excluded); filter by name
+    // in JS — the catalog is small. Swap for a server-side query if it grows. Mirrors the desktop.
+    const { listRecipeCards, listIngredientCards } = await import('./content')
     const q = data.toLowerCase()
-    const [recipes, ingredients] = await Promise.all([
-      db.query.recipes.findMany({ with: { asIngredient: true } }),
-      db.query.ingredients.findMany(),
-    ])
-    const recipeIngredientIds = new Set(recipes.map((r) => r.asIngredientId))
-    const recipeHits: RecipeListItem[] = recipes
-      .filter(
-        (r) =>
-          isListed(r.asIngredient.visibility, r.asIngredient.userId, me) &&
-          r.asIngredient.name.toLowerCase().includes(q),
-      )
-      .map((r) => ({ id: r.id, name: r.asIngredient.name, subtitle: r.subtitle }))
-    const ingredientHits: IngredientListItem[] = ingredients
-      .filter(
-        (i) =>
-          !recipeIngredientIds.has(i.id) && isListed(i.visibility, i.userId, me) && i.name.toLowerCase().includes(q),
-      )
-      .map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))
+    const [recipes, ingredients] = await Promise.all([listRecipeCards(), listIngredientCards()])
+    const recipeHits: RecipeListItem[] = recipes.filter((r) => r.name.toLowerCase().includes(q))
+    const ingredientHits: IngredientListItem[] = ingredients.filter((i) => i.name.toLowerCase().includes(q))
     return { recipes: recipeHits, ingredients: ingredientHits }
   })
 
