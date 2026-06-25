@@ -106,6 +106,16 @@ export class ServerStack extends Stack {
       "mkdir -p /data",
       "mount LABEL=vegifydata /data",
       "grep -q vegifydata /etc/fstab || echo 'LABEL=vegifydata /data ext4 defaults,nofail 0 2' >> /etc/fstab",
+      // One-shot prod-data migration: if a snapshot is staged in S3, adopt it as the live DB (replacing
+      // whatever's on the EBS), clear the old litestream generations so replication restarts on the new
+      // DB, then consume the staged object so future boots skip this. Idempotent + self-disabling.
+      `if aws s3 ls s3://${replica.bucketName}/migration/vegify.db >/dev/null 2>&1; then`,
+      "  systemctl stop vegify 2>/dev/null || true",
+      "  rm -f /data/vegify.db /data/vegify.db-wal /data/vegify.db-shm",
+      `  aws s3 rm s3://${replica.bucketName}/vegify.db/ --recursive || true`,
+      `  aws s3 cp s3://${replica.bucketName}/migration/vegify.db /data/vegify.db`,
+      `  aws s3 rm s3://${replica.bucketName}/migration/vegify.db`,
+      "fi",
       // Litestream (static linux-arm64 release — matches the t4g/Graviton box).
       `curl -fsSL -o /tmp/ls.tgz https://github.com/benbjohnson/litestream/releases/download/${LITESTREAM}/litestream-${LITESTREAM}-linux-arm64.tar.gz`,
       "tar -C /usr/local/bin -xzf /tmp/ls.tgz litestream",
