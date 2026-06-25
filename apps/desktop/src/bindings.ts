@@ -107,6 +107,11 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  syncNow(): Promise<null> {
+    return invoke("sync_now");
+  },
+
+  /** @throws {DataError} */
   currentUser(): Promise<{
 	id: string,
 	name: string,

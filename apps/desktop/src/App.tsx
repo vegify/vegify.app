@@ -239,10 +239,19 @@ function RootChrome() {
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate, router])
 
+  // Bootstrap sync once on entering the authed app (a fresh sign-in or a restored session): the local
+  // cache renders instantly, then a background push+pull reconciles with the server and the router
+  // invalidates so any new/changed data surfaces. Best-effort — offline just leaves the cache as-is.
+  useEffect(() => {
+    runSync('Sync', vegifyData.syncNow())
+    // run once on mount; runSync closes over the stable router + setStatus
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const footer = (
     <div className="space-y-2 border-t border-white/15 pt-4">
       <div className="flex gap-2 px-3">
-        <SyncButton label="Sync" onClick={() => runSync('Sync', vegifyData.sync())} />
+        <SyncButton label="Sync" onClick={() => runSync('Sync', vegifyData.syncNow())} />
         <SyncButton label="Compact" onClick={() => runSync('Compact', vegifyData.compact())} />
       </div>
       {status ? <p className="px-3 text-xs text-white/70">{status}</p> : null}

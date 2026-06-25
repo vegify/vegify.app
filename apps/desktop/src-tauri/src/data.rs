@@ -366,7 +366,6 @@ fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataE
 /// mutation shape; `post`/`delete` drain a local write to the server. The sync engine (next step) wires
 /// these to the `_outbox` and the local apply — so they're dead-code-allowed here until then.
 mod content_client {
-    #![allow(dead_code)]
     use super::{auth_base_url, AuthErrorBody, DataError, Visibility};
     use serde::Deserialize;
 
@@ -767,7 +766,6 @@ fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> Resul
 }
 
 /// Extract the `id` from a delete outbox payload (`{ "id": "…" }`).
-#[allow(dead_code)]
 fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
     p.get("id")
         .and_then(|v| v.as_str())
@@ -780,7 +778,6 @@ fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
 /// do_save_* stamped with its REAL owner (so per-viewer gates mirror the server). Pruning falls out:
 /// anything the pull no longer returns simply isn't recreated. The caller pushes first, so no unpushed
 /// local create is lost. Atomic: any error rolls the transaction back, leaving the cache untouched.
-#[allow(dead_code)]
 fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> Result<(), DataError> {
     let tx = conn.transaction()?;
     tx.execute_batch(
@@ -1054,7 +1051,6 @@ impl Db {
     /// Stops at the first failure — the unpushed tail stays queued, so order holds and a re-push is
     /// idempotent (every payload carries its client id → the server upserts). The connection mutex is
     /// NOT held during the HTTP call. An empty outbox is a no-op (no token required).
-    #[allow(dead_code)]
     fn push(&self) -> Result<(), DataError> {
         loop {
             let next: Option<(i64, String, String)> = {
@@ -1084,7 +1080,6 @@ impl Db {
     /// Pull: replace the local content cache with the server's listed world for this viewer (apply +
     /// prune in one FK-off transaction — see apply_pull). MUST run after a full push, so a local create
     /// sitting in the outbox is already on the server (hence in the pull) before the rebuild.
-    #[allow(dead_code)]
     fn pull(&self) -> Result<(), DataError> {
         let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
         let payload = content_client::pull(&token)?;
@@ -1093,14 +1088,6 @@ impl Db {
         let res = apply_pull(&mut conn, &payload);
         conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
         res
-    }
-
-    /// One sync pass: push local writes, THEN pull/reconcile — push-first so the pull's prune can't
-    /// drop an unpushed local create. The (future) Sync button + the step-7 auto-fire both call this.
-    #[allow(dead_code)]
-    fn sync_now(&self) -> Result<(), DataError> {
-        self.push()?;
-        self.pull()
     }
 
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
@@ -1224,6 +1211,9 @@ pub trait VegifyData {
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
     fn sync(&self) -> Result<(), DataError>;
     fn compact(&self) -> Result<(), DataError>;
+    /// One content-API sync pass (push the outbox, then pull/reconcile). The bootstrap-on-sign-in and
+    /// the manual Sync button call this; it supersedes the S3 `sync`/`compact` (retired in step 8).
+    fn sync_now(&self) -> Result<(), DataError>;
     fn current_user(&self) -> Result<Option<AuthUser>, DataError>;
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
     fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError>;
@@ -1562,6 +1552,13 @@ impl VegifyData for Db {
         }
         conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&new])?;
         Ok(())
+    }
+
+    /// One content-API sync pass: push local writes, THEN pull/reconcile — push-first so the pull's
+    /// prune can't drop an unpushed local create. The bootstrap-on-sign-in + manual Sync both call it.
+    fn sync_now(&self) -> Result<(), DataError> {
+        self.push()?;
+        self.pull()
     }
 
     fn current_user(&self) -> Result<Option<AuthUser>, DataError> {
