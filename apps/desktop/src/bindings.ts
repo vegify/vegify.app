@@ -97,16 +97,6 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  sync(): Promise<null> {
-    return invoke("sync");
-  },
-
-  /** @throws {DataError} */
-  compact(): Promise<null> {
-    return invoke("compact");
-  },
-
-  /** @throws {DataError} */
   syncNow(): Promise<null> {
     return invoke("sync_now");
   },

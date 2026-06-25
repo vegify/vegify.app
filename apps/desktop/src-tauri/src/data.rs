@@ -1,19 +1,17 @@
-//! On-device DAL + scale-to-zero changeset sync for the Tauri desktop shell.
+//! On-device DAL + the content-API sync engine for the Tauri desktop shell.
 //!
 //! The `#[procedures]` trait is the typed contract (same surface as @vegify/db on the web). Backed
 //! by rusqlite (bundled SQLite, sync); nutrition is ONE recursive CTE ported from
 //! packages/db/src/nutrition.ts. IDs are client-generated ULIDs (text) — matching the shared
-//! schema — so offline rows never collide on sync; every INSERT mints a ULID (no autoincrement).
-//! Mutations are ported from packages/db/src/mutations.ts (with the amounts cascade-cleanup fixes)
-//! and run inside `write_capture`, which records a SQLite `session` changeset and persists it as an
-//! immutable blob (the S3-transportable sync unit). `sync()` pulls unseen blobs and applies (LWW).
+//! schema — so offline rows never collide; client ids are authoritative (no autoincrement).
+//! Mutations are ported from packages/db/src/mutations.ts (with the amounts cascade-cleanup fixes).
+//! The desktop is an offline-first CACHE of the server (the source of truth): each local write
+//! applies instantly + enqueues a semantic mutation in `_outbox`; `sync_now` (push the outbox to the
+//! content API, then pull/reconcile) runs on sign-in, after writes (debounced), and periodically.
 
 use std::collections::HashSet;
-use std::fs;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
-use rusqlite::session::{Changegroup, ConflictAction, Session};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -252,10 +250,6 @@ impl From<rusqlite::Error> for DataError {
     fn from(e: rusqlite::Error) -> Self {
         DataError::Db(e.to_string())
     }
-}
-
-fn io_err(e: std::io::Error) -> DataError {
-    DataError::Db(e.to_string())
 }
 
 // ---- auth (desktop sign-in over HTTPS → token in the OS keychain) ----
@@ -835,139 +829,13 @@ fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> R
     Ok(())
 }
 
-/// Where changeset blobs live. A local dir today (LocalBlobStore); an S3 bucket in production
-/// (S3BlobStore) — same trait, so the sync/compact logic is storage-agnostic. Blob id = ULID.
-pub trait BlobStore: Send + Sync {
-    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError>;
-    /// Blob ids present, sorted (ULID = chronological = correct apply/merge order).
-    fn list(&self) -> Result<Vec<String>, DataError>;
-    fn get(&self, id: &str) -> Result<Vec<u8>, DataError>;
-    fn delete(&self, id: &str) -> Result<(), DataError>;
-}
-
-/// Filesystem blob store: `<dir>/<ulid>.cs`. The dev/offline default and the S3 stand-in.
-pub struct LocalBlobStore {
-    dir: PathBuf,
-}
-
-impl LocalBlobStore {
-    pub fn new(dir: &str) -> Result<Self, DataError> {
-        let dir = PathBuf::from(dir);
-        fs::create_dir_all(&dir).map_err(io_err)?;
-        Ok(Self { dir })
-    }
-    fn path(&self, id: &str) -> PathBuf {
-        self.dir.join(format!("{id}.cs"))
-    }
-}
-
-impl BlobStore for LocalBlobStore {
-    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError> {
-        fs::write(self.path(id), bytes).map_err(io_err)
-    }
-    fn list(&self) -> Result<Vec<String>, DataError> {
-        let mut ids = Vec::new();
-        for entry in fs::read_dir(&self.dir).map_err(io_err)? {
-            let path = entry.map_err(io_err)?.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("cs") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    ids.push(stem.to_string());
-                }
-            }
-        }
-        ids.sort();
-        Ok(ids)
-    }
-    fn get(&self, id: &str) -> Result<Vec<u8>, DataError> {
-        fs::read(self.path(id)).map_err(io_err)
-    }
-    fn delete(&self, id: &str) -> Result<(), DataError> {
-        fs::remove_file(self.path(id)).map_err(io_err)
-    }
-}
-
-/// S3 blob store — changeset blobs as objects `<prefix><ulid>.cs` in a bucket. Self-hostable: works
-/// against any S3-compatible endpoint (real AWS S3, or MinIO for local dev — path-style addressing).
-/// Sync (blocking) client, matching the sync DAL. THIS is the production sync transport, scale-to-zero.
-pub struct S3BlobStore {
-    bucket: Box<s3::Bucket>,
-}
-
-impl S3BlobStore {
-    /// `endpoint` empty → real AWS (region-based); non-empty → S3-compatible (MinIO), path-style.
-    pub fn new(
-        bucket: &str,
-        region: &str,
-        endpoint: &str,
-        access_key: &str,
-        secret_key: &str,
-    ) -> Result<Self, DataError> {
-        let s3err = |e: s3::error::S3Error| DataError::Db(e.to_string());
-        let region = if endpoint.is_empty() {
-            region.parse().map_err(|_| DataError::Db(format!("bad region {region}")))?
-        } else {
-            s3::Region::Custom { region: region.to_string(), endpoint: endpoint.to_string() }
-        };
-        let creds = s3::creds::Credentials::new(Some(access_key), Some(secret_key), None, None, None)
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        let mut b = s3::Bucket::new(bucket, region, creds).map_err(s3err)?;
-        if !endpoint.is_empty() {
-            b = b.with_path_style();
-        }
-        Ok(Self { bucket: b })
-    }
-    fn key(id: &str) -> String {
-        format!("{id}.cs")
-    }
-}
-
-impl BlobStore for S3BlobStore {
-    fn put(&self, id: &str, bytes: &[u8]) -> Result<(), DataError> {
-        self.bucket
-            .put_object_blocking(Self::key(id), bytes)
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        Ok(())
-    }
-    fn list(&self) -> Result<Vec<String>, DataError> {
-        let pages = self
-            .bucket
-            .list_blocking(String::new(), None)
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        let mut ids = Vec::new();
-        for page in pages {
-            for obj in page.contents {
-                if let Some(stem) = obj.key.strip_suffix(".cs") {
-                    ids.push(stem.to_string());
-                }
-            }
-        }
-        ids.sort();
-        Ok(ids)
-    }
-    fn get(&self, id: &str) -> Result<Vec<u8>, DataError> {
-        let resp = self
-            .bucket
-            .get_object_blocking(Self::key(id))
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        Ok(resp.bytes().to_vec())
-    }
-    fn delete(&self, id: &str) -> Result<(), DataError> {
-        self.bucket
-            .delete_object_blocking(Self::key(id))
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        Ok(())
-    }
-}
-
-/// Desktop-local meta tables, created on open and NEVER synced — they're written outside the changeset
-/// capture, so they never ride a changeset to another device. `_applied_changesets` dedupes applied
-/// blobs; `_outbox` is the push queue: one semantic mutation `{op, payload}` per local content write,
-/// drained FIFO by the sync engine to the content API. `seq` AUTOINCREMENT gives deterministic order
-/// (ULIDs aren't monotonic within a millisecond) and is never reused after a drained row is deleted.
+/// The desktop-local `_outbox` push queue, created on open: one semantic mutation `{op, payload}` per
+/// local content write, drained FIFO by the sync engine to the content API. `seq` AUTOINCREMENT gives
+/// deterministic order (ULIDs aren't monotonic within a millisecond) and is never reused after a
+/// drained row is deleted. Local-only — the server is the source of truth, not a synced changeset.
 fn init_meta_tables(conn: &Connection) -> Result<(), DataError> {
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS _applied_changesets(id TEXT PRIMARY KEY);
-         CREATE TABLE IF NOT EXISTS _outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL, payload TEXT NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS _outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL, payload TEXT NOT NULL);",
     )?;
     Ok(())
 }
@@ -979,56 +847,31 @@ fn to_json<T: Serialize>(v: &T) -> Result<serde_json::Value, DataError> {
 
 pub struct Db {
     conn: Mutex<Connection>,
-    blobs: Box<dyn BlobStore>,
     auth: Mutex<Option<StoredSession>>,
 }
 
 impl Db {
-    pub fn open(db_path: &str, blob_dir: &str) -> Result<Self, DataError> {
+    pub fn open(db_path: &str) -> Result<Self, DataError> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
         init_meta_tables(&conn)?;
-        Ok(Self {
-            conn: Mutex::new(conn),
-            blobs: Box::new(LocalBlobStore::new(blob_dir)?),
-            auth: Mutex::new(keychain_load()),
-        })
+        Ok(Self { conn: Mutex::new(conn), auth: Mutex::new(keychain_load()) })
     }
 
-    /// Open with an explicit blob store (e.g. an S3BlobStore) instead of the local-dir default.
-    pub fn open_with(db_path: &str, blobs: Box<dyn BlobStore>) -> Result<Self, DataError> {
-        let conn = Connection::open(db_path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
-            .ok();
-        init_meta_tables(&conn)?;
-        Ok(Self { conn: Mutex::new(conn), blobs, auth: Mutex::new(keychain_load()) })
-    }
-
-    fn write_capture<T>(
+    /// Run a write with the connection locked. (Formerly captured a SQLite changeset for the S3 sync
+    /// mesh; the server is the source of truth now — content writes propagate via the `_outbox` and
+    /// the sync engine, so the write just runs.)
+    fn with_conn<T>(
         &self,
         write: impl FnOnce(&Connection) -> Result<T, DataError>,
     ) -> Result<T, DataError> {
-        let conn = self.conn.lock().unwrap();
-        let mut bytes = Vec::new();
-        let value = {
-            let mut session = Session::new(&conn)?;
-            session.attach(None)?;
-            let v = write(&conn)?;
-            session.changeset_strm(&mut bytes)?;
-            v
-        };
-        if !bytes.is_empty() {
-            let id = new_id();
-            self.blobs.put(&id, &bytes)?;
-            conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
-        }
-        Ok(value)
+        write(&self.conn.lock().unwrap())
     }
 
-    /// Append a semantic mutation `{op, payload}` to the push queue. Recorded OUTSIDE write_capture's
-    /// changeset (like _applied_changesets) so it never rides a synced changeset to another device —
-    /// _outbox is device-local. The sync engine drains it in `seq` order and deletes pushed rows.
+    /// Append a semantic mutation `{op, payload}` to the local push queue. `_outbox` is device-local
+    /// (the server is the source of truth); the sync engine drains it in `seq` order, pushing each to
+    /// the content API and deleting the row on success.
     fn enqueue(&self, op: &str, payload: serde_json::Value) -> Result<(), DataError> {
         let json = serde_json::to_string(&payload).map_err(|e| DataError::Db(e.to_string()))?;
         self.conn
@@ -1091,8 +934,7 @@ impl Db {
     }
 
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
-    /// recipe `creator`) resolve on-device. Runs outside `write_capture` — identity isn't synced
-    /// content. Idempotent.
+    /// recipe `creator`) resolve on-device. Identity is auth state, not synced content. Idempotent.
     fn ensure_user_local(&self, user: &AuthUser) -> Result<(), DataError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -1209,10 +1051,8 @@ pub trait VegifyData {
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
-    fn sync(&self) -> Result<(), DataError>;
-    fn compact(&self) -> Result<(), DataError>;
-    /// One content-API sync pass (push the outbox, then pull/reconcile). The bootstrap-on-sign-in and
-    /// the manual Sync button call this; it supersedes the S3 `sync`/`compact` (retired in step 8).
+    /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
+    /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
     fn current_user(&self) -> Result<Option<AuthUser>, DataError>;
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
@@ -1465,14 +1305,14 @@ impl VegifyData for Db {
         if input.id.is_none() {
             input.id = Some(new_id());
         }
-        let id = self.write_capture(|conn| do_save_ingredient(conn, &input, uid.as_deref()))?;
+        let id = self.with_conn(|conn| do_save_ingredient(conn, &input, uid.as_deref()))?;
         self.enqueue("saveIngredient", to_json(&input)?)?;
         Ok(id)
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_delete_ingredient(conn, &id, uid.as_deref()))?;
+        self.with_conn(|conn| do_delete_ingredient(conn, &id, uid.as_deref()))?;
         self.enqueue("deleteIngredient", serde_json::json!({ "id": id }))?;
         Ok(())
     }
@@ -1486,76 +1326,21 @@ impl VegifyData for Db {
             input.id = Some(new_id());
             input.as_ingredient_id = Some(new_id());
         }
-        let id = self.write_capture(|conn| do_save_recipe(conn, &input, uid.as_deref()))?;
+        let id = self.with_conn(|conn| do_save_recipe(conn, &input, uid.as_deref()))?;
         self.enqueue("saveRecipe", to_json(&input)?)?;
         Ok(id)
     }
 
     fn delete_recipe(&self, id: String) -> Result<(), DataError> {
         let uid = self.current_uid();
-        self.write_capture(|conn| do_delete_recipe(conn, &id, uid.as_deref()))?;
+        self.with_conn(|conn| do_delete_recipe(conn, &id, uid.as_deref()))?;
         self.enqueue("deleteRecipe", serde_json::json!({ "id": id }))?;
         Ok(())
     }
 
-    fn sync(&self) -> Result<(), DataError> {
-        let conn = self.conn.lock().unwrap();
-        // A changeset applies table-by-table, so on a fresh replica a child row (e.g. an
-        // ingredient_in_recipe) can land before its parent, and SQLite raises a foreign-key
-        // conflict at the end of apply. Our conflict handler returns REPLACE, which is only valid
-        // for DATA/CONFLICT conflicts — for an FK conflict it makes apply return SQLITE_MISUSE (21).
-        // The changeset is internally consistent, so disable FK enforcement across the apply.
-        conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
-        let res: Result<(), DataError> = (|| {
-            for id in self.blobs.list()? {
-                let seen: Option<String> = conn
-                    .query_row("SELECT id FROM _applied_changesets WHERE id = ?1", [&id], |r| r.get(0))
-                    .optional()?;
-                if seen.is_some() {
-                    continue;
-                }
-                let bytes = self.blobs.get(&id)?;
-                conn.apply_strm(
-                    &mut &bytes[..],
-                    None::<fn(&str) -> bool>,
-                    |_conflict, _item| ConflictAction::SQLITE_CHANGESET_REPLACE,
-                )?;
-                conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&id])?;
-            }
-            Ok(())
-        })();
-        conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
-        res
-    }
-
-    /// Compaction: squash every changeset blob into ONE via SQLite's changegroup, bounding the
-    /// store (and a new device's replay cost). ULID filenames sort chronologically, which is the
-    /// correct merge order. A fresh device applies just the combined changeset over the seed;
-    /// devices that already applied the originals re-apply the combined one harmlessly (LWW).
-    fn compact(&self) -> Result<(), DataError> {
-        let conn = self.conn.lock().unwrap();
-        let ids = self.blobs.list()?;
-        if ids.len() <= 1 {
-            return Ok(());
-        }
-        let mut group = Changegroup::new()?;
-        for id in &ids {
-            let bytes = self.blobs.get(id)?;
-            group.add_stream(&mut &bytes[..])?;
-        }
-        let mut combined = Vec::new();
-        group.output_strm(&mut combined)?;
-        let new = new_id();
-        self.blobs.put(&new, &combined)?;
-        for id in &ids {
-            self.blobs.delete(id)?;
-        }
-        conn.execute("INSERT OR IGNORE INTO _applied_changesets(id) VALUES (?1)", [&new])?;
-        Ok(())
-    }
-
     /// One content-API sync pass: push local writes, THEN pull/reconcile — push-first so the pull's
-    /// prune can't drop an unpushed local create. The bootstrap-on-sign-in + manual Sync both call it.
+    /// prune can't drop an unpushed local create. The bootstrap-on-sign-in, the debounced auto-sync,
+    /// and the manual Sync button all call it.
     fn sync_now(&self) -> Result<(), DataError> {
         self.push()?;
         self.pull()
@@ -1611,6 +1396,7 @@ impl VegifyData for Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn recipe_id_by_name(db: &Db, needle: &str) -> String {
         VegifyData::list_recipes(db)
@@ -1643,8 +1429,7 @@ mod tests {
 
     #[test]
     fn recipe_nutrition_on_device() {
-        let blobs = std::env::temp_dir().join("vegify-cte-blobs");
-        let db = Db::open(&crate::db_path(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(&crate::db_path()).expect("open");
         let id = recipe_id_by_name(&db, "Complete Shake");
         let r = VegifyData::recipe(&db, id).expect("query ok").expect("recipe exists");
         let cal100 = r.nutrition.calories_per_100g.expect("has calories");
@@ -1654,58 +1439,15 @@ mod tests {
         assert!((per_serving - 307.5).abs() < 0.5, "got {per_serving:.2}");
     }
 
-    // Full write surface flows through sync: device A SAVES a new recipe (id minted as a ULID) →
-    // changeset blob → device B sync() → B sees the new recipe. No server.
-    #[test]
-    fn save_recipe_syncs_between_devices() {
-        let tmp = std::env::temp_dir();
-        let a_db = tmp.join("vegify-write-A.db");
-        let b_db = tmp.join("vegify-write-B.db");
-        let blobs = tmp.join("vegify-write-blobs");
-        let _ = fs::remove_file(&a_db);
-        let _ = fs::remove_file(&b_db);
-        let _ = fs::remove_dir_all(&blobs);
-        fs::copy(crate::db_path(), &a_db).expect("seed A");
-        fs::copy(crate::db_path(), &b_db).expect("seed B");
-
-        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
-        let b = Db::open(b_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open B");
-
-        let input = SaveRecipeInput {
-            id: None,
-            as_ingredient_id: None,
-            visibility: None,
-            name: "Synced New Recipe".into(),
-            subtitle: Some("made offline on A".into()),
-            directions: None,
-            serving_grams: Some(100.0),
-            batch_grams: Some(300.0),
-            items: vec![],
-        };
-        let new_id = VegifyData::save_recipe(&a, input).expect("A saves recipe");
-        assert_eq!(new_id.len(), 26, "save_recipe returns a ULID");
-
-        VegifyData::sync(&b).expect("B syncs");
-        let names: Vec<String> = VegifyData::list_recipes(&b)
-            .expect("B lists")
-            .into_iter()
-            .map(|c| c.name)
-            .collect();
-        eprintln!("device B recipes after sync: {names:?}");
-        assert!(names.contains(&"Synced New Recipe".to_string()), "B should see A's new recipe");
-    }
-
     // The exact path the write UI drives: search an ingredient → save a recipe USING it as an item
     // → read it back with items + aggregated nutrition. (Covers do_save_recipe's item INSERTs,
     // which the empty-items sync test does not.)
     #[test]
     fn save_recipe_with_items_via_search_flow() {
-        let blobs = std::env::temp_dir().join("vegify-uiflow-blobs");
         let db_path = std::env::temp_dir().join("vegify-uiflow.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         sign_in_seed(&db); // own the saved recipe so the owner-gated edit-load returns it
 
         let hits = VegifyData::search_ingredients(&db, "Flour".into()).expect("search");
@@ -1745,12 +1487,10 @@ mod tests {
     // as-ingredients) and its edit defaults (per-100g + own nutrients) round-trip.
     #[test]
     fn ingredient_browser_and_edit_round_trip() {
-        let blobs = std::env::temp_dir().join("vegify-ing-blobs");
         let db_path = std::env::temp_dir().join("vegify-ing.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         sign_in_seed(&db); // own the saved ingredient so the owner-gated edit-load returns it
 
         let id = VegifyData::save_ingredient(
@@ -1789,214 +1529,14 @@ mod tests {
         eprintln!("ingredient edit: {} nutrient(s), serving {:?}g", e.nutrients.len(), e.serving_grams);
     }
 
-    // Compaction bounds the blob count without losing data: 3 writes → 3 blobs → compact → 1 blob,
-    // and a FRESH device that syncs the single combined changeset still gets all 3 recipes.
-    #[test]
-    fn compaction_squashes_changesets_losslessly() {
-        let tmp = std::env::temp_dir();
-        let a_db = tmp.join("vegify-compact-A.db");
-        let c_db = tmp.join("vegify-compact-C.db");
-        let blobs = tmp.join("vegify-compact-blobs");
-        let _ = fs::remove_file(&a_db);
-        let _ = fs::remove_file(&c_db);
-        let _ = fs::remove_dir_all(&blobs);
-        fs::copy(crate::db_path(), &a_db).expect("seed A");
-        fs::copy(crate::db_path(), &c_db).expect("seed C");
-
-        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
-        let made = ["Compact R1", "Compact R2", "Compact R3"];
-        for name in made {
-            VegifyData::save_recipe(
-                &a,
-                SaveRecipeInput {
-                    id: None,
-                    as_ingredient_id: None,
-                    visibility: None,
-                    name: name.into(),
-                    subtitle: None,
-                    directions: None,
-                    serving_grams: Some(100.0),
-                    batch_grams: Some(200.0),
-                    items: vec![],
-                },
-            )
-            .expect("A save");
-        }
-        let count_cs = || {
-            fs::read_dir(&blobs)
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("cs"))
-                .count()
-        };
-        let before = count_cs();
-        assert!(before >= 3, "expected >=3 changeset blobs, got {before}");
-        VegifyData::compact(&a).expect("compact");
-        let after = count_cs();
-        eprintln!("compaction: {before} blobs -> {after}");
-        assert_eq!(after, 1, "compaction should collapse to one combined blob");
-
-        // Fresh device C: seed + sync the single combined changeset → must have all 3 writes.
-        let c = Db::open(c_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open C");
-        VegifyData::sync(&c).expect("C sync");
-        let names: Vec<String> =
-            VegifyData::list_recipes(&c).expect("C list").into_iter().map(|r| r.name).collect();
-        for name in made {
-            assert!(names.contains(&name.to_string()), "C missing {name:?} after compacted sync");
-        }
-    }
-
-    // Regression for the SQLITE_MISUSE (21) found during the 2026-06-23 window click-through: a
-    // compacted changeset that contains an ingredient_in_recipe row applies child-before-parent on
-    // a fresh replica; with foreign_keys ON, the REPLACE conflict handler returns SQLITE_MISUSE.
-    // sync() now disables FK across apply. (compaction_squashes_changesets_losslessly used empty
-    // items, so it never built an ingredient_in_recipe row and missed this.)
-    #[test]
-    fn fresh_replica_replays_recipe_with_items() {
-        let tmp = std::env::temp_dir();
-        let a_db = tmp.join("vegify-fkrepl-A.db");
-        let c_db = tmp.join("vegify-fkrepl-C.db");
-        let blobs = tmp.join("vegify-fkrepl-blobs");
-        let _ = fs::remove_file(&a_db);
-        let _ = fs::remove_file(&c_db);
-        let _ = fs::remove_dir_all(&blobs);
-        fs::copy(crate::db_path(), &a_db).expect("seed A");
-        fs::copy(crate::db_path(), &c_db).expect("seed C");
-
-        let a = Db::open(a_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open A");
-        // item references a SEED ingredient → the changeset includes an ingredient_in_recipe row
-        let flour = VegifyData::search_ingredients(&a, "Flour".into())
-            .expect("search")
-            .into_iter()
-            .next()
-            .expect("seed flour exists");
-        VegifyData::save_recipe(
-            &a,
-            SaveRecipeInput {
-                id: None,
-                as_ingredient_id: None,
-                visibility: None,
-                name: "FK Replay Loaf".into(),
-                subtitle: None,
-                directions: None,
-                serving_grams: Some(250.0),
-                batch_grams: Some(500.0),
-                items: vec![RecipeItemInput { ingredient_id: flour.id, grams: 500.0, unit: None }],
-            },
-        )
-        .expect("A save with item");
-        VegifyData::compact(&a).expect("compact");
-
-        // Fresh device C: seed + sync the compacted changeset. Without the FK fix this returns
-        // SQLITE_MISUSE; with it, C rebuilds the recipe and its replayed ingredient link.
-        let c = Db::open(c_db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open C");
-        VegifyData::sync(&c).expect("C sync must not return SQLITE_MISUSE");
-        let made = VegifyData::list_recipes(&c).expect("C list");
-        let loaf = made.iter().find(|r| r.name == "FK Replay Loaf").expect("C missing FK Replay Loaf");
-        let view = VegifyData::recipe(&c, loaf.id.clone()).expect("C recipe").expect("exists");
-        assert_eq!(view.items.len(), 1, "the ingredient_in_recipe row should have replayed");
-    }
-
-    // Real S3 transport (the production sync path), verified against MinIO. #[ignore]'d so the
-    // default `cargo test` needs no Docker; run with MinIO up + bucket `vegify-sync`:
-    //   cargo test --lib s3_blob_store -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn s3_blob_store_syncs_and_compacts() {
-        // Env-driven: defaults to MinIO (offline) but runs against a real S3 bucket when SYNC_S3_*
-        // are set (SYNC_S3_ENDPOINT set to empty ⇒ real AWS, region-based).
-        let mk = || {
-            let bucket = std::env::var("SYNC_S3_BUCKET").unwrap_or_else(|_| "vegify-sync".into());
-            let region = std::env::var("SYNC_S3_REGION").unwrap_or_else(|_| "us-east-1".into());
-            let endpoint =
-                std::env::var("SYNC_S3_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9000".into());
-            let access = std::env::var("SYNC_S3_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".into());
-            let secret = std::env::var("SYNC_S3_SECRET_KEY").unwrap_or_else(|_| "minioadmin".into());
-            S3BlobStore::new(&bucket, &region, &endpoint, &access, &secret).expect("s3 store")
-        };
-        // deterministic run: clear the bucket first
-        let cleaner = mk();
-        for id in cleaner.list().expect("list") {
-            cleaner.delete(&id).expect("delete");
-        }
-
-        let tmp = std::env::temp_dir();
-        let a_db = tmp.join("vegify-s3-A.db");
-        let b_db = tmp.join("vegify-s3-B.db");
-        let _ = fs::remove_file(&a_db);
-        let _ = fs::remove_file(&b_db);
-        fs::copy(crate::db_path(), &a_db).expect("seed A");
-        fs::copy(crate::db_path(), &b_db).expect("seed B");
-
-        let a = Db::open_with(a_db.to_str().unwrap(), Box::new(mk())).expect("open A");
-        let b = Db::open_with(b_db.to_str().unwrap(), Box::new(mk())).expect("open B");
-
-        // A recipe WITH an item → the changeset includes an ingredient_in_recipe row, so B's sync
-        // exercises the FK-on-fresh-replica path (the SQLITE_MISUSE fix) over real S3 transport.
-        let flour = VegifyData::search_ingredients(&a, "Flour".into())
-            .expect("search")
-            .into_iter()
-            .next()
-            .expect("seed flour exists");
-        let new_id = VegifyData::save_recipe(
-            &a,
-            SaveRecipeInput {
-                id: None,
-                as_ingredient_id: None,
-                visibility: None,
-                name: "Synced via S3".into(),
-                subtitle: None,
-                directions: None,
-                serving_grams: Some(100.0),
-                batch_grams: Some(200.0),
-                items: vec![RecipeItemInput { ingredient_id: flour.id, grams: 300.0, unit: None }],
-            },
-        )
-        .expect("A save -> S3");
-        assert_eq!(new_id.len(), 26);
-
-        VegifyData::sync(&b).expect("B sync from S3");
-        let made = VegifyData::list_recipes(&b).expect("B list");
-        eprintln!("device B (via S3) recipes: {:?}", made.iter().map(|r| &r.name).collect::<Vec<_>>());
-        let loaf = made
-            .iter()
-            .find(|r| r.name == "Synced via S3")
-            .expect("B should see A's S3-synced recipe");
-        let view = VegifyData::recipe(&b, loaf.id.clone()).expect("B recipe").expect("exists");
-        assert_eq!(view.items.len(), 1, "B should have replayed the ingredient_in_recipe row over S3");
-
-        // compaction works over S3 too: a 2nd write, then compact → one object remains.
-        VegifyData::save_recipe(
-            &a,
-            SaveRecipeInput {
-                id: None,
-                as_ingredient_id: None,
-                visibility: None,
-                name: "S3 R2".into(),
-                subtitle: None,
-                directions: None,
-                serving_grams: Some(50.0),
-                batch_grams: None,
-                items: vec![],
-            },
-        )
-        .expect("A save 2");
-        VegifyData::compact(&a).expect("compact over S3");
-        let remaining = mk().list().expect("list after compact").len();
-        eprintln!("S3 objects after compact: {remaining}");
-        assert_eq!(remaining, 1, "compaction should leave a single S3 object");
-    }
-
     // A signed-in user's writes are stamped with their id. foreign_keys=ON requires that user to
     // exist locally — which ensure_user_local guarantees in the real flow; here we use a seed user.
     #[test]
     fn writes_stamp_signed_in_user() {
-        let blobs = std::env::temp_dir().join("vegify-stamp-blobs");
         let db_path = std::env::temp_dir().join("vegify-stamp.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
 
         let uid = sign_in_seed(&db);
 
@@ -2036,12 +1576,10 @@ mod tests {
     #[test]
     #[ignore]
     fn sign_in_round_trip_against_web() {
-        let blobs = std::env::temp_dir().join("vegify-signin-blobs");
         let db_path = std::env::temp_dir().join("vegify-signin.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         let _ = VegifyData::sign_out(&db); // start from a clean keychain slot
 
         let user = VegifyData::sign_in(
@@ -2053,7 +1591,7 @@ mod tests {
         eprintln!("signed in as {} ({})", user.name, user.id);
 
         // A fresh Db (simulating relaunch) restores the session from the keychain — offline-capable.
-        let db2 = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("reopen");
+        let db2 = Db::open(db_path.to_str().unwrap()).expect("reopen");
         let restored =
             VegifyData::current_user(&db2).expect("current").expect("restored from keychain");
         assert_eq!(restored.id, user.id, "session persisted to the keychain across reopen");
@@ -2076,12 +1614,10 @@ mod tests {
     // the recipe read procedures have their own SQL gates, so they're asserted separately below.
     #[test]
     fn visibility_scopes_reads_and_guards_writes() {
-        let blobs = std::env::temp_dir().join("vegify-vis-blobs");
         let db_path = std::env::temp_dir().join("vegify-vis.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
 
         // Two accounts: john (the seed owner) + Bob (upserted locally, as sign-in would guarantee).
         let john = sign_in_seed(&db);
@@ -2219,12 +1755,10 @@ mod tests {
     // stable cross-replica id — the exact shape the sync pull applies. Re-applying is idempotent.
     #[test]
     fn upsert_by_id_honors_supplied_ids_for_pull() {
-        let blobs = std::env::temp_dir().join("vegify-upsert-blobs");
         let db_path = std::env::temp_dir().join("vegify-upsert.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         sign_in_seed(&db); // own the rows so the owner-gated edit-load returns them
 
         // --- ingredient: a supplied-but-absent id is created WITH that id, then updated in place ---
@@ -2338,12 +1872,10 @@ mod tests {
     // the same id (cross-replica stability). The server stamps userId from the session, so it's absent.
     #[test]
     fn writes_record_semantic_outbox() {
-        let blobs = std::env::temp_dir().join("vegify-outbox-blobs");
         let db_path = std::env::temp_dir().join("vegify-outbox.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         sign_in_seed(&db);
 
         let outbox = |db: &Db| -> Vec<(String, serde_json::Value)> {
@@ -2432,12 +1964,10 @@ mod tests {
     #[test]
     #[ignore]
     fn content_client_round_trip_against_web() {
-        let blobs = std::env::temp_dir().join("vegify-client-blobs");
         let db_path = std::env::temp_dir().join("vegify-client.db");
-        let _ = fs::remove_dir_all(&blobs);
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
-        let db = Db::open(db_path.to_str().unwrap(), blobs.to_str().unwrap()).expect("open");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
         let _ = VegifyData::sign_out(&db); // clean slot
         VegifyData::sign_in(
             &db,
@@ -2485,11 +2015,9 @@ mod tests {
         let tmp = std::env::temp_dir();
         let mk = |tag: &str| {
             let db = tmp.join(format!("vegify-2rep-{tag}.db"));
-            let blobs = tmp.join(format!("vegify-2rep-{tag}-blobs"));
             let _ = fs::remove_file(&db);
-            let _ = fs::remove_dir_all(&blobs);
             fs::copy(crate::db_path(), &db).expect("seed");
-            Db::open(db.to_str().unwrap(), blobs.to_str().unwrap()).expect("open")
+            Db::open(db.to_str().unwrap()).expect("open")
         };
         let a = mk("A");
         let b = mk("B");
