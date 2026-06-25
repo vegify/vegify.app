@@ -25,13 +25,17 @@ function ship() {
   if (!ENDPOINT) return; // dev / unconfigured: events already hit the console in emit()
   const payload = JSON.stringify({ session, events });
   try {
+    // Send as text/plain, NOT application/json. application/json is not a CORS-safelisted content
+    // type, so it forces a preflight — and `sendBeacon` cannot perform a preflighted request, so the
+    // cross-origin POST silently fails ("CORS request did not succeed"). text/plain keeps it a simple
+    // request (no preflight); the ingest Lambda JSON.parses the body regardless of Content-Type.
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: "application/json" }));
+      navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: "text/plain" }));
     } else {
       void fetch(ENDPOINT, {
         method: "POST",
         body: payload,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "text/plain" },
         keepalive: true,
       }).catch(() => {});
     }
