@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { CfnOutput, Fn, RemovalPolicy, Size, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Fn, RemovalPolicy, Size, Stack, Tags, type StackProps } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -65,6 +65,13 @@ export class ServerStack extends Stack {
     serverBin.grantRead(role);
     seedDb.grantRead(role);
     replica.grantReadWrite(role); // litestream replicate + restore
+    // The instance self-attaches its data volume in user-data (robust across replacement — a CFN
+    // VolumeAttachment deadlocks a replace, since the new attach can't precede the old detach on one
+    // volume). DescribeVolumes is account-wide (no resource-level support); tighten attach/detach later.
+    role.addToPolicy(new iam.PolicyStatement({ actions: ["ec2:DescribeVolumes"], resources: ["*"] }));
+    role.addToPolicy(
+      new iam.PolicyStatement({ actions: ["ec2:AttachVolume", "ec2:DetachVolume"], resources: ["*"] }),
+    );
 
     const sg = new ec2.SecurityGroup(this, "Sg", { vpc, allowAllOutbound: true });
     sg.addIngressRule(
@@ -76,7 +83,19 @@ export class ServerStack extends Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "set -eux",
+      `export AWS_DEFAULT_REGION=${this.region}`,
       "dnf install -y tar gzip",
+      // Self-attach the dedicated data volume (found by tag) to THIS instance — robust across instance
+      // replacement (force-detach from any prior holder, then attach). No CFN VolumeAttachment.
+      "TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' || true)",
+      "IID=$(curl -s -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/instance-id)",
+      "VOL=$(aws ec2 describe-volumes --filters Name=tag:vegify:role,Values=data --query 'Volumes[0].VolumeId' --output text)",
+      "for i in $(seq 1 50); do",
+      "  OWNER=$(aws ec2 describe-volumes --volume-ids \"$VOL\" --query 'Volumes[0].Attachments[0].InstanceId' --output text 2>/dev/null || echo None)",
+      "  if [ \"$OWNER\" = \"$IID\" ]; then break; fi",
+      "  if [ \"$OWNER\" = \"None\" ] || [ -z \"$OWNER\" ]; then aws ec2 attach-volume --volume-id \"$VOL\" --instance-id \"$IID\" --device /dev/sdf 2>/dev/null || true; else aws ec2 detach-volume --volume-id \"$VOL\" --force 2>/dev/null || true; fi",
+      "  sleep 6",
+      "done",
       // Mount the dedicated EBS data volume at /data — format on first boot, preserve on reattach (the
       // volume is RETAIN → the DB survives instance replacement). Find the non-root NVMe disk by name.
       "for i in $(seq 1 60); do [ $(lsblk -dno NAME | grep -c nvme) -ge 2 ] && break || sleep 2; done",
@@ -136,6 +155,7 @@ export class ServerStack extends Stack {
       volumeType: ec2.EbsDeviceVolumeType.GP3,
       removalPolicy: RemovalPolicy.RETAIN,
     });
+    Tags.of(dataVolume).add("vegify:role", "data"); // user-data finds + self-attaches it by this tag
 
     const instance = new ec2.Instance(this, "Server", {
       vpc,
@@ -146,17 +166,13 @@ export class ServerStack extends Stack {
       role,
       userData,
       associatePublicIpAddress: true,
+      userDataCausesReplacement: true, // a user-data/binary change replaces the instance (it re-attaches the volume)
       blockDevices: [
         {
           deviceName: "/dev/xvda", // AL2023 root
           volume: ec2.BlockDeviceVolume.ebs(8, { volumeType: ec2.EbsDeviceVolumeType.GP3 }),
         },
       ],
-    });
-    new ec2.CfnVolumeAttachment(this, "DataAttach", {
-      device: "/dev/sdf", // Nitro maps it to an NVMe disk; user-data finds it as the non-root device
-      instanceId: instance.instanceId,
-      volumeId: dataVolume.volumeId,
     });
 
     // Stable address so the CloudFront origin survives instance replacement.
