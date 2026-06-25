@@ -11,6 +11,9 @@ on:
     paths:
       - "apps/web/**"
       - "packages/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "infra/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch: {}
@@ -42,9 +45,16 @@ jobs:
         run: pnpm db:push && pnpm db:seed
       - name: Build web-start AWS bundle
         run: pnpm --filter web build:aws
+      - name: Build vegify-server (aarch64 musl static, for the t4g/Graviton box) + stage the seed
+        run: |
+          cargo install cross --locked
+          cross build --release --target aarch64-unknown-linux-musl -p vegify-server
+          mkdir -p infra/assets
+          cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
+          cp .data/vegify.db infra/assets/seed.db
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
           aws-region: us-east-1
       - name: cdk deploy
-        run: pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyWebStart --require-approval never
+        run: pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyWebStart VegifyServer --require-approval never

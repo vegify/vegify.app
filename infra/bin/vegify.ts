@@ -2,6 +2,7 @@
 import { App } from "aws-cdk-lib";
 import { VpcStack } from "../lib/vpc-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
+import { ServerStack } from "../lib/server-stack.js";
 import { SyncStack } from "../lib/sync-stack.js";
 import { CiStack } from "../lib/ci-stack.js";
 
@@ -22,6 +23,10 @@ const net = new VpcStack(app, "VegifyVpc", { env });
 
 // web-start, free tier: Lambda (Function URL) + CloudFront + S3, libSQL on EFS. ~$0/mo idle.
 new WebStartStack(app, "VegifyWebStart", { env, vpc: net.vpc });
+
+// The standing Axum backend (P2): a t3.micro running vegify-server over SQLite-WAL + Litestream→S3,
+// fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
+new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 
 // Desktop local-first sync: a scale-to-zero S3 changeset-blob store + a least-privilege client.
 // Independent of the VPC/web stack. Outputs the bucket + a Secrets Manager creds secret.

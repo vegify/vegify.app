@@ -16,6 +16,9 @@ dist/
 # Rust workspace build output (one shared target dir at the repo root)
 /target/
 
+# Server-stack deploy artifacts (CI builds these; a placeholder is fine for local synth)
+infra/assets/
+
 # local sqlite
 .data/
 
