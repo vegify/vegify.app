@@ -63,6 +63,35 @@ const searchForForm = async (q: string) => {
     readings: r.readings.map((x) => ({ name: x.name, amountPer100g: num(x.amountPer100g), unit: x.unit })),
   }))
 }
+
+// --- auto-sync: a debounced, single-flight push+pull so local writes propagate to the server (and
+// other devices' changes flow back) without a manual trigger. Each write schedules one; RootChrome
+// also fires it periodically + on reconnect. Quiet by design — the bootstrap + manual Sync surface
+// status; the passive status indicator lands in step 8. Uses the module-level router to refresh loaders.
+let syncTimer: ReturnType<typeof setTimeout> | undefined
+let syncInFlight = false
+let syncPending = false
+function runAutoSync() {
+  if (syncInFlight) {
+    syncPending = true // coalesce: a write during an in-flight sync re-runs once it finishes
+    return
+  }
+  syncInFlight = true
+  syncPending = false
+  vegifyData
+    .syncNow()
+    .then(() => router.invalidate())
+    .catch(() => {}) // offline / transient — the periodic + reconnect triggers retry
+    .finally(() => {
+      syncInFlight = false
+      if (syncPending) scheduleSync(0)
+    })
+}
+function scheduleSync(delayMs = 1000) {
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(runAutoSync, delayMs)
+}
+
 const saveRecipeFromForm = (input: RecipeFormInput) =>
   vegifyData.saveRecipe({
     id: input.id ?? null,
@@ -74,6 +103,9 @@ const saveRecipeFromForm = (input: RecipeFormInput) =>
     servingGrams: input.servingGrams,
     batchGrams: input.batchGrams,
     items: input.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams, unit: null })),
+  }).then((id) => {
+    scheduleSync()
+    return id
   })
 const saveIngredientFromForm = (input: IngredientFormInput) =>
   vegifyData.saveIngredient({
@@ -86,6 +118,9 @@ const saveIngredientFromForm = (input: IngredientFormInput) =>
     servingGrams: input.servingGrams,
     packageGrams: input.packageGrams,
     nutrients: input.nutrients,
+  }).then((id) => {
+    scheduleSync()
+    return id
   })
 
 // --- IPC results → shared view-models (the desktop's data adapter) ---
@@ -248,6 +283,19 @@ function RootChrome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Auto-sync cadence: a periodic safety net + a reconnect trigger. Local writes schedule their own
+  // (debounced) sync; this catches other devices' changes and flushes a queued offline write on
+  // reconnect. Both go through the quiet, single-flight scheduler (no status spam).
+  useEffect(() => {
+    const interval = setInterval(() => scheduleSync(0), 60_000)
+    const onOnline = () => scheduleSync(0)
+    window.addEventListener('online', onOnline)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [])
+
   const footer = (
     <div className="space-y-2 border-t border-white/15 pt-4">
       <div className="flex gap-2 px-3">
@@ -366,6 +414,7 @@ const recipeEditRoute = createRoute({
           }}
           onDelete={async () => {
             await vegifyData.deleteRecipe(recipeId)
+            scheduleSync()
             await router.invalidate()
             navigate({ to: '/recipes' })
           }}
@@ -457,6 +506,7 @@ const ingredientEditRoute = createRoute({
           }}
           onDelete={async () => {
             await vegifyData.deleteIngredient(ingredientId)
+            scheduleSync()
             await router.invalidate()
             navigate({ to: '/ingredients' })
           }}
