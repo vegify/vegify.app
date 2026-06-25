@@ -96,11 +96,12 @@ struct AuthErrorBody {
 const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
 const KEYCHAIN_ACCOUNT: &str = "session";
 
-/// Base URL of the web shell that owns the credential store. Override with VEGIFY_AUTH_URL (dev → a
-/// local `bun serve-bun.mjs`); default = the deployed CloudFront origin.
+/// Base URL of the standing backend (vegify-server on EC2) that owns auth + the content API. Override
+/// with VEGIFY_AUTH_URL (dev → a local `bun serve-bun.mjs` or a local `vegify-server`); default = the
+/// deployed VegifyServer CloudFront origin.
 fn auth_base_url() -> String {
     std::env::var("VEGIFY_AUTH_URL")
-        .unwrap_or_else(|_| "https://EXAMPLEDISTOLD.cloudfront.net".to_string())
+        .unwrap_or_else(|_| "https://EXAMPLEDISTAPI.cloudfront.net".to_string())
 }
 
 /// In test builds, route ALL keychain access to keyring's in-memory mock store instead of the real
