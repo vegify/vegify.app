@@ -59,6 +59,12 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
     } catch {
       // non-JSON error body — keep the status message
     }
+    // Surface genuine backend faults (5xx) to the SSR Lambda's CloudWatch. 4xx is normal flow here —
+    // 401 is the auth gate (logged-out), 404 a missing/forbidden detail row — so those stay quiet to
+    // keep the logs signal-rich. The browser's own errors ship separately (client-log.ts).
+    if (res.status >= 500) {
+      console.error(`[api] ${init.method ?? 'GET'} ${path} -> ${res.status}: ${message}`)
+    }
     throw new ApiError(res.status, message)
   }
   if (res.status === 204) return undefined as T

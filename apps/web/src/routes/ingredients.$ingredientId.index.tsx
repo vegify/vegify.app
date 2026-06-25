@@ -1,15 +1,15 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { IngredientDetailView, type IngredientDetailVM, type NutritionFactsData } from '@vegify/ui'
 import { LinkAdapter } from '../link'
-import { withRetry } from '../retry'
 
 const getIngredient = createServerFn({ method: 'GET' })
   .validator((ingredientId: string) => ingredientId)
-  .handler(async ({ data }): Promise<IngredientDetailVM> => {
+  .handler(async ({ data }): Promise<IngredientDetailVM | null> => {
     const { getIngredientView } = await import('../content')
     const ing = await getIngredientView(data) // backend gates canView; null => forbidden/missing
-    if (!ing) throw notFound()
+    if (!ing) return null
 
     const scale = ing.servingGrams ? ing.servingGrams / 100 : 1
     const nutrition: NutritionFactsData = {
@@ -31,13 +31,20 @@ const getIngredient = createServerFn({ method: 'GET' })
     }
   })
 
+const ingredientQuery = (id: string) =>
+  queryOptions({ queryKey: ['ingredient', id], queryFn: () => getIngredient({ data: id }) })
+
 export const Route = createFileRoute('/ingredients/$ingredientId/')({
-  loader: ({ params }) => withRetry(() => getIngredient({ data: params.ingredientId })),
+  loader: async ({ context, params }) => {
+    const ing = await context.queryClient.ensureQueryData(ingredientQuery(params.ingredientId))
+    if (!ing) throw notFound()
+  },
   component: IngredientPage,
 })
 
 function IngredientPage() {
-  const ingredient = Route.useLoaderData()
+  const { ingredientId } = Route.useParams()
+  const { data: ingredient } = useSuspenseQuery(ingredientQuery(ingredientId))
   if (!ingredient) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
   return <IngredientDetailView ingredient={ingredient} LinkComponent={LinkAdapter} />
 }

@@ -1,15 +1,15 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { RecipeDetailView, type NutritionFactsData, type RecipeDetailVM } from '@vegify/ui'
 import { LinkAdapter } from '../link'
-import { withRetry } from '../retry'
 
 const getRecipe = createServerFn({ method: 'GET' })
   .validator((recipeId: string) => recipeId)
-  .handler(async ({ data }): Promise<RecipeDetailVM> => {
+  .handler(async ({ data }): Promise<RecipeDetailVM | null> => {
     const { getRecipeView } = await import('../content')
     const recipe = await getRecipeView(data) // backend gates canView; null => forbidden/missing
-    if (!recipe) throw notFound()
+    if (!recipe) return null
 
     const serving = recipe.serving
     const nutrition: NutritionFactsData = {
@@ -41,13 +41,20 @@ const getRecipe = createServerFn({ method: 'GET' })
     }
   })
 
+const recipeQuery = (id: string) =>
+  queryOptions({ queryKey: ['recipe', id], queryFn: () => getRecipe({ data: id }) })
+
 export const Route = createFileRoute('/recipes/$recipeId/')({
-  loader: ({ params }) => withRetry(() => getRecipe({ data: params.recipeId })),
+  loader: async ({ context, params }) => {
+    const recipe = await context.queryClient.ensureQueryData(recipeQuery(params.recipeId))
+    if (!recipe) throw notFound()
+  },
   component: RecipePage,
 })
 
 function RecipePage() {
-  const recipe = Route.useLoaderData()
+  const { recipeId } = Route.useParams()
+  const { data: recipe } = useSuspenseQuery(recipeQuery(recipeId))
   if (!recipe) return <div className="p-8 text-muted-foreground">Recipe not found.</div>
   return <RecipeDetailView recipe={recipe} LinkComponent={LinkAdapter} />
 }

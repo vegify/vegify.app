@@ -5,6 +5,28 @@ vegify deliberately ships **two app shells over identical shared packages** (`@v
 is the only variable. This doc records how they compare on a real slice (the recipes + ingredients
 CRUD with the computed Nutrition Facts panel).
 
+## Update 2026-06-25 — current shipping app (read this first)
+
+The bake-off below is **historical**. It resolved: **TanStack Start on Bun won**; Next.js and the Rust/Leptos shell were dropped. The repo no longer ships two *web* shells — `apps/web` is the single shipping app, and the "framework is the only variable" comparison now lives in **web (TanStack Start) vs desktop (Tauri)** rendering the same shared `@vegify/ui` screens over different data plumbing. The Next-vs-Start tables in the rest of this file are kept as the record of how the decision was reached, not the current state.
+
+Two architecture shifts since the 2026-06-18 numbers, both of which move the goalposts — don't compare line-for-line:
+
+- **Web SSR is now a stateless shell that calls the standing Axum backend over HTTP** (the P4 "web-SSR-calls-Axum" cutover). It holds no database, so every SSR render makes an auth (`/api/auth/session`) + content round trip to Axum. TTFB therefore now *includes* that hop; the old 4–7 ms figures were measured against an in-process local DB and are not comparable.
+- **TanStack Query was adopted in both frontends** (web + desktop). Reads flow through a `QueryClient`: route loaders prefetch via `ensureQueryData`, components read via `useSuspenseQuery`, and on web the cache is dehydrated into the SSR stream and rehydrated on the client. Marginal client cost measured at **+37 KB raw / +10 KB gz**.
+
+Current numbers (2026-06-25, local; Bun-served build calling a local Axum on the same box — an upper bound, not the deployed CloudFront path):
+
+| Metric | apps/web (TanStack Start on Bun, + TanStack Query) |
+|---|---:|
+| Build (`build:aws`, wall) | ~18.8 s (two Vite environments ~3.6 s + 4.9 s warm, + the self-contained Lambda assemble + pnpm spin-up) |
+| Total client JS | 506 KB raw / **157 KB gz** (was 456 / 145 on 2026-06-18; TanStack Query is the bulk of the delta) |
+| Largest chunks (gz) | index 88 KB · src 49 KB · createServerFn 11 KB · link 7 KB |
+| SSR HTML | /login 13.0 KB · /recipes 32.9 KB · /ingredients 44.8 KB |
+| TTFB, median of 5 (local) | /login 39 ms · /recipes 51 ms · /ingredients 29 ms — dominated by the SSR→Axum round trips |
+| Backend Axum `/api/content/recipes` TTFB | ~5 ms (the SSR shell's per-request dependency) |
+
+Not re-run this round: the cross-framework `oha` throughput and CDP operation-latency tables below (Next + Leptos are gone, so there's nothing to compare against). The next empirical step is a concurrency load test against the **deployed, now-traced** Axum backend — the request spans (tower-http `TraceLayer`) make p50/p99 latency directly observable in its logs.
+
 ## Environment
 
 - Apple M2 Max, 12 cores · macOS · Node 24.16

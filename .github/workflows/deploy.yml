@@ -1,9 +1,10 @@
 name: deploy
 
-# Deploys web-start to AWS (VegifyWebStart) on merge to main. Auth is OIDC — no stored AWS secrets:
-# the job assumes the least-privilege vegify-github-deploy role (infra/lib/ci-stack.ts), which can
-# only assume the CDK bootstrap roles. One-time bootstrap of that role: `cdk deploy VegifyCi`.
-# (Hardening TODO: pin these actions to commit SHAs instead of major tags.)
+# Deploys the web + backend to AWS on merge to main: VegifyWebStart (stateless SSR shell),
+# VegifyServer (standing Axum backend), and VegifyClientLogs (browser-log ingestion). Auth is OIDC —
+# no stored AWS secrets: the job assumes the least-privilege vegify-github-deploy role
+# (infra/lib/ci-stack.ts), which can only assume the CDK bootstrap roles. One-time bootstrap of that
+# role: `cdk deploy VegifyCi`. (Hardening TODO: pin these actions to commit SHAs instead of major tags.)
 
 on:
   push:
@@ -41,8 +42,6 @@ jobs:
         run: pnpm --filter @vegify/tokens build
       - name: Create + seed the DB (.data is gitignored; staged below as the vegify-server seed)
         run: pnpm db:push && pnpm db:seed
-      - name: Build web-start AWS bundle (self-contained SSR; no native deps)
-        run: pnpm --filter web build:aws
       - name: Build vegify-server (aarch64 musl static, for the t4g/Graviton box) + stage the seed
         run: |
           cargo install cross --locked
@@ -54,5 +53,24 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
           aws-region: us-east-1
+      # The browser-log ingestion endpoint (client-log.ts → VegifyClientLogs) is a deploy-time value:
+      # the Function URL exists only once that stack is up. So: build the web once so the full-app synth
+      # can resolve VegifyWebStart's assets, deploy VegifyClientLogs alone, read its URL via
+      # --outputs-file (the deploy role can't call DescribeStacks, but `cdk deploy` reads outputs through
+      # the bootstrap role it assumes), then rebuild the web with VITE_CLIENT_LOG_URL baked in so the
+      # client logger ships to it. Function URLs are stable, so this self-heals on every deploy.
+      - name: Pre-build web (lets the full-app synth resolve web-start assets)
+        run: pnpm --filter web build:aws
+      - name: Deploy client-log ingestion + capture its endpoint
+        run: |
+          pnpm --filter @vegify/infra exec cdk deploy VegifyClientLogs \
+            --require-approval never --outputs-file "$GITHUB_WORKSPACE/cdk-outputs.json"
+          URL="$(jq -r '.VegifyClientLogs.IngestUrl' "$GITHUB_WORKSPACE/cdk-outputs.json")"
+          echo "VITE_CLIENT_LOG_URL=$URL" >> "$GITHUB_ENV"
+          echo "ingestion endpoint: $URL"
+      - name: Build web-start AWS bundle (self-contained SSR; bakes in VITE_CLIENT_LOG_URL)
+        run: pnpm --filter web build:aws
       - name: cdk deploy
-        run: pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyWebStart VegifyServer --require-approval never
+        run: |
+          pnpm --filter @vegify/infra exec cdk deploy \
+            VegifyVpc VegifyWebStart VegifyServer VegifyClientLogs --require-approval never

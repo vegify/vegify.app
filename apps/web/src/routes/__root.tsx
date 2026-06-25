@@ -1,12 +1,13 @@
 import {
   HeadContent,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
   redirect,
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { AppShell, themeScript } from '@vegify/ui'
@@ -14,14 +15,14 @@ import { AppShell, themeScript } from '@vegify/ui'
 import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
 import { fetchUser, logoutFn } from '../auth'
-import { withRetry } from '../retry'
+import { initClientLogging } from '../client-log'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
 // Accounts are required: every page is gated except these. Login/signup render bare (no chrome).
 const PUBLIC_PATHS = new Set(['/login', '/signup'])
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
       {
@@ -48,7 +49,9 @@ export const Route = createRootRoute({
     ],
   }),
   beforeLoad: async ({ location }) => {
-    const user = await withRetry(() => fetchUser())
+    // The auth gate is a plain per-navigation fetch (NOT a TanStack Query): caching the user in the
+    // query cache would risk a stale-login gate. Content reads go through Query; this stays direct.
+    const user = await fetchUser()
     const isPublic = PUBLIC_PATHS.has(location.pathname)
     if (!user && !isPublic) throw redirect({ to: '/login' })
     if (user && isPublic) throw redirect({ to: '/' })
@@ -81,8 +84,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const { user } = Route.useRouteContext()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const isPublic = PUBLIC_PATHS.has(pathname)
+
+  // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
+  useEffect(() => {
+    initClientLogging()
+  }, [])
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -104,6 +113,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             user={user ? { name: user.name, email: user.email } : null}
             onSignOut={async () => {
               await logoutFn()
+              queryClient.clear() // drop the prior session's cached content before the gate flips
               await router.invalidate()
               await router.navigate({ to: '/login' })
             }}

@@ -27,9 +27,12 @@ tauri-build = { version = "2.6.2", features = [] }
 vegify-core = { path = "../../../crates/vegify-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
 tauri = { version = "2.11.2", features = [] }
-tauri-plugin-log = "2"
+# Structured logging via tracing — the fltsci plugin installs the subscriber so the sync runtime's
+# info!/debug! surface, and bridges the JS console (@fltsci/tauri-plugin-tracing attachConsole).
+# Replaces tauri-plugin-log.
+tauri-plugin-tracing = "0.3"
+tracing = "0.1"
 # `bundled` compiles SQLite in. (The sqlite3session changeset feature was dropped with the S3 sync
 # mesh — the desktop is now an offline-first cache of the server, synced over the content API.)
 rusqlite = { version = "0.32", features = ["bundled"] }

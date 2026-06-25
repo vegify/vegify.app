@@ -4,6 +4,7 @@ import { VpcStack } from "../lib/vpc-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
 import { ServerStack } from "../lib/server-stack.js";
 import { SyncStack } from "../lib/sync-stack.js";
+import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { CiStack } from "../lib/ci-stack.js";
 
 // Hosting decision (see infra/README "Hosting decision"): the bake-off winner is TanStack Start
@@ -33,6 +34,11 @@ new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 // Desktop local-first sync: a scale-to-zero S3 changeset-blob store + a least-privilege client.
 // Independent of the VPC/web stack. Outputs the bucket + a Secrets Manager creds secret.
 new SyncStack(app, "VegifySync", { env });
+
+// Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
+// client-side logs to a CloudWatch group (/vegify/web-client). Standalone (doesn't touch web-start);
+// wire the IngestUrl output into the web build as VITE_CLIENT_LOG_URL. See lib/client-logs-stack.ts.
+new ClientLogsStack(app, "VegifyClientLogs", { env });
 
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it.
 new CiStack(app, "VegifyCi", { env, githubRepo: "vegify/vegify.app" });

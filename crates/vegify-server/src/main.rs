@@ -17,6 +17,9 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tower_http::trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer};
+use tower_http::LatencyUnit;
+use tracing::Level;
 
 use crate::auth::{bearer_token, User};
 use crate::error::AppError;
@@ -74,6 +77,7 @@ async fn login(State(state): State<AppState>, Json(body): Json<LoginBody>) -> Re
     let out = db(&state, move |conn| match auth::authenticate(conn, &email, &password)? {
         Some(user) => {
             let token = auth::create_session(conn, &user.id)?;
+            tracing::info!(user = %user.id, "login ok");
             Ok(json!({ "token": token, "user": user }))
         }
         None => Err(AppError::InvalidCredentials),
@@ -105,6 +109,7 @@ async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> 
         }
         let user = auth::create_user(conn, &name, &email, &password)?;
         let token = auth::create_session(conn, &user.id)?;
+        tracing::info!(user = %user.id, "signup");
         Ok(json!({ "token": token, "user": user }))
     })
     .await?;
@@ -169,6 +174,7 @@ async fn save_recipe(
         vegify_core::do_save_recipe(conn, &input, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    tracing::info!(%id, "saved recipe");
     Ok(Json(json!({ "id": id })))
 }
 
@@ -211,6 +217,7 @@ async fn save_ingredient(
         vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    tracing::info!(%id, "saved ingredient");
     Ok(Json(json!({ "id": id })))
 }
 
@@ -327,6 +334,12 @@ async fn pull(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Structured logs (RUST_LOG overrides the default). Emits to stdout → the systemd journal on the
+    // box (`journalctl -u vegify`); the TraceLayer below adds a per-request span with status + latency.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,vegify_server=debug"));
+    tracing_subscriber::fmt().with_env_filter(filter).with_target(true).init();
+
     let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "vegify.db".to_string());
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8787);
 
@@ -360,13 +373,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))
+        // Per-request span (method, path) + a response line with status + latency; failures at ERROR.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO).latency_unit(LatencyUnit::Millis))
+                .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
+        )
         .with_state(state);
 
     // Bind all interfaces so CloudFront can reach the origin (the SG locks the port to CloudFront's
     // prefix list — that's the access control, not the bind address). 127.0.0.1 would be loopback-only.
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("vegify-server listening on http://{addr} (db: {db_path})");
+    tracing::info!(%addr, db = %db_path, "vegify-server listening");
     axum::serve(listener, app).await?;
     Ok(())
 }

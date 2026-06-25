@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { createServerFn } from '@tanstack/react-start'
+import { useQuery } from '@tanstack/react-query'
 import {
   SearchResultsView,
   type IngredientListItem,
@@ -22,25 +22,18 @@ const searchAll = createServerFn({ method: 'GET' })
     return { recipes: recipeHits, ingredients: ingredientHits }
   })
 
-/** Chrome search overlay — renders the shared SearchResultsView from a server-fn query. */
+const EMPTY = { recipes: [] as RecipeListItem[], ingredients: [] as IngredientListItem[] }
+
+/** Chrome search overlay — renders the shared SearchResultsView from a TanStack Query (client-side
+ *  live search). placeholderData keeps the prior results on screen while the next keystroke's query
+ *  loads, so the list doesn't flicker to empty between debounced inputs. */
 export function SearchOverlay({ query, LinkComponent }: { query: string; LinkComponent: NavLink }) {
-  const [res, setRes] = useState<{ recipes: RecipeListItem[]; ingredients: IngredientListItem[] }>({
-    recipes: [],
-    ingredients: [],
+  const { data } = useQuery({
+    queryKey: ['search', query],
+    queryFn: () => searchAll({ data: query }),
+    placeholderData: (prev) => prev,
   })
-  useEffect(() => {
-    let active = true
-    searchAll({ data: query })
-      .then((r) => {
-        if (active) setRes(r)
-      })
-      .catch(() => {
-        if (active) setRes({ recipes: [], ingredients: [] })
-      })
-    return () => {
-      active = false
-    }
-  }, [query])
+  const res = data ?? EMPTY
   return (
     <SearchResultsView
       query={query}

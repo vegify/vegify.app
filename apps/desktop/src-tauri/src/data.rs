@@ -238,22 +238,31 @@ mod content_client {
 
     /// GET /api/content/pull → the viewer's listed world (public + own) in mutation shape.
     pub fn pull(token: &str) -> Result<PullPayload, DataError> {
-        bearer(ureq::get(&url("pull")), token)
+        tracing::debug!("GET /api/content/pull");
+        let payload = bearer(ureq::get(&url("pull")), token)
             .call()
             .map_err(err)?
             .into_json::<PullPayload>()
-            .map_err(|e| DataError::Db(e.to_string()))
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        tracing::debug!(
+            recipes = payload.recipes.len(),
+            ingredients = payload.ingredients.len(),
+            "pull received"
+        );
+        Ok(payload)
     }
 
     /// POST /api/content/{collection} with a save payload. The server upserts by id and stamps userId
     /// from the session (so the body omits it). `collection` ∈ {"recipes", "ingredients"}.
     pub fn post(token: &str, collection: &str, body: &serde_json::Value) -> Result<(), DataError> {
+        tracing::debug!(collection, "POST content");
         bearer(ureq::post(&url(collection)), token).send_json(body).map_err(err)?;
         Ok(())
     }
 
     /// DELETE /api/content/{collection}?id=… — idempotent server-side (deleting a missing id no-ops).
     pub fn delete(token: &str, collection: &str, id: &str) -> Result<(), DataError> {
+        tracing::debug!(collection, id, "DELETE content");
         bearer(ureq::delete(&format!("{}?id={id}", url(collection))), token)
             .call()
             .map_err(err)?;
@@ -407,10 +416,14 @@ impl Db {
                 )
                 .optional()?
             };
-            let Some((seq, op, payload_json)) = next else { return Ok(()) };
+            let Some((seq, op, payload_json)) = next else {
+                tracing::debug!("push: outbox empty");
+                return Ok(());
+            };
             let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
             let payload: serde_json::Value =
                 serde_json::from_str(&payload_json).map_err(|e| DataError::Db(e.to_string()))?;
+            tracing::info!(seq, op = %op, "push: sending outbox item");
             match op.as_str() {
                 "saveRecipe" => content_client::post(&token, "recipes", &payload)?,
                 "saveIngredient" => content_client::post(&token, "ingredients", &payload)?,
@@ -428,6 +441,11 @@ impl Db {
     fn pull(&self) -> Result<(), DataError> {
         let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
         let payload = content_client::pull(&token)?;
+        tracing::info!(
+            recipes = payload.recipes.len(),
+            ingredients = payload.ingredients.len(),
+            "pull: rebuilding local cache"
+        );
         let mut conn = self.conn.lock().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
         let res = apply_pull(&mut conn, &payload);
@@ -605,6 +623,7 @@ impl VegifyData for Db {
         self.ensure_user_local(&user)?;
         keychain_store(&session)?;
         *self.auth.lock().unwrap() = Some(session);
+        tracing::info!(user = %user.id, "signed in");
         Ok(user)
     }
 
@@ -617,6 +636,7 @@ impl VegifyData for Db {
         self.ensure_user_local(&user)?;
         keychain_store(&session)?;
         *self.auth.lock().unwrap() = Some(session);
+        tracing::info!(user = %user.id, "signed up");
         Ok(user)
     }
 

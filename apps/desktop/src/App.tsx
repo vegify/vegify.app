@@ -4,15 +4,22 @@ import {
   Outlet,
   RouterProvider,
   createMemoryHistory,
-  createRootRoute,
+  createRootRouteWithContext,
   createRoute,
   createRouter,
-  useLoaderData,
   useNavigate,
   useParams,
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
+import {
+  QueryClient,
+  QueryClientProvider,
+  queryOptions,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import {
   AppShell,
   HomeView,
@@ -52,6 +59,14 @@ import {
 // specta types every f64 wire field as `number | null` (JSON can't carry NaN/Inf), so coerce reads.
 const num = (n: number | null) => n ?? 0
 
+// --- TanStack Query: the DAL reads flow through one QueryClient (mirrors web's router-context
+// pattern — queryClient in router context, loaders prefetch via ensureQueryData, components read via
+// useSuspenseQuery). A MODULE-LEVEL singleton is correct here: the desktop is a single-window,
+// single-session SPA, so there's no per-request cache isolation to worry about (unlike web SSR). The
+// auto-sync pull + every mutation invalidate the relevant keys, so the screens refetch reactively
+// when the local cache changes — no router.invalidate() / manual refresh. See [[server-source-of-truth]].
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
+
 // --- form helpers (shared by create + edit) ---
 const searchForForm = async (q: string) => {
   const results = await vegifyData.searchIngredients(q)
@@ -67,7 +82,7 @@ const searchForForm = async (q: string) => {
 // --- auto-sync: a debounced, single-flight push+pull so local writes propagate to the server (and
 // other devices' changes flow back) without a manual trigger. Each write schedules one; RootChrome
 // also fires it periodically + on reconnect. Quiet by design — the bootstrap + manual Sync surface
-// status; the passive status indicator lands in step 8. Uses the module-level router to refresh loaders.
+// status; the passive status indicator lands in step 8. Invalidates the QueryClient so loaders refetch.
 // Sync state, surfaced to the sidebar's passive indicator (sync is implicit — there's no manual
 // trigger). Components subscribe via syncStateListeners; navigator.onLine is read at render for offline.
 type SyncState = 'idle' | 'syncing'
@@ -95,7 +110,9 @@ function runAutoSync() {
   setSyncState('syncing')
   vegifyData
     .syncNow()
-    .then(() => router.invalidate())
+    // A pull can change any cached entity (new/edited rows from this or another device), so invalidate
+    // every active query — useSuspenseQuery refetches in the background and the screen updates in place.
+    .then(() => queryClient.invalidateQueries())
     .catch(() => {}) // offline / transient — the periodic + reconnect triggers retry
     .finally(() => {
       syncInFlight = false
@@ -182,6 +199,39 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
   return { id: data.id, name: data.name, description: data.description, nutrition }
 }
 
+// --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
+// Keys mirror web's exactly so the two shells stay legible side by side. The queryFn does the IPC call
+// + the view-model transform, so the cache holds ready-to-render data (same as web's server fns).
+const recipesQuery = queryOptions({
+  queryKey: ['recipes'],
+  queryFn: async () => (await vegifyData.listRecipes()).map(toRecipeListItem),
+})
+const recipeDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['recipe', id],
+    queryFn: async () => {
+      const r = await vegifyData.recipe(id)
+      return r ? recipeViewToVM(id, r) : null
+    },
+  })
+const recipeEditQuery = (id: string) =>
+  queryOptions({ queryKey: ['recipe-edit', id], queryFn: () => vegifyData.recipeForEdit(id) })
+const ingredientsQuery = queryOptions({
+  queryKey: ['ingredients'],
+  queryFn: async (): Promise<IngredientListItem[]> =>
+    (await vegifyData.listIngredients()).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+})
+const ingredientDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['ingredient', id],
+    queryFn: async () => {
+      const d = await vegifyData.ingredient(id)
+      return d ? ingredientEditToVM(d) : null
+    },
+  })
+const ingredientEditQuery = (id: string) =>
+  queryOptions({ queryKey: ['ingredient-edit', id], queryFn: () => vegifyData.ingredientForEdit(id) })
+
 // --- nav port: a TanStack Router <Link> (over memory history). The SAME adapter web uses. ---
 function LinkComponent({ href, ...props }: AppShellLinkProps) {
   return <Link to={href} {...props} />
@@ -195,27 +245,22 @@ function NotFound({ what }: { what: string }) {
 }
 
 // Chrome search overlay — queries the DAL and renders the SHARED SearchResultsView (same as web).
+// A TanStack Query keyed on the query string; placeholderData keeps the prior results on screen while
+// the next keystroke loads, so the list doesn't flicker to empty between inputs (mirrors web).
 function SearchOverlay({ query }: { query: string }) {
-  const [res, setRes] = useState<{ recipes: RecipeListItem[]; ingredients: IngredientListItem[] }>({
-    recipes: [],
-    ingredients: [],
+  const { data } = useQuery({
+    queryKey: ['search', query],
+    queryFn: async () => {
+      const [recipes, ings] = await Promise.all([vegifyData.listRecipes(), vegifyData.searchIngredients(query)])
+      const q = query.toLowerCase()
+      return {
+        recipes: recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem),
+        ingredients: ings.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+      }
+    },
+    placeholderData: (prev) => prev,
   })
-  useEffect(() => {
-    let active = true
-    Promise.all([vegifyData.listRecipes(), vegifyData.searchIngredients(query)])
-      .then(([recipes, ings]) => {
-        if (!active) return
-        const q = query.toLowerCase()
-        setRes({
-          recipes: recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem),
-          ingredients: ings.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
-        })
-      })
-      .catch(() => active && setRes({ recipes: [], ingredients: [] }))
-    return () => {
-      active = false
-    }
-  }, [query])
+  const res = data ?? { recipes: [] as RecipeListItem[], ingredients: [] as IngredientListItem[] }
   return (
     <SearchResultsView query={query} recipes={res.recipes} ingredients={res.ingredients} LinkComponent={LinkComponent} />
   )
@@ -331,8 +376,8 @@ function RootChrome() {
   )
 }
 
-// ---- routes (mirror web's route files; loaders call the on-device DAL) ----
-const rootRoute = createRootRoute({ component: RootChrome })
+// ---- routes (mirror web's route files; loaders prefetch the on-device DAL into the QueryClient) ----
+const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: RootChrome })
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -343,10 +388,10 @@ const homeRoute = createRoute({
 const recipesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recipes',
-  loader: () => vegifyData.listRecipes(),
+  loader: ({ context }) => context.queryClient.ensureQueryData(recipesQuery),
   component: function RecipesList() {
-    const recipes = useLoaderData({ from: '/recipes' })
-    return <RecipeListView recipes={recipes.map(toRecipeListItem)} LinkComponent={LinkComponent} />
+    const { data } = useSuspenseQuery(recipesQuery)
+    return <RecipeListView recipes={data} LinkComponent={LinkComponent} />
   },
 })
 
@@ -355,14 +400,14 @@ const recipeNewRoute = createRoute({
   path: '/recipes/new',
   component: function NewRecipe() {
     const navigate = useNavigate()
-    const router = useRouter()
+    const queryClient = useQueryClient()
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
         <RecipeForm
           onSearch={searchForForm}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
-            await router.invalidate()
+            await queryClient.invalidateQueries({ queryKey: ['recipes'] }) // the list gains the new recipe
             navigate({ to: '/recipes' })
           }}
         />
@@ -374,12 +419,10 @@ const recipeNewRoute = createRoute({
 const recipeDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recipes/$recipeId',
-  loader: async ({ params }) => {
-    const r = await vegifyData.recipe(params.recipeId)
-    return r ? recipeViewToVM(params.recipeId, r) : null
-  },
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeDetailQuery(params.recipeId)),
   component: function RecipeDetail() {
-    const vm = useLoaderData({ from: '/recipes/$recipeId' })
+    const { recipeId } = useParams({ from: '/recipes/$recipeId' })
+    const { data: vm } = useSuspenseQuery(recipeDetailQuery(recipeId))
     if (!vm) return <NotFound what="recipe" />
     return <RecipeDetailView recipe={vm} LinkComponent={LinkComponent} />
   },
@@ -388,12 +431,12 @@ const recipeDetailRoute = createRoute({
 const recipeEditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recipes/$recipeId/edit',
-  loader: ({ params }) => vegifyData.recipeForEdit(params.recipeId),
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeEditQuery(params.recipeId)),
   component: function EditRecipe() {
-    const d = useLoaderData({ from: '/recipes/$recipeId/edit' })
     const { recipeId } = useParams({ from: '/recipes/$recipeId/edit' })
+    const { data: d } = useSuspenseQuery(recipeEditQuery(recipeId))
     const navigate = useNavigate()
-    const router = useRouter()
+    const queryClient = useQueryClient()
     if (!d) return <NotFound what="recipe" />
     const defaults: RecipeFormDefaults = {
       id: d.id,
@@ -417,13 +460,17 @@ const recipeEditRoute = createRoute({
           onSearch={searchForForm}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
-            await router.invalidate()
+            await queryClient.invalidateQueries({ queryKey: ['recipes'] })
+            await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
+            await queryClient.invalidateQueries({ queryKey: ['recipe-edit', recipeId] })
             navigate({ to: '/recipes/$recipeId', params: { recipeId } })
           }}
           onDelete={async () => {
             await vegifyData.deleteRecipe(recipeId)
             scheduleSync()
-            await router.invalidate()
+            queryClient.removeQueries({ queryKey: ['recipe', recipeId] })
+            queryClient.removeQueries({ queryKey: ['recipe-edit', recipeId] })
+            await queryClient.invalidateQueries({ queryKey: ['recipes'] })
             navigate({ to: '/recipes' })
           }}
         />
@@ -435,15 +482,10 @@ const recipeEditRoute = createRoute({
 const ingredientsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients',
-  loader: () => vegifyData.listIngredients(),
+  loader: ({ context }) => context.queryClient.ensureQueryData(ingredientsQuery),
   component: function IngredientsList() {
-    const items = useLoaderData({ from: '/ingredients' })
-    return (
-      <IngredientListView
-        ingredients={items.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g }))}
-        LinkComponent={LinkComponent}
-      />
-    )
+    const { data } = useSuspenseQuery(ingredientsQuery)
+    return <IngredientListView ingredients={data} LinkComponent={LinkComponent} />
   },
 })
 
@@ -452,13 +494,13 @@ const ingredientNewRoute = createRoute({
   path: '/ingredients/new',
   component: function NewIngredient() {
     const navigate = useNavigate()
-    const router = useRouter()
+    const queryClient = useQueryClient()
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
         <IngredientForm
           onSave={async (input) => {
             await saveIngredientFromForm(input)
-            await router.invalidate()
+            await queryClient.invalidateQueries({ queryKey: ['ingredients'] }) // list gains the new item
             navigate({ to: '/ingredients' })
           }}
         />
@@ -470,12 +512,10 @@ const ingredientNewRoute = createRoute({
 const ingredientDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients/$ingredientId',
-  loader: async ({ params }) => {
-    const d = await vegifyData.ingredient(params.ingredientId)
-    return d ? ingredientEditToVM(d) : null
-  },
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientDetailQuery(params.ingredientId)),
   component: function IngredientDetail() {
-    const vm = useLoaderData({ from: '/ingredients/$ingredientId' })
+    const { ingredientId } = useParams({ from: '/ingredients/$ingredientId' })
+    const { data: vm } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
     if (!vm) return <NotFound what="ingredient" />
     return <IngredientDetailView ingredient={vm} LinkComponent={LinkComponent} />
   },
@@ -484,12 +524,12 @@ const ingredientDetailRoute = createRoute({
 const ingredientEditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients/$ingredientId/edit',
-  loader: ({ params }) => vegifyData.ingredientForEdit(params.ingredientId),
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientEditQuery(params.ingredientId)),
   component: function EditIngredient() {
-    const d = useLoaderData({ from: '/ingredients/$ingredientId/edit' })
     const { ingredientId } = useParams({ from: '/ingredients/$ingredientId/edit' })
+    const { data: d } = useSuspenseQuery(ingredientEditQuery(ingredientId))
     const navigate = useNavigate()
-    const router = useRouter()
+    const queryClient = useQueryClient()
     if (!d) return <NotFound what="ingredient" />
     const scale = d.servingGrams ? d.servingGrams / 100 : 1
     const defaults: IngredientFormDefaults = {
@@ -509,13 +549,17 @@ const ingredientEditRoute = createRoute({
           defaults={defaults}
           onSave={async (input) => {
             await saveIngredientFromForm(input)
-            await router.invalidate()
+            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+            await queryClient.invalidateQueries({ queryKey: ['ingredient', ingredientId] })
+            await queryClient.invalidateQueries({ queryKey: ['ingredient-edit', ingredientId] })
             navigate({ to: '/ingredients/$ingredientId', params: { ingredientId } })
           }}
           onDelete={async () => {
             await vegifyData.deleteIngredient(ingredientId)
             scheduleSync()
-            await router.invalidate()
+            queryClient.removeQueries({ queryKey: ['ingredient', ingredientId] })
+            queryClient.removeQueries({ queryKey: ['ingredient-edit', ingredientId] })
+            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
             navigate({ to: '/ingredients' })
           }}
         />
@@ -540,6 +584,7 @@ const router = createRouter({
   routeTree,
   history: createMemoryHistory({ initialEntries: ['/recipes'] }),
   defaultPreload: 'intent',
+  context: { queryClient },
 })
 
 declare module '@tanstack/react-router' {
@@ -566,11 +611,14 @@ export function App() {
         user,
         onSignOut: async () => {
           await vegifyData.signOut().catch(() => {})
+          queryClient.clear() // drop the signed-out user's cached content before the next sign-in
           setUser(null)
         },
       }}
     >
-      <RouterProvider router={router} />
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
     </AuthContext.Provider>
   )
 }

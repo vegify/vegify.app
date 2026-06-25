@@ -22,6 +22,11 @@ rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+# Structured observability: tower-http TraceLayer emits a per-request span (method/path/status/latency),
+# formatted + RUST_LOG-filtered by tracing-subscriber; handler info!/error! surface writes + auth outcomes.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.6", features = ["trace"] }
 
 [[bin]]
 name = "vegify-server"

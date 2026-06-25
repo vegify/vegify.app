@@ -1,20 +1,18 @@
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import {
   IngredientForm,
   type IngredientFormDefaults,
   type IngredientFormInput,
 } from '@vegify/ui'
 import type { IngredientEditData } from '../content'
-import { withRetry } from '../retry'
 
 const getIngredientFn = createServerFn({ method: 'GET' })
   .validator((id: string) => id)
-  .handler(async ({ data }): Promise<IngredientEditData> => {
+  .handler(async ({ data }): Promise<IngredientEditData | null> => {
     const { getIngredientEdit } = await import('../content')
-    const ingredient = await getIngredientEdit(data) // backend gates isOwner; null => not owner / missing
-    if (!ingredient) throw notFound()
-    return ingredient
+    return getIngredientEdit(data) // backend gates isOwner; null => not owner / missing
   })
 
 const saveIngredientFn = createServerFn({ method: 'POST' })
@@ -31,14 +29,23 @@ const deleteIngredientFn = createServerFn({ method: 'POST' })
     await deleteIngredient(data)
   })
 
+const ingredientEditQuery = (id: string) =>
+  queryOptions({ queryKey: ['ingredient-edit', id], queryFn: () => getIngredientFn({ data: id }) })
+
 export const Route = createFileRoute('/ingredients/$ingredientId/edit')({
-  loader: ({ params }) => withRetry(() => getIngredientFn({ data: params.ingredientId })),
+  loader: async ({ context, params }) => {
+    const ingredient = await context.queryClient.ensureQueryData(ingredientEditQuery(params.ingredientId))
+    if (!ingredient) throw notFound()
+  },
   component: EditIngredient,
 })
 
 function EditIngredient() {
-  const ingredient = Route.useLoaderData()
+  const { ingredientId } = Route.useParams()
+  const { data: ingredient } = useSuspenseQuery(ingredientEditQuery(ingredientId))
   const router = useRouter()
+  const queryClient = useQueryClient()
+  if (!ingredient) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
 
   const servingGrams = ingredient.servingGrams
   const scale = servingGrams ? servingGrams / 100 : 1
@@ -64,6 +71,9 @@ function EditIngredient() {
       defaults={defaults}
       onSave={async (input) => {
         const id = await saveIngredientFn({ data: input })
+        await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+        await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
+        await queryClient.invalidateQueries({ queryKey: ['ingredient-edit', String(id)] })
         router.navigate({
           to: '/ingredients/$ingredientId',
           params: { ingredientId: String(id) },
@@ -71,6 +81,9 @@ function EditIngredient() {
       }}
       onDelete={async () => {
         await deleteIngredientFn({ data: ingredient.id })
+        queryClient.removeQueries({ queryKey: ['ingredient', ingredient.id] })
+        queryClient.removeQueries({ queryKey: ['ingredient-edit', ingredient.id] })
+        await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
         router.navigate({ to: '/recipes' })
       }}
     />

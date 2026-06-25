@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { useQueryClient } from '@tanstack/react-query'
 import { RecipeForm, type RecipeFormInput } from '@vegify/ui'
 
 const searchFn = createServerFn({ method: 'GET' })
@@ -22,11 +23,13 @@ export const Route = createFileRoute('/recipes/new')({
 
 function NewRecipe() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   return (
     <RecipeForm
       onSearch={(q) => searchFn({ data: q })}
       onSave={async (input) => {
         const id = await saveFn({ data: input })
+        await queryClient.invalidateQueries({ queryKey: ['recipes'] }) // the list gains the new recipe
         router.navigate({ to: '/recipes/$recipeId', params: { recipeId: String(id) } })
       }}
     />
