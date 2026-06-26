@@ -25,6 +25,7 @@ import {
   AppShell,
   HomeView,
   IngredientDetailView,
+  ForgotPasswordView,
   IngredientForm,
   IngredientListView,
   LoginView,
@@ -634,13 +635,14 @@ export function App() {
 // authenticates via the on-device DAL → web auth route. Sits OUTSIDE the router (which only mounts
 // once authed); a TanStack Router migration of the guard itself would make this a route beforeLoad.
 function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login')
+  // The shared auth views navigate via hrefs; with no router mounted yet, map each to a local mode.
   const authLink = useCallback(
     ({ href, children, className, ...rest }: AppShellLinkProps) => (
       <button
         type="button"
         className={className}
-        onClick={() => setMode(href === '/signup' ? 'signup' : 'login')}
+        onClick={() => setMode(href === '/signup' ? 'signup' : href === '/forgot' ? 'forgot' : 'login')}
         {...rest}
       >
         {children}
@@ -651,23 +653,38 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
   const toError = (e: unknown) => ({
     error: String((e as { message?: string })?.message ?? e ?? 'Something went wrong.'),
   })
-  return mode === 'login' ? (
+  if (mode === 'signup') {
+    return (
+      <SignupView
+        LinkComponent={authLink}
+        onSubmit={async ({ name, email, password }) => {
+          try {
+            onAuthed(await vegifyData.signUp({ name, email, password }))
+          } catch (e) {
+            return toError(e)
+          }
+        }}
+      />
+    )
+  }
+  if (mode === 'forgot') {
+    // The request is enumeration-safe (always resolves to the "check your email" confirmation). The
+    // reset link in the email opens vegify.app/reset in the browser — desktop never holds the token.
+    return (
+      <ForgotPasswordView
+        LinkComponent={authLink}
+        onSubmit={async ({ email }) => {
+          await vegifyData.requestPasswordReset({ email })
+        }}
+      />
+    )
+  }
+  return (
     <LoginView
       LinkComponent={authLink}
       onSubmit={async ({ email, password }) => {
         try {
           onAuthed(await vegifyData.signIn({ email, password }))
-        } catch (e) {
-          return toError(e)
-        }
-      }}
-    />
-  ) : (
-    <SignupView
-      LinkComponent={authLink}
-      onSubmit={async ({ name, email, password }) => {
-        try {
-          onAuthed(await vegifyData.signUp({ name, email, password }))
         } catch (e) {
           return toError(e)
         }

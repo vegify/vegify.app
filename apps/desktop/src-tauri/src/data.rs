@@ -80,6 +80,12 @@ pub struct SignUpInput {
     pub password: String,
 }
 
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetRequestInput {
+    pub email: String,
+}
+
 /// What the OS keychain holds: the opaque session token + the user profile. The token authorizes
 /// the content API (Bearer) + server-side logout; the cached profile lets `current_user` work offline.
 #[derive(Serialize, Deserialize, Clone)]
@@ -578,6 +584,9 @@ pub trait VegifyData {
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
     fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError>;
     fn sign_out(&self) -> Result<(), DataError>;
+    /// Enumeration-safe: POST the email to the backend's reset-request route and always succeed. The
+    /// reset itself is finished in the browser via the email link — no token round-trips to desktop.
+    fn request_password_reset(&self, input: ResetRequestInput) -> Result<(), DataError>;
 }
 
 // The trait methods are thin desktop adapters: derive the viewer from the cached session, lock the
@@ -719,6 +728,15 @@ impl VegifyData for Db {
         }
         keychain_clear();
         *self.auth.lock().unwrap() = None;
+        Ok(())
+    }
+
+    fn request_password_reset(&self, input: ResetRequestInput) -> Result<(), DataError> {
+        // Enumeration-safe: the backend always 200s; swallow transport errors too so the UI shows the
+        // same "check your email" result regardless of whether the address has an account. The reset
+        // is finished in the browser via the email link (no token comes back to the desktop).
+        let url = format!("{}/api/auth/password-reset/request", auth_base_url());
+        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
         Ok(())
     }
 }

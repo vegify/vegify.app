@@ -124,6 +124,11 @@ export const vegifyData = {
   signOut(): Promise<null> {
     return invoke("sign_out");
   },
+
+  /** @throws {DataError} */
+  requestPasswordReset(input: ResetRequestInput): Promise<null> {
+    return invoke("request_password_reset", { input });
+  },
 };
 
 export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };
@@ -241,6 +246,10 @@ export type RecipeView = {
 	batchGrams: number | null,
 	items: RecipeItem[],
 	nutrition: AggregatedNutrition,
+};
+
+export type ResetRequestInput = {
+	email: string,
 };
 
 export type SaveIngredientInput = {
