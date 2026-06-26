@@ -62,7 +62,12 @@ export class WebStartStack extends Stack {
       timeout: Duration.seconds(30),
       environment: { VEGIFY_API_URL, NODE_ENV: "production" },
     });
-    const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+    // AWS_IAM (not NONE): only CloudFront may invoke this Function URL, via OAC (SigV4-signed origin
+    // requests). A NONE Function URL is publicly invocable, letting anyone hit the SSR Lambda directly
+    // and bypass CloudFront. `withOriginAccessControl` on the origin below creates the OAC and adds the
+    // `lambda:InvokeFunctionUrl` grant (scoped to this distribution). Default signing = SIGV4_ALWAYS,
+    // which signs the POST body too (the server-fns POST Seroval payloads).
+    const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
 
     const assets = new s3.Bucket(this, "Assets", {
       removalPolicy: RemovalPolicy.DESTROY,
@@ -84,7 +89,7 @@ export class WebStartStack extends Stack {
       domainNames: DOMAIN_NAMES,
       certificate,
       defaultBehavior: {
-        origin: new origins.FunctionUrlOrigin(fnUrl),
+        origin: origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
