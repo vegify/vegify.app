@@ -7,8 +7,9 @@ description = "Vegify standing backend — Axum over SQLite-WAL, serving the SAM
 [dependencies]
 # The shared DAL — the same content model + viewer-scoped reads the desktop uses.
 vegify-core = { path = "../vegify-core" }
-axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+axum = { version = "0.8", features = ["ws"] }
+# `sync` = the broadcast channel that fans content-change signals to /ws clients; `time` = the keepalive ping interval.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 # Must match vegify-core's rusqlite (0.32) so the Connection type unifies; `bundled` compiles SQLite in.
 rusqlite = { version = "0.32", features = ["bundled"] }
 # WAL connection pool: concurrent readers + a serialized writer (rusqlite is sync → spawn_blocking).

@@ -9,8 +9,10 @@ mod auth;
 mod content;
 mod error;
 
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -29,6 +31,17 @@ type Pool = r2d2::Pool<SqliteConnectionManager>;
 #[derive(Clone)]
 struct AppState {
     pool: Pool,
+    /// Fans a tiny `{"changed":"<kind>"}` signal to every connected /ws client after a content write
+    /// commits — the push that replaces the desktop's poll. Best-effort: a send error just means nobody
+    /// is listening. State holds only the Sender; each /ws connection `.subscribe()`s its own Receiver.
+    change_tx: tokio::sync::broadcast::Sender<String>,
+}
+
+impl AppState {
+    /// Broadcast a content-change signal (`kind` = "recipe" | "ingredient"). Clients re-pull on any frame.
+    fn notify_change(&self, kind: &str) {
+        let _ = self.change_tx.send(json!({ "changed": kind }).to_string());
+    }
 }
 
 /// Run a blocking DB closure on a pooled connection, off the async runtime.
@@ -179,6 +192,7 @@ async fn save_recipe(
         vegify_core::do_save_recipe(conn, &input, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("recipe");
     tracing::info!(%id, "saved recipe");
     Ok(Json(json!({ "id": id })))
 }
@@ -195,6 +209,7 @@ async fn delete_recipe(
         vegify_core::do_delete_recipe(conn, &id, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("recipe");
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -222,6 +237,7 @@ async fn save_ingredient(
         vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("ingredient");
     tracing::info!(%id, "saved ingredient");
     Ok(Json(json!({ "id": id })))
 }
@@ -238,6 +254,7 @@ async fn delete_ingredient(
         vegify_core::do_delete_ingredient(conn, &id, Some(&me.id)).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("ingredient");
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -337,6 +354,53 @@ async fn pull(
     Ok(Json(out))
 }
 
+#[derive(Deserialize)]
+struct WsAuth {
+    token: Option<String>,
+}
+
+/// WebSocket push (`GET /ws`): a client connects, authenticates (Bearer header — the desktop tungstenite
+/// client — or `?token=` for browsers, which can't set WS handshake headers), then receives a tiny
+/// `{"changed":"<kind>"}` text frame whenever any content write commits. This replaces the desktop's 60s
+/// poll — a push arrives, the client pulls immediately. Auth runs BEFORE the upgrade so a bad token gets a
+/// clean 401 instead of a dangling socket.
+async fn ws(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<WsAuth>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, AppError> {
+    let token = bearer_token(&headers).or(q.token).ok_or(AppError::Unauthorized)?;
+    db(&state, move |conn| require_user(conn, &token).map(|_| ())).await?;
+    let rx = state.change_tx.subscribe();
+    Ok(upgrade.on_upgrade(move |socket| ws_loop(socket, rx)))
+}
+
+/// Forward broadcast change signals to one connected client; ping every 30s to keep the CloudFront WS
+/// tunnel alive and detect a dead peer; exit on client close/error. A lagged receiver (the client fell
+/// further than the buffer behind) gets a single "pull everything" nudge so it self-heals.
+async fn ws_loop(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver<String>) {
+    use tokio::sync::broadcast::error::RecvError;
+    let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(30));
+    keepalive.tick().await; // the first tick fires immediately — consume it so the real cadence is 30s
+    loop {
+        tokio::select! {
+            change = rx.recv() => match change {
+                Ok(text) => if socket.send(Message::Text(text.into())).await.is_err() { break },
+                Err(RecvError::Lagged(_)) => {
+                    if socket.send(Message::Text("{\"changed\":\"all\"}".into())).await.is_err() { break }
+                }
+                Err(RecvError::Closed) => break,
+            },
+            incoming = socket.recv() => match incoming {
+                None | Some(Ok(Message::Close(_))) | Some(Err(_)) => break,
+                Some(Ok(_)) => {} // ignore client→server frames (pongs etc.)
+            },
+            _ = keepalive.tick() => if socket.send(Message::Ping(Vec::new().into())).await.is_err() { break },
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Structured logs (RUST_LOG overrides the default). Emits to stdout → the systemd journal on the
@@ -356,7 +420,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     });
     let pool = r2d2::Pool::builder().max_size(8).build(manager)?;
-    let state = AppState { pool };
+    // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
+    // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
+    let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
+    let state = AppState { pool, change_tx };
 
     let app = Router::new()
         .route("/api/auth/login", post(login))
@@ -378,6 +445,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))
+        // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
+        .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.
         .layer(
             TraceLayer::new_for_http()
