@@ -170,7 +170,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: web-bundle
-          path: apps/web/.aws-lambda/
+          # BOTH assets WebStartStack references: the SSR Lambda bundle (.aws-lambda/) and the static
+          # client assets (dist/client/) the S3 BucketDeployment ships. Their common ancestor is
+          # apps/web, so the artifact is rooted there and consumers download it back into apps/web/.
+          path: |
+            apps/web/.aws-lambda/
+            apps/web/dist/client/
           # .aws-lambda is a dotfile dir; upload-artifact@v4 excludes hidden paths by default, so
           # without this it uploads NOTHING (just a warning) and deploy-server can't find the bundle.
           include-hidden-files: true
@@ -237,7 +242,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: web-bundle
-          path: apps/web/.aws-lambda/
+          # Rooted at apps/web (the upload's LCA) → restores apps/web/.aws-lambda/ + apps/web/dist/client/.
+          path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
@@ -286,7 +292,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: web-bundle
-          path: apps/web/.aws-lambda/
+          # Rooted at apps/web (the upload's LCA) → restores apps/web/.aws-lambda/ + apps/web/dist/client/.
+          path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
