@@ -53,22 +53,14 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
           aws-region: us-east-1
-      # The browser-log ingestion endpoint (client-log.ts → VegifyClientLogs) is a deploy-time value:
-      # the Function URL exists only once that stack is up. So: build the web once so the full-app synth
-      # can resolve VegifyWebStart's assets, deploy VegifyClientLogs alone, read its URL via
-      # --outputs-file (the deploy role can't call DescribeStacks, but `cdk deploy` reads outputs through
-      # the bootstrap role it assumes), then rebuild the web with VITE_CLIENT_LOG_URL baked in so the
-      # client logger ships to it. Function URLs are stable, so this self-heals on every deploy.
-      - name: Pre-build web (lets the full-app synth resolve web-start assets)
-        run: pnpm --filter web build:aws
-      - name: Deploy client-log ingestion + capture its endpoint
-        run: |
-          pnpm --filter @vegify/infra exec cdk deploy VegifyClientLogs \
-            --require-approval never --outputs-file "$GITHUB_WORKSPACE/cdk-outputs.json"
-          URL="$(jq -r '.VegifyClientLogs.IngestUrl' "$GITHUB_WORKSPACE/cdk-outputs.json")"
-          echo "VITE_CLIENT_LOG_URL=$URL" >> "$GITHUB_ENV"
-          echo "ingestion endpoint: $URL"
-      - name: Build web-start AWS bundle (self-contained SSR; bakes in VITE_CLIENT_LOG_URL)
+      # Browser-log ingestion is FIRST-PARTY: the client beacons a same-origin POST to /__ingest, which
+      # the VegifyWebStart CloudFront distribution forwards to the VegifyClientLogs Lambda Function URL.
+      # So the client endpoint is a static same-origin path (no stack-output plumbing) — and same-origin
+      # means no CORS preflight AND ad/tracking blockers don't drop it (a raw cross-origin lambda-url
+      # telemetry beacon gets silently blocked). One build (it's also the asset the full-app synth reads).
+      - name: Build web-start AWS bundle (self-contained SSR; bakes in the /__ingest beacon path)
+        env:
+          VITE_CLIENT_LOG_URL: /__ingest
         run: pnpm --filter web build:aws
       - name: cdk deploy
         run: |

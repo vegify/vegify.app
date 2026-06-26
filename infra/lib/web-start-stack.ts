@@ -17,6 +17,13 @@ const webStart = path.join(repoRoot, "apps/web");
 // (P4: web-SSR-calls-Axum). Stable CloudFront domain (matches the desktop's VEGIFY_AUTH_URL default).
 const VEGIFY_API_URL = "https://EXAMPLEDISTAPI.cloudfront.net";
 
+// The browser-log ingestion Lambda's Function URL host (VegifyClientLogs). The client beacons a
+// SAME-ORIGIN POST to /__ingest on this distribution, which forwards here — first-party, so there's
+// no CORS preflight AND ad/tracking blockers don't silently drop it (a raw cross-origin lambda-url
+// telemetry beacon gets eaten by uBlock / Firefox tracking protection). Stable host, hardcoded like
+// VEGIFY_API_URL above; if VegifyClientLogs is ever recreated, update this.
+const INGEST_ORIGIN = "EXAMPLEINGESTLAMBDAURLID.lambda-url.us-east-1.on.aws";
+
 // Custom domain: the apex + www both serve this distribution. DNS is our Route53 zone (ZEXAMPLE00000000);
 // the cert is the already-ISSUED us-east-1 `*.vegify.app` cert whose SANs include the apex + www
 // (reused by ARN rather than minted here — it covers apex/www/prod/staging/dev). CloudFront requires
@@ -90,6 +97,17 @@ export class WebStartStack extends Stack {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+        // First-party browser-log ingestion. The client beacons same-origin POST /__ingest; we forward
+        // it to the VegifyClientLogs Lambda Function URL. First-party so blockers don't eat it; no
+        // caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
+        // URL host (a Lambda Function URL rejects a mismatched Host).
+        "/__ingest": {
+          origin: new origins.HttpOrigin(INGEST_ORIGIN),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
     });
