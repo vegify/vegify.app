@@ -171,6 +171,9 @@ jobs:
         with:
           name: web-bundle
           path: apps/web/.aws-lambda/
+          # .aws-lambda is a dotfile dir; upload-artifact@v4 excludes hidden paths by default, so
+          # without this it uploads NOTHING (just a warning) and deploy-server can't find the bundle.
+          include-hidden-files: true
           retention-days: 1
 
   build-desktop:
