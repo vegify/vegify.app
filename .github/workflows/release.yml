@@ -138,6 +138,11 @@ jobs:
 
   build-web:
     needs: build-server
+    # Explicit success gate: build-server runs under always() (so a skipped release-please on the
+    # dispatch path doesn't block it), but that skipped state propagates transitively to any
+    # downstream job WITHOUT its own if — which silently skipped the whole deploy. Keying off the
+    # direct need's result stops the leak.
+    if: ${{ needs.build-server.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -168,6 +173,7 @@ jobs:
 
   build-desktop:
     needs: build-server
+    if: ${{ needs.build-server.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -202,6 +208,7 @@ jobs:
   # ── Deploy: server first, then wait for it to be live ───────────────────────────────────────────
   deploy-server:
     needs: [build-server, build-web, build-desktop]
+    if: ${{ needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # AWS OIDC
@@ -252,6 +259,7 @@ jobs:
   # ── Publish the clients in parallel, now that the server they depend on is live ──────────────────
   publish-web:
     needs: [build-server, deploy-server]
+    if: ${{ needs.deploy-server.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -287,6 +295,7 @@ jobs:
 
   publish-desktop:
     needs: [build-server, deploy-server]
+    if: ${{ needs.deploy-server.result == 'success' }}
     runs-on: macos-latest
     permissions:
       contents: write # attach the signed .dmg to the GitHub Release
