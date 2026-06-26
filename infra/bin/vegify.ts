@@ -3,7 +3,6 @@ import { App } from "aws-cdk-lib";
 import { VpcStack } from "../lib/vpc-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
 import { ServerStack } from "../lib/server-stack.js";
-import { SyncStack } from "../lib/sync-stack.js";
 import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { CiStack } from "../lib/ci-stack.js";
 
@@ -31,9 +30,10 @@ new WebStartStack(app, "VegifyWebStart", { env });
 // fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
 new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 
-// Desktop local-first sync: a scale-to-zero S3 changeset-blob store + a least-privilege client.
-// Independent of the VPC/web stack. Outputs the bucket + a Secrets Manager creds secret.
-new SyncStack(app, "VegifySync", { env });
+// (Retired 2026-06-25) The old VegifySync stack — an S3 changeset-blob store for the desktop's former
+// S3-mesh sync — is gone: the desktop now syncs through the standing Axum backend (content pull/push),
+// so the S3BlobStore path was removed (sync engine step 8). Its deployed CloudFormation stack is torn
+// down out-of-band; the changeset bucket was RETAIN, so it's deleted separately if/when wanted.
 
 // Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
 // client-side logs to a CloudWatch group (/vegify/web-client). Standalone (doesn't touch web-start);
