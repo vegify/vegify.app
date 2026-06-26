@@ -42,9 +42,22 @@ jobs:
         run: pnpm --filter @vegify/tokens build
       - name: Create + seed the DB (.data is gitignored; staged below as the vegify-server seed)
         run: pnpm db:push && pnpm db:seed
+      # The aarch64-musl server build was 545s (~79% of the deploy), fully uncached. Two fixes here:
+      # (1) a persistent cargo-registry + target/ cache keyed on Cargo.lock — `cross` bind-mounts the
+      # host CARGO_HOME and the project target/, so both survive into the container build and cache;
+      # (2) a prebuilt `cross` (we were recompiling the tool itself from source on every run).
+      # NOTE: the first deploy after this lands is still cold (it populates the cache); the speedup
+      # shows on the next deploy.
+      - name: Cache cargo registry + target (aarch64-musl)
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-musl
+      - name: Install cross (prebuilt — no longer compiled from source each run)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
       - name: Build vegify-server (aarch64 musl static, for the t4g/Graviton box) + stage the seed
         run: |
-          cargo install cross --locked
           cross build --release --target aarch64-unknown-linux-musl -p vegify-server
           mkdir -p infra/assets
           cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
