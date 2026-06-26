@@ -41,6 +41,9 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: release
         with:
+          # A PAT (not GITHUB_TOKEN) so the auto-merge below — and the release it cuts — can trigger the
+          # follow-on deploy run; GITHUB_TOKEN-authored pushes deliberately don't trigger workflows.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       # release-type "simple" bumps the crate Cargo.tomls but leaves their entries in the root
@@ -64,6 +67,17 @@ jobs:
           git add Cargo.lock
           git commit -m "chore: sync Cargo.lock to $version"
           git push origin "HEAD:$PR_BRANCH"
+
+      # Fully automatic (decision 2026-06-26): merge the release PR as soon as it's prepared. The merge
+      # is PAT-authored so it triggers the NEXT release run, which detects the merge, cuts the tag +
+      # Release, and runs the ordered deploy — whose build+test gate still protects prod. No human gate
+      # on the version/CHANGELOG PR itself; conventional commits on main are the only input.
+      - name: Auto-merge the release PR
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
+        run: gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"
 
   # ── Build + test gate ───────────────────────────────────────────────────────────────────────────
   # build-server is the anchor: it resolves the tag, gates the whole orchestration, and (for the
