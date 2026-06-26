@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import {
   Link,
   Outlet,
@@ -320,16 +321,21 @@ function RootChrome() {
   }, [navigate, router])
 
   // Bootstrap + keep sync flowing: an initial pull on mount (fresh sign-in or a restored session), a
-  // 60s safety net, and a reconnect trigger. Writes schedule their own (debounced) sync. Everything
+  // realtime WebSocket push (the primary trigger — the Rust client emits `server-content-changed`), a
+  // 5-min safety-net poll, and a reconnect trigger. Writes schedule their own (debounced) sync. All of it
   // runs through the quiet single-flight scheduler that drives the status dot — no manual Sync button.
   useEffect(() => {
     scheduleSync(0)
-    const interval = setInterval(() => scheduleSync(0), 60_000)
+    // WS push is the primary trigger now, so the interval drops to a 5-min net for missed pushes / WS gaps.
+    const interval = setInterval(() => scheduleSync(0), 5 * 60_000)
     const onOnline = () => scheduleSync(0)
     window.addEventListener('online', onOnline)
+    // Realtime: pull the instant the server says content changed (another device — or our own push echo).
+    const unlisten = listen('server-content-changed', () => scheduleSync(0))
     return () => {
       clearInterval(interval)
       window.removeEventListener('online', onOnline)
+      unlisten.then((f) => f())
     }
   }, [])
 

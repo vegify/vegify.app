@@ -104,6 +104,74 @@ fn auth_base_url() -> String {
         .unwrap_or_else(|_| "https://EXAMPLEDISTAPI.cloudfront.net".to_string())
 }
 
+/// The `/ws` WebSocket URL derived from the auth base (https→wss, http→ws). Pushed change signals arrive
+/// here; the desktop pulls in response (replacing the 60s poll).
+fn ws_url() -> String {
+    let base = auth_base_url();
+    let ws = if let Some(rest) = base.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = base.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        base
+    };
+    format!("{}/ws", ws.trim_end_matches('/'))
+}
+
+/// Background realtime-push loop: connect to the server's `/ws`, and on every change frame emit a
+/// `server-content-changed` Tauri event so the frontend pulls immediately — the realtime replacement for
+/// the 60s poll. Reconnects with capped exponential backoff; re-reads the session token from the keychain
+/// each attempt, so a sign-in / sign-out is picked up (no token → wait, then retry). The auth token rides
+/// the WS handshake as a Bearer header (kept out of the URL, so it never lands in request logs). Runs on
+/// its own current-thread tokio runtime (spawned from `main`'s setup) — independent of the sync ureq path.
+pub async fn run_ws_push(app: tauri::AppHandle) {
+    use futures_util::StreamExt;
+    use tauri::Emitter;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::HeaderValue;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut backoff_secs = 1u64;
+    loop {
+        // Re-read each attempt: None → not signed in yet (or signed out). Nothing to subscribe as; wait.
+        let Some(token) = keychain_load().map(|s| s.token) else {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            continue;
+        };
+
+        let req = ws_url().into_client_request().map(|mut req| {
+            if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
+                req.headers_mut().insert("authorization", v);
+            }
+            req
+        });
+        match req {
+            Ok(req) => match tokio_tungstenite::connect_async(req).await {
+                Ok((mut stream, _resp)) => {
+                    backoff_secs = 1; // connected — reset the reconnect backoff
+                    tracing::info!("ws push connected");
+                    while let Some(frame) = stream.next().await {
+                        match frame {
+                            // Any change frame → pull now (the frontend listener calls scheduleSync(0)).
+                            Ok(Message::Text(_)) => {
+                                let _ = app.emit("server-content-changed", ());
+                            }
+                            Ok(Message::Close(_)) | Err(_) => break,
+                            Ok(_) => {} // ping/pong handled by tungstenite; ignore other frames
+                        }
+                    }
+                    tracing::info!("ws push disconnected; reconnecting");
+                }
+                Err(e) => tracing::warn!(error = %e, "ws push connect failed"),
+            },
+            Err(e) => tracing::warn!(error = %e, "ws push bad url"),
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+        backoff_secs = backoff_secs.saturating_mul(2).min(30);
+    }
+}
+
 /// In test builds, route ALL keychain access to keyring's in-memory mock store instead of the real
 /// macOS Keychain. Installed exactly once, before the first `Entry` is created (every keychain op
 /// funnels through `keychain_entry`). This stops `cargo test` from triggering an OS keychain-access

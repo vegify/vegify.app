@@ -42,3 +42,9 @@ ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] 
 # JSON auth + content routes, and the OS keychain for the session token.
 ureq = { version = "2", features = ["json"] }
 keyring = { version = "3", features = ["apple-native"] }
+# Realtime push (replaces the 60s poll): a background task connects to the server's /ws and emits a Tauri
+# event on each content change so the frontend pulls immediately. Separate from the sync ureq path above —
+# tokio-tungstenite over rustls (webpki roots, no system OpenSSL) on its own current-thread runtime.
+tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
+tokio-tungstenite = { version = "0.29", features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
