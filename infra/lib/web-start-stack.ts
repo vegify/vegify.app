@@ -17,6 +17,13 @@ const webStart = path.join(repoRoot, "apps/web");
 // (P4: web-SSR-calls-Axum). Stable CloudFront domain (matches the desktop's VEGIFY_AUTH_URL default).
 const VEGIFY_API_URL = "https://EXAMPLEDISTAPI.cloudfront.net";
 
+// The browser-log ingestion Lambda's Function URL host (VegifyClientLogs). The client beacons a
+// SAME-ORIGIN POST to /__ingest on this distribution, which forwards here — first-party, so there's
+// no CORS preflight AND ad/tracking blockers don't silently drop it (a raw cross-origin lambda-url
+// telemetry beacon gets eaten by uBlock / Firefox tracking protection). Stable host, hardcoded like
+// VEGIFY_API_URL above; if VegifyClientLogs is ever recreated, update this.
+const INGEST_ORIGIN = "EXAMPLEINGESTLAMBDAURLID.lambda-url.us-east-1.on.aws";
+
 // Custom domain: the apex + www both serve this distribution. DNS is our Route53 zone (ZEXAMPLE00000000);
 // the cert is the already-ISSUED us-east-1 `*.vegify.app` cert whose SANs include the apex + www
 // (reused by ARN rather than minted here — it covers apex/www/prod/staging/dev). CloudFront requires
@@ -38,18 +45,10 @@ const CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/00000000
  * vite `ssr.noExternal`), so the bundle ships as plain JS with no Docker build step.
  *
  * The Bun-on-Fargate perf path stays ready in web-start-fargate-stack.ts.
- * Both Function URL origins are locked to CloudFront via OAC (AWS_IAM): the SSR Lambda (this stack) and
- * the /__ingest ClientLogs Lambda (imported cross-stack as props.ingestFnUrl — no cycle, since the OAC
- * invoke grant lands here, scoped to this distribution).
+ * TODO before prod: restrict the Function URL to CloudFront via OAC (currently authType NONE).
  */
-export interface WebStartStackProps extends StackProps {
-  /** The VegifyClientLogs Function URL — imported here to OAC-lock the /__ingest origin (no cross-stack
-   * cycle: the invoke grant lands in this stack, scoped to this distribution). */
-  ingestFnUrl: lambda.IFunctionUrl;
-}
-
 export class WebStartStack extends Stack {
-  constructor(scope: Construct, id: string, props: WebStartStackProps) {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     const fn = new lambda.Function(this, "ServerFn", {
@@ -63,12 +62,7 @@ export class WebStartStack extends Stack {
       timeout: Duration.seconds(30),
       environment: { VEGIFY_API_URL, NODE_ENV: "production" },
     });
-    // AWS_IAM (not NONE): only CloudFront may invoke this Function URL, via OAC (SigV4-signed origin
-    // requests). A NONE Function URL is publicly invocable, letting anyone hit the SSR Lambda directly
-    // and bypass CloudFront. `withOriginAccessControl` on the origin below creates the OAC and adds the
-    // `lambda:InvokeFunctionUrl` grant (scoped to this distribution). Default signing = SIGV4_ALWAYS,
-    // which signs the POST body too (the server-fns POST Seroval payloads).
-    const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
+    const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 
     const assets = new s3.Bucket(this, "Assets", {
       removalPolicy: RemovalPolicy.DESTROY,
@@ -90,7 +84,7 @@ export class WebStartStack extends Stack {
       domainNames: DOMAIN_NAMES,
       certificate,
       defaultBehavior: {
-        origin: origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl),
+        origin: new origins.FunctionUrlOrigin(fnUrl),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
@@ -104,14 +98,12 @@ export class WebStartStack extends Stack {
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
-        // First-party browser-log ingestion, OAC-locked. The client beacons a same-origin POST
-        // /__ingest (first-party → no CORS preflight, and ad/tracking blockers don't eat it the way they
-        // eat a raw cross-origin lambda-url telemetry beacon); CloudFront SigV4-signs it via OAC and
-        // forwards to the VegifyClientLogs Function URL (AWS_IAM — only this distribution can invoke it).
-        // No caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
-        // URL host (a Lambda Function URL rejects a mismatched Host) — same as the SSR origin above.
+        // First-party browser-log ingestion. The client beacons same-origin POST /__ingest; we forward
+        // it to the VegifyClientLogs Lambda Function URL. First-party so blockers don't eat it; no
+        // caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
+        // URL host (a Lambda Function URL rejects a mismatched Host).
         "/__ingest": {
-          origin: origins.FunctionUrlOrigin.withOriginAccessControl(props.ingestFnUrl),
+          origin: new origins.HttpOrigin(INGEST_ORIGIN),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
