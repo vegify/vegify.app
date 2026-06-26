@@ -22,9 +22,16 @@ const env = {
 // Lambda runs OUTSIDE the VPC (it just needs internet egress to call that backend's public CloudFront).
 const net = new VpcStack(app, "VegifyVpc", { env });
 
+// Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
+// client-side logs to a CloudWatch group (/vegify/web-client). The browser beacons a same-origin
+// /__ingest on the web distribution, which forwards here; web-start imports this Function URL to
+// OAC-lock it (AWS_IAM, CloudFront-only). Instantiated BEFORE web-start so it can consume the FunctionUrl.
+const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", { env });
+
 // web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
-// backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle).
-new WebStartStack(app, "VegifyWebStart", { env });
+// backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle). Its CloudFront
+// /__ingest behavior forwards to — and OAC-locks — the ClientLogs Function URL.
+new WebStartStack(app, "VegifyWebStart", { env, ingestFnUrl: clientLogs.ingestFnUrl });
 
 // The standing Axum backend (P2): a t3.micro running vegify-server over SQLite-WAL + Litestream→S3,
 // fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
@@ -34,11 +41,6 @@ new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 // S3-mesh sync — is gone: the desktop now syncs through the standing Axum backend (content pull/push),
 // so the S3BlobStore path was removed (sync engine step 8). Its deployed CloudFormation stack is torn
 // down out-of-band; the changeset bucket was RETAIN, so it's deleted separately if/when wanted.
-
-// Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
-// client-side logs to a CloudWatch group (/vegify/web-client). Standalone (doesn't touch web-start);
-// wire the IngestUrl output into the web build as VITE_CLIENT_LOG_URL. See lib/client-logs-stack.ts.
-new ClientLogsStack(app, "VegifyClientLogs", { env });
 
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it.
 new CiStack(app, "VegifyCi", { env, githubRepo: "vegify/vegify.app" });

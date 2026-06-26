@@ -15,13 +15,17 @@ const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");
  * on purpose: the working SSR deploy stays untouched, and client telemetry gets its own blast radius +
  * retention. The SSR shell's OWN server logs already go to its Lambda log group (this is only the browser).
  *
- * Wiring: the Function URL is stable across code deploys, so set it once as VITE_CLIENT_LOG_URL in the
- * web build (see the IngestUrl output). authType NONE + CORS(POST) so the browser reaches it directly;
- * it's unauthenticated fire-and-forget telemetry. Hardening TODO (matches web-start's OAC TODO): a
- * per-IP rate limit / WAF in front, since the endpoint is public.
+ * Wiring: the browser beacons a SAME-ORIGIN POST to /__ingest on the web-start CloudFront distribution,
+ * which forwards here (VITE_CLIENT_LOG_URL=/__ingest in the web build). The Function URL is AWS_IAM and
+ * locked to that distribution via OAC: web-start imports this FunctionUrl and calls
+ * `FunctionUrlOrigin.withOriginAccessControl`. That's same-account cross-stack with NO cycle — the
+ * invoke grant (a CfnPermission) lands in WEB-START, scoped to its own distributionId, so this stack
+ * references nothing back. A direct, unsigned hit to the Function URL now gets 403.
  */
 export class ClientLogsStack extends Stack {
   readonly ingestUrl: string;
+  // Exposed so web-start can OAC-lock this Function URL (import it → withOriginAccessControl).
+  readonly ingestFnUrl: lambda.FunctionUrl;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -45,16 +49,13 @@ export class ClientLogsStack extends Stack {
     });
     logGroup.grantWrite(fn); // logs:CreateLogStream + logs:PutLogEvents, scoped to this group only
 
-    const url = fn.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedOrigins: ["*"],
-        allowedMethods: [lambda.HttpMethod.POST],
-        allowedHeaders: ["content-type"],
-        maxAge: Duration.days(1),
-      },
-    });
+    // AWS_IAM (not NONE): only the web-start CloudFront distribution may invoke this, via OAC (the
+    // browser's same-origin POST /__ingest is signed + forwarded by CloudFront — see web-start-stack.ts).
+    // No CORS: the browser never hits this URL cross-origin anymore (it hits same-origin /__ingest), so
+    // the Function URL is purely a CloudFront origin; a direct unsigned hit gets 403.
+    const url = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
     this.ingestUrl = url.url;
+    this.ingestFnUrl = url;
 
     new CfnOutput(this, "IngestUrl", {
       value: url.url,
