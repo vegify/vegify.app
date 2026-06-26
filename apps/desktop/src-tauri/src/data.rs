@@ -153,7 +153,8 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
                     while let Some(frame) = stream.next().await {
                         match frame {
                             // Any change frame → pull now (the frontend listener calls scheduleSync(0)).
-                            Ok(Message::Text(_)) => {
+                            Ok(Message::Text(payload)) => {
+                                tracing::info!(change = %payload, "ws push: change received");
                                 let _ = app.emit("server-content-changed", ());
                             }
                             Ok(Message::Close(_)) | Err(_) => break,
