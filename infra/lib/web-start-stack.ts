@@ -45,11 +45,25 @@ const CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/00000000
  * vite `ssr.noExternal`), so the bundle ships as plain JS with no Docker build step.
  *
  * The Bun-on-Fargate perf path stays ready in web-start-fargate-stack.ts.
- * TODO before prod: restrict the Function URL to CloudFront via OAC (currently authType NONE).
+ * The Function URL stays authType NONE (CloudFront OAC can't sign POST bodies to a Lambda URL —
+ * InvalidSignatureException, which is why the OAC attempt was reverted). Instead it's restricted to
+ * CloudFront via an origin-verify secret header (props.originSecret) injected on the origin and checked
+ * by the Lambda adapter (apps/web/aws/lambda-handler.mjs) — a check that works for POST.
  */
+export interface WebStartStackProps extends StackProps {
+  /** Origin-verify secret: CloudFront injects it as `x-vegify-origin` on the Function URL origins and the
+   *  Lambdas reject requests lacking it, restricting the URLs to CloudFront. Empty = off (fail-open).
+   *  Sourced from $ORIGIN_VERIFY_SECRET (a GitHub Actions secret in CI) — see bin/vegify.ts. */
+  originSecret: string;
+}
+
 export class WebStartStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: WebStartStackProps) {
     super(scope, id, props);
+
+    // CloudFront injects this on every forwarded origin request; the Function URL Lambdas reject anything
+    // lacking it (a direct public hit). undefined when no secret is set → no header, no enforcement.
+    const verifyHeaders = props.originSecret ? { "x-vegify-origin": props.originSecret } : undefined;
 
     const fn = new lambda.Function(this, "ServerFn", {
       runtime: lambda.Runtime.NODEJS_22_X,
@@ -60,7 +74,7 @@ export class WebStartStack extends Stack {
       code: lambda.Code.fromAsset(path.join(webStart, ".aws-lambda")),
       memorySize: 1024,
       timeout: Duration.seconds(30),
-      environment: { VEGIFY_API_URL, NODE_ENV: "production" },
+      environment: { VEGIFY_API_URL, NODE_ENV: "production", ORIGIN_SECRET: props.originSecret },
     });
     const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 
@@ -84,7 +98,7 @@ export class WebStartStack extends Stack {
       domainNames: DOMAIN_NAMES,
       certificate,
       defaultBehavior: {
-        origin: new origins.FunctionUrlOrigin(fnUrl),
+        origin: new origins.FunctionUrlOrigin(fnUrl, { customHeaders: verifyHeaders }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
@@ -103,7 +117,7 @@ export class WebStartStack extends Stack {
         // caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
         // URL host (a Lambda Function URL rejects a mismatched Host).
         "/__ingest": {
-          origin: new origins.HttpOrigin(INGEST_ORIGIN),
+          origin: new origins.HttpOrigin(INGEST_ORIGIN, { customHeaders: verifyHeaders }),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,

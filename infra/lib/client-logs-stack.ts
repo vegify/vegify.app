@@ -20,10 +20,16 @@ const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");
  * it's unauthenticated fire-and-forget telemetry. Hardening TODO (matches web-start's OAC TODO): a
  * per-IP rate limit / WAF in front, since the endpoint is public.
  */
+export interface ClientLogsStackProps extends StackProps {
+  /** Same origin-verify secret as WebStartStack — this Lambda rejects /__ingest forwards lacking the
+   *  `x-vegify-origin` header CloudFront injects. Empty = off (fail-open). See bin/vegify.ts. */
+  originSecret: string;
+}
+
 export class ClientLogsStack extends Stack {
   readonly ingestUrl: string;
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: ClientLogsStackProps) {
     super(scope, id, props);
 
     const logGroup = new logs.LogGroup(this, "WebClientLogs", {
@@ -41,7 +47,7 @@ export class ClientLogsStack extends Stack {
       code: lambda.Code.fromAsset(lambdaDir),
       memorySize: 128,
       timeout: Duration.seconds(10),
-      environment: { LOG_GROUP_NAME: logGroup.logGroupName },
+      environment: { LOG_GROUP_NAME: logGroup.logGroupName, ORIGIN_SECRET: props.originSecret },
     });
     logGroup.grantWrite(fn); // logs:CreateLogStream + logs:PutLogEvents, scoped to this group only
 

@@ -11,10 +11,14 @@ import {
 const client = new CloudWatchLogsClient({})
 const LOG_GROUP = process.env.LOG_GROUP_NAME
 const MAX_EVENTS = 1000 // cap a single batch so a hostile client can't blow up one PutLogEvents call
+// Origin-verify: CloudFront injects x-vegify-origin (from $ORIGIN_VERIFY_SECRET) on the /__ingest forward;
+// reject requests lacking it (a direct hit to the public Function URL). Skipped when unset (fail-open).
+const ORIGIN_SECRET = process.env.ORIGIN_SECRET
 
 const reply = (statusCode) => ({ statusCode, headers: { 'content-type': 'application/json' }, body: '' })
 
 export const handler = async (event) => {
+  if (ORIGIN_SECRET && event.headers?.['x-vegify-origin'] !== ORIGIN_SECRET) return reply(403)
   // Function URL payload (HTTP API v2 shape). Only accept POSTs; the browser logger never GETs.
   if (event?.requestContext?.http?.method !== 'POST') return reply(405)
 

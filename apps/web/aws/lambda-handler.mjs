@@ -6,7 +6,16 @@ const app = await import("./server/server.js");
 const target = app.default ?? app;
 const fetchHandler = typeof target === "function" ? target : target.fetch.bind(target);
 
+// Origin-verify: CloudFront injects x-vegify-origin on every forwarded request (set by the CDK from
+// $ORIGIN_VERIFY_SECRET). Reject anything that doesn't carry it — i.e. a direct hit to the public
+// Function URL, bypassing CloudFront. Skipped when ORIGIN_SECRET is unset (local/dev, or hardening off)
+// so the built bundle still serves standalone. This replaces OAC, which can't sign POST bodies.
+const ORIGIN_SECRET = process.env.ORIGIN_SECRET;
+
 export const handler = async (event) => {
+  if (ORIGIN_SECRET && event.headers?.["x-vegify-origin"] !== ORIGIN_SECRET) {
+    return { statusCode: 403, headers: { "content-type": "text/plain" }, body: "Forbidden" };
+  }
   const { rawPath = "/", rawQueryString = "", headers = {}, cookies, body, isBase64Encoded } = event;
   const method = event.requestContext?.http?.method ?? "GET";
   const host = headers["x-forwarded-host"] || headers.host || event.requestContext?.domainName || "localhost";

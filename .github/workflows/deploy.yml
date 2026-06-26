@@ -63,6 +63,10 @@ jobs:
           VITE_CLIENT_LOG_URL: /__ingest
         run: pnpm --filter web build:aws
       - name: cdk deploy
+        env:
+          # Origin-verify secret CloudFront injects on the Function URL origins so the Lambdas can reject
+          # direct (non-CloudFront) hits. Both stacks bake it in at synth; unset → hardening off (fail-open).
+          ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           pnpm --filter @vegify/infra exec cdk deploy \
             VegifyVpc VegifyWebStart VegifyServer VegifyClientLogs --require-approval never
