@@ -252,12 +252,14 @@ jobs:
         env:
           ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
+          # Absolute path: `pnpm --filter … exec` runs cdk with CWD=infra/, so a bare cdk-out.json
+          # would land in infra/ where the next step (CWD=repo root) can't find it.
           pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyServer \
-            --require-approval never --outputs-file cdk-out.json
+            --require-approval never --outputs-file "$GITHUB_WORKSPACE/cdk-out.json"
       - name: Wait for the server to be live (/health → 200)
         run: |
           set -euo pipefail
-          url=$(jq -r '.VegifyServer.Url' cdk-out.json)
+          url=$(jq -r '.VegifyServer.Url' "$GITHUB_WORKSPACE/cdk-out.json")
           echo "Polling $url/health"
           for i in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' "$url/health" || echo 000)
