@@ -28,6 +28,11 @@ base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.6", features = ["trace"] }
+# Transactional email (password reset, A5) via SES v2. Creds come from the default chain — the EC2
+# instance role in prod, env/SSO locally — and the client is built lazily on first send, so the server
+# still boots with no email config and pays nothing until a reset is actually requested.
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-sesv2 = "1"
 
 [[bin]]
 name = "vegify-server"

@@ -7,6 +7,7 @@
 
 mod auth;
 mod content;
+mod email;
 mod error;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -164,6 +165,52 @@ async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Js
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
     let user = db(&state, move |conn| auth::validate_session(conn, &token)).await?;
     user.map(Json).ok_or(AppError::Unauthorized)
+}
+
+#[derive(Deserialize)]
+struct ResetRequestBody {
+    email: Option<String>,
+}
+
+/// Begin a password reset: mint a token (if the email matches an account) and email the link. ALWAYS
+/// 200 — the response never reveals whether an email is registered. DB work runs on the blocking pool;
+/// the SES send runs on the async side (best-effort, logged on failure).
+async fn request_password_reset(
+    State(state): State<AppState>,
+    Json(body): Json<ResetRequestBody>,
+) -> Result<Json<Value>, AppError> {
+    let email = body.email.unwrap_or_default().trim().to_string();
+    if !email.is_empty() {
+        let to = email.clone();
+        if let Some((name, token)) =
+            db(&state, move |conn| auth::create_password_reset(conn, &email)).await?
+        {
+            email::send_password_reset(&to, &name, &token).await;
+        }
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct ResetConfirmBody {
+    token: Option<String>,
+    password: Option<String>,
+}
+
+/// Complete a password reset: set the new password, then invalidate the token + all of the account's
+/// sessions. 400 on a missing/invalid/expired/used token or a too-short password.
+async fn confirm_password_reset(
+    State(state): State<AppState>,
+    Json(body): Json<ResetConfirmBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = body.token.unwrap_or_default();
+    let password = body.password.unwrap_or_default();
+    if token.is_empty() {
+        return Err(AppError::BadRequest("A reset token is required.".into()));
+    }
+    db(&state, move |conn| auth::consume_password_reset(conn, &token, &password)).await?;
+    tracing::info!("password reset completed");
+    Ok(Json(json!({ "ok": true })))
 }
 
 // ---- content routes (Bearer-authed; userId always stamped server-side from the session) ----
@@ -491,6 +538,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/bootstrap", post(bootstrap))
         .route("/api/auth/session", get(session))
+        .route("/api/auth/password-reset/request", post(request_password_reset))
+        .route("/api/auth/password-reset/confirm", post(confirm_password_reset))
         .route(
             "/api/content/recipes",
             get(list_recipes).post(save_recipe).delete(delete_recipe),

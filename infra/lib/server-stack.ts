@@ -72,6 +72,14 @@ export class ServerStack extends Stack {
     role.addToPolicy(
       new iam.PolicyStatement({ actions: ["ec2:AttachVolume", "ec2:DetachVolume"], resources: ["*"] }),
     );
+    // Transactional email (password reset, A5) via SES — send-only, scoped to the already-verified
+    // vegify.app domain identity (covers the no-reply@vegify.app from-address).
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/vegify.app`],
+      }),
+    );
 
     const sg = new ec2.SecurityGroup(this, "Sg", { vpc, allowAllOutbound: true });
     sg.addIngressRule(

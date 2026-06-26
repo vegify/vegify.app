@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use crate::error::AppError;
 
 const SESSION_TTL_MS: i64 = 1000 * 60 * 60 * 24 * 30; // 30 days
+const RESET_TTL_MS: i64 = 1000 * 60 * 60; // 1 hour — password-reset links are short-lived
 
 /// The signed-in user — the `{id, name, email}` the auth routes return, and the viewer the content
 /// gates scope to. Serializes with bare field names (matching the web's response).
@@ -181,10 +182,115 @@ pub fn set_initial_password(conn: &Connection, email: &str, password: &str) -> R
     }
 }
 
+/// Create a single-use password-reset token for the account with this email, if one exists. Returns
+/// `(name, raw_token)` for the reset link, or None when no account matches — the caller always responds
+/// 200 either way, so the response never reveals whether an email is registered. Only the sha256 hash of
+/// the token is stored (like sessions), so a DB leak yields no usable reset links.
+pub fn create_password_reset(
+    conn: &Connection,
+    email: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let email = normalize_email(email);
+    let row: Option<(String, String)> = conn
+        .query_row("SELECT id, name FROM users WHERE email = ?1", [&email], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .optional()?;
+    let Some((user_id, name)) = row else { return Ok(None) };
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO password_reset_tokens(id, user_id, hashed_token, expires_at, used_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5)",
+        params![vegify_core::new_id(), user_id, token_hash(&token), now + RESET_TTL_MS, now],
+    )?;
+    Ok(Some((name, token)))
+}
+
+/// Consume a reset token: set the account's new password and invalidate every existing session (a leaked
+/// old session must not outlive the reset). Rejects an unknown, expired, or already-used token with a
+/// generic 400. Marks ALL of the user's pending reset tokens used, so the link is strictly single-use.
+pub fn consume_password_reset(conn: &Connection, token: &str, new_password: &str) -> Result<(), AppError> {
+    if new_password.chars().count() < 8 {
+        return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
+    }
+    let now = now_ms();
+    let user_id: Option<String> = conn
+        .query_row(
+            "SELECT user_id FROM password_reset_tokens
+             WHERE hashed_token = ?1 AND used_at IS NULL AND expires_at > ?2",
+            params![token_hash(token), now],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(user_id) = user_id else {
+        return Err(AppError::BadRequest("This reset link is invalid or has expired.".into()));
+    };
+    conn.execute(
+        "UPDATE users SET password_hash = ?2, updated_at = ?3 WHERE id = ?1",
+        params![user_id, hash_password(new_password)?, now],
+    )?;
+    conn.execute(
+        "UPDATE password_reset_tokens SET used_at = ?2, updated_at = ?2 WHERE user_id = ?1 AND used_at IS NULL",
+        params![user_id, now],
+    )?;
+    conn.execute("DELETE FROM sessions WHERE user_id = ?1", [&user_id])?;
+    Ok(())
+}
+
 /// Pull the bearer token out of an Authorization header (case-insensitive `Bearer `, then trimmed).
 pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let h = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
     let t = h.trim_start();
     let prefix = t.get(..7)?;
     prefix.eq_ignore_ascii_case("bearer ").then(|| t[7..].trim().to_string())
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
+                password_hash TEXT, email_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);
+             CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, hashed_token TEXT NOT NULL UNIQUE,
+                expires_at INTEGER NOT NULL, created_at INTEGER, updated_at INTEGER);
+             CREATE TABLE password_reset_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                hashed_token TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, used_at INTEGER,
+                created_at INTEGER, updated_at INTEGER);",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn password_reset_round_trip() {
+        let conn = test_conn();
+        let user = create_user(&conn, "Test User", "user@example.com", "old-password").unwrap();
+        let session = create_session(&conn, &user.id).unwrap();
+
+        // Unknown email reveals nothing — no token, no error (enumeration-safe).
+        assert!(create_password_reset(&conn, "nobody@example.com").unwrap().is_none());
+
+        // Known email, case/space-insensitive, mints a token and returns the name for the email.
+        let (name, token) = create_password_reset(&conn, "  User@Example.com ").unwrap().unwrap();
+        assert_eq!(name, "Test User");
+
+        // Consuming sets the new password, rejects the old one, and kills existing sessions.
+        consume_password_reset(&conn, &token, "new-password-123").unwrap();
+        assert!(authenticate(&conn, "user@example.com", "new-password-123").unwrap().is_some());
+        assert!(authenticate(&conn, "user@example.com", "old-password").unwrap().is_none());
+        assert!(validate_session(&conn, &session).unwrap().is_none(), "reset must invalidate sessions");
+
+        // The link is strictly single-use.
+        assert!(consume_password_reset(&conn, &token, "yet-another-123").is_err());
+
+        // A new token still requires an 8+ char password.
+        let (_, t2) = create_password_reset(&conn, "user@example.com").unwrap().unwrap();
+        assert!(consume_password_reset(&conn, &t2, "short").is_err());
+    }
 }
