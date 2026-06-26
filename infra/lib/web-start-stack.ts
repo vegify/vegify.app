@@ -45,7 +45,8 @@ const CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/00000000
  * vite `ssr.noExternal`), so the bundle ships as plain JS with no Docker build step.
  *
  * The Bun-on-Fargate perf path stays ready in web-start-fargate-stack.ts.
- * TODO before prod: restrict the Function URL to CloudFront via OAC (currently authType NONE).
+ * The SSR Function URL is locked to CloudFront via OAC (AWS_IAM — see the addFunctionUrl note below);
+ * the /__ingest log-ingestion origin stays public for now (its OAC would be cross-stack → circular).
  */
 export class WebStartStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
