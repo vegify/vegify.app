@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/vegify/vegify.app/compare/v0.1.1...v0.1.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* **desktop:** gate the gen-bindings binary behind a feature so the macOS bundle succeeds ([1ada4b5](https://github.com/vegify/vegify.app/commit/1ada4b5dd892c1286a866bd0de804abf5b93eade))
+
 ## [0.1.1](https://github.com/vegify/vegify.app/compare/v0.1.0...v0.1.1) (2026-06-26)
 
 
