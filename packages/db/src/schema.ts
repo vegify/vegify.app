@@ -37,6 +37,9 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash"),
+  // Null until the user confirms their address via the verification link (A5). The reset/verify flows
+  // live server-side in vegify-server; this column is the source of truth for "is this email confirmed".
+  emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
   ...timestamps,
 });
 
@@ -55,6 +58,24 @@ export const sessions = sqliteTable(
     ...timestamps,
   },
   (t) => [index("sessions_user_idx").on(t.userId)]
+);
+
+// Single-use, expiring password-reset tokens. Like `sessions`, only the SHA-256 hash of the raw token
+// is stored — the raw token rides the reset link emailed to the user — so a DB leak yields no usable
+// tokens. `used_at` enforces single use; expired or already-used rows are rejected at confirm time.
+export const passwordResetTokens = sqliteTable(
+  "password_reset_tokens",
+  {
+    id: pk(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    hashedToken: text("hashed_token").notNull().unique(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    usedAt: integer("used_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [index("password_reset_tokens_user_idx").on(t.userId)]
 );
 
 export const amounts = sqliteTable("amounts", {

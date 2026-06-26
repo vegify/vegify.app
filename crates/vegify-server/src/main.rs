@@ -401,6 +401,63 @@ async fn ws_loop(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver
     }
 }
 
+/// Idempotent additive migration applied on boot. The live EBS DB predates the password-reset table
+/// and the `users.email_verified_at` column; the server is the sole writer, so this is the migration
+/// path (the server analogue of the web's old `ensure-schema.mjs`). Safe to re-run every boot.
+fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            hashed_token TEXT NOT NULL UNIQUE,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens(user_id);",
+    )?;
+    // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
+    let has_col: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_col == 0 {
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified_at INTEGER", [])?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    #[test]
+    fn ensure_schema_is_idempotent_and_additive() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, email TEXT, password_hash TEXT, created_at INTEGER, updated_at INTEGER);",
+        )
+        .unwrap();
+        // Run twice: the first creates the table + adds the column, the second is a clean no-op.
+        ensure_schema(&conn).unwrap();
+        ensure_schema(&conn).unwrap();
+        let prt_cols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')", [], |r| r.get(0))
+            .unwrap();
+        assert!(prt_cols >= 6, "password_reset_tokens should be created with its columns");
+        let added: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(added, 1, "email_verified_at should be added exactly once");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Structured logs (RUST_LOG overrides the default). Emits to stdout → the systemd journal on the
@@ -420,6 +477,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     });
     let pool = r2d2::Pool::builder().max_size(8).build(manager)?;
+    // Apply the idempotent additive auth-reset migration before serving (the live DB predates these).
+    let setup_conn = pool.get()?;
+    ensure_schema(&setup_conn)?;
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
