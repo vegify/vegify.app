@@ -89,3 +89,32 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
   deleteCookie(SESSION_COOKIE, { path: '/' })
   return { ok: true }
 })
+
+export const requestPasswordResetFn = createServerFn({ method: 'POST' })
+  .validator((d: { email: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    // The backend always 200s (enumeration-safe); swallow transport errors too so the UI shows the
+    // same "check your email" result regardless of whether the address has an account.
+    try {
+      await api('/api/auth/password-reset/request', { method: 'POST', auth: false, body: { email: data.email } })
+    } catch {
+      // ignore — never reveal request success/failure to the client
+    }
+    return { ok: true }
+  })
+
+export const confirmPasswordResetFn = createServerFn({ method: 'POST' })
+  .validator((d: { token: string; password: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await api('/api/auth/password-reset/confirm', {
+        method: 'POST',
+        auth: false,
+        body: { token: data.token, password: data.password },
+      })
+      return { ok: true }
+    } catch (e) {
+      // 400 on an invalid/expired/used token or a too-short password.
+      return { ok: false, error: e instanceof Error ? e.message : 'Could not reset your password.' }
+    }
+  })

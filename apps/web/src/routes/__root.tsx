@@ -20,7 +20,7 @@ import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
 // Accounts are required: every page is gated except these. Login/signup render bare (no chrome).
-const PUBLIC_PATHS = new Set(['/login', '/signup'])
+const PUBLIC_PATHS = new Set(['/login', '/signup', '/forgot', '/reset'])
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
