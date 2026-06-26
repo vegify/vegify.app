@@ -14,9 +14,16 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # Generates src/bindings.ts from the DAL trait (no tauri::generate_context!, so no dist/ needed).
+# Gated behind the `gen-bindings` feature so a plain `tauri build` does NOT build it — otherwise
+# Tauri's macOS bundler tries to copy it from the universal-apple-darwin target dir (where only the
+# lipo'd `app` binary lands) and fails the release. `pnpm --filter desktop gen:bindings` turns it on.
 [[bin]]
 name = "gen-bindings"
 path = "src/bin/gen_bindings.rs"
+required-features = ["gen-bindings"]
+
+[features]
+gen-bindings = []
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
