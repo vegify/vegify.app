@@ -5,25 +5,16 @@ description = "Vegify desktop (local-first)"
 authors = ["you"]
 edition = "2021"
 rust-version = "1.77.2"
-# Two binaries (app + the gen-bindings helper) → `cargo run` is ambiguous without this.
-# `tauri dev` invokes `cargo run` with no --bin, so it must know the default target.
-default-run = "app"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# Generates src/bindings.ts from the DAL trait (no tauri::generate_context!, so no dist/ needed).
-# Gated behind the `gen-bindings` feature so a plain `tauri build` does NOT build it — otherwise
-# Tauri's macOS bundler tries to copy it from the universal-apple-darwin target dir (where only the
-# lipo'd `app` binary lands) and fails the release. `pnpm --filter desktop gen:bindings` turns it on.
-[[bin]]
-name = "gen-bindings"
-path = "src/bin/gen_bindings.rs"
-required-features = ["gen-bindings"]
-
-[features]
-gen-bindings = []
+# gen_bindings (the src/bindings.ts codegen helper) lives in examples/, NOT src/bin/: `cargo build`
+# (what `tauri build` runs) never compiles examples, so Tauri's macOS bundler never tries to copy it
+# into the .app — a src/bin/ binary would be auto-discovered, built, and then fail the universal
+# bundle (only the lipo'd `app` binary lands in target/universal-apple-darwin/). Run it explicitly:
+# `pnpm --filter desktop gen:bindings` → `cargo run --example gen_bindings`.
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }

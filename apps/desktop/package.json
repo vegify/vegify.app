@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --bin gen-bindings --features gen-bindings"
+    "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --example gen_bindings"
   },
   "dependencies": {
     "@fltsci/tauri-plugin-tracing": "^0.3.4",
