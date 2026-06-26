@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/vegify/vegify.app/compare/v0.1.2...v0.1.3) (2026-06-26)
+
+
+### Bug Fixes
+
+* **desktop:** move gen_bindings codegen to an example so tauri never bundles it ([311b210](https://github.com/vegify/vegify.app/commit/311b210e92aec2d216192439b18cc260e0bbee45))
+
 ## [0.1.2](https://github.com/vegify/vegify.app/compare/v0.1.1...v0.1.2) (2026-06-26)
 
 
