@@ -6,6 +6,7 @@ export {
   type AppShellLinkProps,
   type AppShellNavItem,
 } from "./app-shell";
+export { useChromeSearch } from "./use-chrome-search";
 export { VegifyLogo } from "./vegify-logo";
 export { ThemeToggle } from "./theme-toggle";
 export { useTheme, themeScript, type Theme } from "./use-theme";

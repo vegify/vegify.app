@@ -33,6 +33,7 @@ import {
   RecipeListView,
   SearchResultsView,
   SignupView,
+  useChromeSearch,
   type AppShellLinkProps,
   type IngredientDetailVM,
   type IngredientFormDefaults,
@@ -275,7 +276,7 @@ function RootChrome() {
   const router = useRouter()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const [search, setSearch] = useState('')
+  const { search, setSearch, query } = useChromeSearch(pathname)
   // Mirror the module-level sync state + online status into React for the passive footer indicator.
   const [syncView, setSyncView] = useState<{ state: SyncState; online: boolean }>(() => ({
     state: getSyncState(),
@@ -377,7 +378,7 @@ function RootChrome() {
       user={auth ? { name: auth.user.name, email: auth.user.email } : undefined}
       onSignOut={auth?.onSignOut}
     >
-      {search.trim() ? <SearchOverlay query={search.trim()} /> : <Outlet />}
+      {query ? <SearchOverlay query={query} /> : <Outlet />}
     </AppShell>
   )
 }

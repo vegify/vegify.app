@@ -6,11 +6,11 @@ import {
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { AppShell, themeScript } from '@vegify/ui'
+import { AppShell, themeScript, useChromeSearch } from '@vegify/ui'
 
 import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
@@ -85,7 +85,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
+  const { search, setSearch, query } = useChromeSearch(pathname)
   const isPublic = PUBLIC_PATHS.has(pathname)
 
   // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
@@ -118,8 +118,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               await router.navigate({ to: '/login' })
             }}
           >
-            {search.trim() ? (
-              <SearchOverlay query={search.trim()} LinkComponent={LinkAdapter} />
+            {query ? (
+              <SearchOverlay query={query} LinkComponent={LinkAdapter} />
             ) : (
               children
             )}
