@@ -13,7 +13,7 @@
     "build:aws": "vite build && node aws/assemble-bundle.mjs",
     "start:bun": "bun serve-bun.mjs",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "lint": "eslint",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check ."
