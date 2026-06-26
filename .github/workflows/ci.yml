@@ -1,0 +1,44 @@
+name: ci
+
+# Build + test on every push to main and on PRs. NO deploy — production ships ONLY through the
+# release pipeline (release.yml; decision A, 2026-06-26). This is also what gives PRs status checks.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test the server + shared core (native — the GUI crate is covered in release.yml)
+        run: cargo test -p vegify-server -p vegify-core
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build design tokens (theme.css is gitignored)
+        run: pnpm --filter @vegify/tokens build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Web unit tests
+        run: pnpm --filter web test
+      - name: Build the web + desktop frontends
+        run: pnpm --filter web build && pnpm --filter desktop build

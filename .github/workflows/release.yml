@@ -1,0 +1,307 @@
+name: release
+
+# Production ships ONLY through here (decision A, 2026-06-26). release-please maintains a release PR
+# (single monorepo version bump + CHANGELOG) from conventional-commit history; merging it cuts a
+# vX.Y.Z tag + GitHub Release, which runs the ORDERED prod deploy (decision-A/B):
+#
+#   build-server ──▶ build-web ∥ build-desktop ──(all green)──▶ deploy-server ──(/health 200)──▶
+#       publish-web ∥ publish-desktop
+#
+# web/desktop build AFTER the server so they validate against current types; the server deploys before
+# the clients that depend on it; desktop is signed + notarized with the Apple creds REUSED from
+# johncarmack1984/lux (your-org/apple-signing in Secrets Manager). A normal push to main only runs
+# release-please (no deploy); ci.yml handles build+test for pushes/PRs.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)run the deploy for, e.g. v0.1.0"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # release-type "simple" bumps the crate Cargo.tomls but leaves their entries in the root
+      # Cargo.lock stale (the members carry no checksum, so the version is a pure text field). Sync the
+      # lock onto the release-PR branch — without invoking cargo — so main never lands a dirty lock.
+      - name: Sync Cargo.lock to the release version
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          PR_BRANCH=$(printf '%s' "$PR_JSON" | jq -r '.headBranchName')
+          git fetch --depth=1 origin "$PR_BRANCH"
+          git checkout "$PR_BRANCH"
+          version=$(jq -r '."."' .release-please-manifest.json)
+          VER="$version" perl -0pi -e 's/(name = "vegify-server"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
+          VER="$version" perl -0pi -e 's/(name = "app"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
+          if git diff --quiet -- Cargo.lock; then echo "Cargo.lock already in sync at $version"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore: sync Cargo.lock to $version"
+          git push origin "HEAD:$PR_BRANCH"
+
+  # ── Build + test gate ───────────────────────────────────────────────────────────────────────────
+  # build-server is the anchor: it resolves the tag, gates the whole orchestration, and (for the
+  # cross-musl deployable) carries PR#1's rust-cache + prebuilt cross.
+  build-server:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        run: echo "tag=${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-musl
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Test the server + shared core
+        run: cargo test -p vegify-server -p vegify-core
+      - name: Cross-build the aarch64-musl binary + stage the seed
+        run: |
+          cross build --release --target aarch64-unknown-linux-musl -p vegify-server
+          pnpm db:push && pnpm db:seed
+          mkdir -p infra/assets
+          cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
+          cp .data/vegify.db infra/assets/seed.db
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+          retention-days: 1
+
+  build-web:
+    needs: build-server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build-server.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - name: Typecheck + unit tests
+        run: |
+          pnpm typecheck
+          pnpm --filter web test
+      - name: Build the deployable web bundle (validates against the just-built server)
+        env:
+          VITE_CLIENT_LOG_URL: /__ingest
+        run: pnpm --filter web build:aws
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: apps/web/.aws-lambda/
+          retention-days: 1
+
+  build-desktop:
+    needs: build-server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build-server.outputs.tag }}
+      - name: Tauri Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
+        run: |
+          pnpm --filter desktop gen:bindings
+          git diff --exit-status apps/desktop/src/bindings.ts \
+            || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
+      - name: Typecheck + build the desktop frontend
+        run: |
+          pnpm --filter desktop exec tsc --noEmit
+          pnpm --filter desktop build
+
+  # ── Deploy: server first, then wait for it to be live ───────────────────────────────────────────
+  deploy-server:
+    needs: [build-server, build-web, build-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # AWS OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build-server.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # cdk synth is whole-app, so every stack's asset must exist even though we deploy only the
+      # server here: restore the server binary + the web bundle the upstream jobs already built.
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: apps/web/.aws-lambda/
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
+          aws-region: us-east-1
+      - name: Deploy the server
+        env:
+          ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+        run: |
+          pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyServer \
+            --require-approval never --outputs-file cdk-out.json
+      - name: Wait for the server to be live (/health → 200)
+        run: |
+          set -euo pipefail
+          url=$(jq -r '.VegifyServer.Url' cdk-out.json)
+          echo "Polling $url/health"
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/health" || echo 000)
+            echo "[$i] $code"
+            [ "$code" = "200" ] && { echo "server live"; exit 0; }
+            sleep 10
+          done
+          echo "::error::server /health did not return 200 within ~10 min"; exit 1
+
+  # ── Publish the clients in parallel, now that the server they depend on is live ──────────────────
+  publish-web:
+    needs: [build-server, deploy-server]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build-server.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: apps/web/.aws-lambda/
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
+          aws-region: us-east-1
+      - name: Publish the web shell
+        env:
+          ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+        run: |
+          pnpm --filter @vegify/infra exec cdk deploy VegifyWebStart VegifyClientLogs \
+            --require-approval never
+
+  publish-desktop:
+    needs: [build-server, deploy-server]
+    runs-on: macos-latest
+    permissions:
+      contents: write # attach the signed .dmg to the GitHub Release
+      id-token: write # AWS OIDC, to read the shared Apple signing secret
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build-server.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/vegify-release-signing
+          aws-region: us-west-1
+      - name: Load the Apple signing secret (REUSED from your-org/apple-signing)
+        # JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
+        # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID
+        # cert + ASC API key are Apple-account-wide, so Vegify reuses lux's secret verbatim.
+        run: |
+          set -euo pipefail
+          s=$(aws secretsmanager get-secret-value --secret-id your-org/apple-signing --query SecretString --output text)
+          echo "::add-mask::$(printf '%s' "$s" | jq -r '.certificate_password')"
+          {
+            echo "APPLE_CERTIFICATE=$(printf '%s' "$s" | jq -r '.certificate')"
+            echo "APPLE_CERTIFICATE_PASSWORD=$(printf '%s' "$s" | jq -r '.certificate_password')"
+            echo "APPLE_SIGNING_IDENTITY=$(printf '%s' "$s" | jq -r '.signing_identity')"
+            echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')"
+            echo "APPLE_API_ISSUER=$(printf '%s' "$s" | jq -r '.api_issuer_id')"
+            echo "APPLE_API_KEY=$(printf '%s' "$s" | jq -r '.api_key_id')"
+          } >> "$GITHUB_ENV"
+          printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ needs.build-server.outputs.tag }}
+          args: --target universal-apple-darwin

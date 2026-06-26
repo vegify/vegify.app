@@ -505,6 +505,12 @@ mod migration_tests {
     }
 }
 
+/// Liveness probe — unauthenticated, no DB touch. The release pipeline polls this through CloudFront
+/// after the server deploys, as the gate before it publishes the web + desktop clients.
+async fn health() -> &'static str {
+    "ok"
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Structured logs (RUST_LOG overrides the default). Emits to stdout → the systemd journal on the
@@ -533,6 +539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState { pool, change_tx };
 
     let app = Router::new()
+        .route("/health", get(health))
         .route("/api/auth/login", post(login))
         .route("/api/auth/signup", post(signup))
         .route("/api/auth/logout", post(logout))

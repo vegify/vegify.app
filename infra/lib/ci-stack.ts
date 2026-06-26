@@ -52,5 +52,28 @@ export class CiStack extends Stack {
     );
 
     new CfnOutput(this, "DeployRoleArn", { value: role.roleArn });
+
+    // Release-signing role: assumed by release.yml's publish-desktop job (OIDC) to read the SHARED
+    // Apple signing secret (Developer ID cert + App Store Connect API key) reused from
+    // johncarmack1984/lux. Least-privilege — it can ONLY GetSecretValue on that one secret, in
+    // us-west-1 where lux created it. (One-time bootstrap, like the deploy role: `cdk deploy VegifyCi`.)
+    const releaseRole = new iam.Role(this, "ReleaseSigningRole", {
+      roleName: "vegify-release-signing",
+      description:
+        "Assumed by GitHub Actions (OIDC) to read the shared Apple signing secret for notarized desktop releases.",
+      assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
+        StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+        StringLike: { "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:*` },
+      }),
+    });
+    releaseRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadSharedAppleSigningSecret",
+        actions: ["secretsmanager:GetSecretValue"],
+        // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard.
+        resources: [`arn:aws:secretsmanager:us-west-1:${this.account}:secret:your-org/apple-signing-*`],
+      }),
+    );
+    new CfnOutput(this, "ReleaseSigningRoleArn", { value: releaseRole.roleArn });
   }
 }
