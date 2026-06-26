@@ -73,17 +73,31 @@ jobs:
       # Release, and runs the ordered deploy — whose build+test gate still protects prod. No human gate
       # on the version/CHANGELOG PR itself; conventional commits on main are the only input.
       #
-      # Find the PR by its `autorelease: pending` label, NOT steps.release.outputs.pr: that output is
-      # empty on runs where release-please leaves an already-open PR untouched, so keying off it would
-      # silently skip the merge (and fromJSON() on the empty value is itself a template error). The
-      # label query merges any open release PR, whichever run prepared it.
+      # Resolve the PR two ways, most-consistent first:
+      #   1. steps.release.outputs.pr — release-please's OWN output, populated + immediately consistent
+      #      when THIS run just created/updated the PR (no search-index lag).
+      #   2. the `autorelease: pending` label — covers the case where release-please left an
+      #      already-open PR untouched (output empty). The label SEARCH index lags a few seconds behind
+      #      PR creation, so RETRY: a single immediate query raced a freshly-created PR and missed it,
+      #      leaving the release PR open + the cascade stalled.
+      # Pass the JSON via env as a plain string — never fromJSON() in an expression, which is itself a
+      # template error on the empty value.
       - name: Auto-merge the release PR
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
           set -euo pipefail
-          PR_NUMBER=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --label "autorelease: pending" --json number --jq '.[0].number // empty')
+          PR_NUMBER=$(printf '%s' "${PR_JSON:-}" | jq -r '.number // empty' 2>/dev/null || true)
+          if [ -z "$PR_NUMBER" ]; then
+            for i in $(seq 1 10); do
+              PR_NUMBER=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+                --label "autorelease: pending" --json number --jq '.[0].number // empty')
+              [ -n "$PR_NUMBER" ] && break
+              echo "no labeled release PR yet (attempt $i); retrying in 3s…"
+              sleep 3
+            done
+          fi
           if [ -z "$PR_NUMBER" ]; then
             echo "No open release PR to auto-merge."
             exit 0
