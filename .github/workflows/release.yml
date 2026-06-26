@@ -98,6 +98,8 @@ jobs:
     needs: release-please
     if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout the release tag (private repo)
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -137,6 +139,8 @@ jobs:
   build-web:
     needs: build-server
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -165,6 +169,8 @@ jobs:
   build-desktop:
     needs: build-server
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
