@@ -200,7 +200,7 @@ jobs:
       - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
         run: |
           pnpm --filter desktop gen:bindings
-          git diff --exit-status apps/desktop/src/bindings.ts \
+          git diff --quiet -- apps/desktop/src/bindings.ts \
             || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
       - name: Typecheck + build the desktop frontend
         run: |
