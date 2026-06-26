@@ -179,18 +179,21 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
     }
 }
 
-/// In test builds, route ALL keychain access to keyring's in-memory mock store instead of the real
-/// macOS Keychain. Installed exactly once, before the first `Entry` is created (every keychain op
-/// funnels through `keychain_entry`). This stops `cargo test` from triggering an OS keychain-access
-/// prompt on every run — each unsigned test binary is a fresh identity, so the macOS "Always Allow"
-/// grant never sticks — and makes tests hermetic: the mock starts empty, so a Db opened in a test
-/// never inherits a developer's real signed-in desktop session.
-#[cfg(test)]
-static TEST_KEYCHAIN_INIT: std::sync::Once = std::sync::Once::new();
+/// In dev (`tauri dev` — a debug build) and test builds, route ALL keychain access to keyring's
+/// in-memory mock store instead of the real macOS Keychain. Installed exactly once, before the first
+/// `Entry` is created (every keychain op funnels through `keychain_entry`). This stops `tauri dev` and
+/// `cargo test` from triggering an OS Keychain-password prompt on every run — each rebuild re-signs the
+/// binary with a fresh ad-hoc identity, so the macOS "Always Allow" grant never sticks — and keeps
+/// dev/test hermetic: the mock starts empty, so a Db opened in dev or a test never inherits a
+/// developer's real signed-in desktop session. RELEASE builds (`tauri build`) use the real Keychain.
+/// Dev tradeoff: the in-memory mock doesn't persist, so a Rust-process restart needs a re-login
+/// (frontend HMR keeps the in-memory session) — but nothing is written to disk.
+#[cfg(any(test, debug_assertions))]
+static MOCK_KEYCHAIN_INIT: std::sync::Once = std::sync::Once::new();
 
 fn keychain_entry() -> Result<keyring::Entry, DataError> {
-    #[cfg(test)]
-    TEST_KEYCHAIN_INIT.call_once(|| {
+    #[cfg(any(test, debug_assertions))]
+    MOCK_KEYCHAIN_INIT.call_once(|| {
         keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
     });
     keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|e| DataError::Auth(e.to_string()))
