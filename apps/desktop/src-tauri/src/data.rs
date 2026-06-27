@@ -63,6 +63,9 @@ pub struct AuthUser {
     pub id: String,
     pub name: String,
     pub email: String,
+    /// Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
+    /// `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
+    pub email_verified: bool,
 }
 
 #[derive(Deserialize, Type)]
@@ -219,12 +222,37 @@ fn keychain_clear() {
     }
 }
 
-/// POST credentials to the web shell's JSON auth route; on success returns the session to store.
+/// POST credentials to the backend's JSON auth route; on success returns the session to store. The
+/// backend serializes `user` in snake_case (`email_verified`) while the bindings type `AuthUser` is
+/// camelCase, so we parse into a wire-shaped struct and map it over — ttipc forbids a deserialize-only
+/// `#[serde(alias)]` on a bindings type, and these wire structs aren't bindings types.
 fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataError> {
+    #[derive(Deserialize)]
+    struct WireUser {
+        id: String,
+        name: String,
+        email: String,
+        #[serde(default)]
+        email_verified: bool,
+    }
+    #[derive(Deserialize)]
+    struct WireSession {
+        token: String,
+        user: WireUser,
+    }
     let url = format!("{}/api/auth/{path}", auth_base_url());
     match ureq::post(&url).send_json(body) {
         Ok(resp) => resp
-            .into_json::<StoredSession>()
+            .into_json::<WireSession>()
+            .map(|w| StoredSession {
+                token: w.token,
+                user: AuthUser {
+                    id: w.user.id,
+                    name: w.user.name,
+                    email: w.user.email,
+                    email_verified: w.user.email_verified,
+                },
+            })
             .map_err(|e| DataError::Auth(e.to_string())),
         Err(ureq::Error::Status(_, resp)) => {
             let msg = resp
@@ -592,6 +620,9 @@ pub trait VegifyData {
     /// Enumeration-safe: POST the email to the backend's reset-request route and always succeed. The
     /// reset itself is finished in the browser via the email link — no token round-trips to desktop.
     fn request_password_reset(&self, input: ResetRequestInput) -> Result<(), DataError>;
+    /// Resend the email-verification link (enumeration-safe; the confirm happens in the browser via the
+    /// emailed link, exactly like reset). Always succeeds.
+    fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError>;
 }
 
 // The trait methods are thin desktop adapters: derive the viewer from the cached session, lock the
@@ -744,6 +775,14 @@ impl VegifyData for Db {
         let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
         Ok(())
     }
+
+    fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError> {
+        // Same shape as request_password_reset: enumeration-safe, errors swallowed. The verify link in
+        // the email opens vegify.app/verify in the browser — the desktop never holds the token.
+        let url = format!("{}/api/auth/email-verification/request", auth_base_url());
+        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -764,7 +803,12 @@ mod tests {
     fn set_auth(db: &Db, id: &str, name: &str) {
         *db.auth.lock().unwrap() = Some(StoredSession {
             token: "t".into(),
-            user: AuthUser { id: id.into(), name: name.into(), email: format!("{name}@x") },
+            user: AuthUser {
+                id: id.into(),
+                name: name.into(),
+                email: format!("{name}@x"),
+                email_verified: false,
+            },
         });
     }
 
@@ -975,8 +1019,13 @@ mod tests {
         // Two accounts: john (the seed owner) + Bob (upserted locally, as sign-in would guarantee).
         let john = sign_in_seed(&db);
         let bob = new_id();
-        db.ensure_user_local(&AuthUser { id: bob.clone(), name: "Bob".into(), email: "bob@x".into() })
-            .expect("create bob");
+        db.ensure_user_local(&AuthUser {
+            id: bob.clone(),
+            name: "Bob".into(),
+            email: "bob@x".into(),
+            email_verified: false,
+        })
+        .expect("create bob");
 
         // John creates a PRIVATE and a PUBLIC ingredient.
         let mk = |name: &str, vis: Visibility| {
@@ -1476,8 +1525,13 @@ mod tests {
 
         // sign in as the SAME email under a different (server) id — must reconcile, not collide.
         let server_id = new_id();
-        db.ensure_user_local(&AuthUser { id: server_id.clone(), name: "John".into(), email: email.clone() })
-            .expect("reconcile, not UNIQUE users.email");
+        db.ensure_user_local(&AuthUser {
+            id: server_id.clone(),
+            name: "John".into(),
+            email: email.clone(),
+            email_verified: false,
+        })
+        .expect("reconcile, not UNIQUE users.email");
 
         let conn = db.conn.lock().unwrap();
         let id_for_email: String =

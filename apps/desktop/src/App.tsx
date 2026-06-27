@@ -23,6 +23,7 @@ import {
 } from '@tanstack/react-query'
 import {
   AppShell,
+  EmailVerificationBanner,
   HomeView,
   IngredientDetailView,
   ForgotPasswordView,
@@ -379,6 +380,14 @@ function RootChrome() {
       user={auth ? { name: auth.user.name, email: auth.user.email } : undefined}
       onSignOut={auth?.onSignOut}
     >
+      {auth && !auth.user.emailVerified ? (
+        <EmailVerificationBanner
+          email={auth.user.email}
+          onResend={async () => {
+            await vegifyData.requestEmailVerification({ email: auth.user.email })
+          }}
+        />
+      ) : null}
       {query ? <SearchOverlay query={query} /> : <Outlet />}
     </AppShell>
   )

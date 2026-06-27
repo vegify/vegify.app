@@ -106,6 +106,11 @@ export const vegifyData = {
 	id: string,
 	name: string,
 	email: string,
+	/**
+	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
+	 *  `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
+	 */
+	emailVerified: boolean,
 } | null> {
     return invoke("current_user");
   },
@@ -128,6 +133,11 @@ export const vegifyData = {
   /** @throws {DataError} */
   requestPasswordReset(input: ResetRequestInput): Promise<null> {
     return invoke("request_password_reset", { input });
+  },
+
+  /** @throws {DataError} */
+  requestEmailVerification(input: ResetRequestInput): Promise<null> {
+    return invoke("request_email_verification", { input });
   },
 };
 
@@ -152,6 +162,11 @@ export type AuthUser = {
 	id: string,
 	name: string,
 	email: string,
+	/**
+	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
+	 *  `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
+	 */
+	emailVerified: boolean,
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
