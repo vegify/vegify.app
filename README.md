@@ -85,3 +85,7 @@ The living design is a private Figma file; binary archives stay out of the repo 
 - **Personas:** [`design/personas/`](design/personas/).
 - **Site map:** [`design/site-map.md`](design/site-map.md) — the app's information architecture.
 - **Figma import reference:** [`design/figma-import/`](design/figma-import/) — text-override inventory from the Sketch → Figma migration.
+
+## License
+
+vegify.app is **source-available, not open source**. It is released under the [PolyForm Noncommercial License 1.0.0](LICENSE): use, modify, and share it freely for any **noncommercial** purpose; commercial use is reserved to the copyright holder. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how contributions are licensed back to the project.
