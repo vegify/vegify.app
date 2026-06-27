@@ -1,96 +1,87 @@
 # vegify.app
 
-## Design
+A micronutrition tracker for plant-based cooking. Recipes nest (a recipe *is* an ingredient), and per-100g nutrients roll up through the graph — so you see the micronutrition of a dish, not just its calories. Recipes are user-generated and public by default; ownership gates editing, not reading.
 
-The living design lives in Figma, binary archives live in Dropbox, and this repo holds the diffable design-to-code contract.
+## Architecture
 
-- **Figma file:** [Vegify](https://www.figma.com/design/FIGMA_FILE_KEY/Vegify) (file key `FIGMA_FILE_KEY`)
-- **Binary archives:** `~/Vegify Dropbox/vegifyapp/brand/` — `.sketch`/`.fig`/`.psd` are gitignored by policy
-- **Design tokens:** [`design/tokens/`](design/tokens/) — `color.json` and `typography.json` in W3C DTCG format, extracted from the Sketch shared styles; seed for the eventual Tailwind config
-- **Figma import runbook:** [`design/figma-import/PREFLIGHT.md`](design/figma-import/PREFLIGHT.md)
-- **Text-override reference:** [`design/figma-import/text-overrides.md`](design/figma-import/text-overrides.md) — the real text content of every symbol instance; the Figma import dropped these overrides, so affected instances show master defaults until fixed
-- **Personas:** [`design/personas/`](design/personas/)
-- **Site map:** [`design/site-map.md`](design/site-map.md) — mermaid diagram reconstructed from the Sketch `Site Map` page, numbering preserved
+Two clients over one backend, rendering **one shared set of screens** — each client is a thin data/routing adapter, never a re-implementation.
 
-## Development
+- **`apps/web`** — a stateless TanStack Start (React) SSR shell. Holds no database: it calls `vegify-server` over HTTP for all auth and content. Deploys as a scale-to-zero Lambda behind CloudFront with client assets on S3.
+- **`apps/desktop`** — a local-first Tauri 2 (Rust) app. Full offline CRUD against a local libSQL cache through the shared `vegify-core` DAL, syncing to the server when online. The local store is a cache; the server is the authority.
+- **`crates/vegify-server`** — an Axum service that is the standing source of truth (libSQL on EBS). Owns authentication (self-hosted opaque sessions) and the content API.
 
-pnpm + Turborepo. Two app shells implement the same recipes slice against shared packages —
-a deliberate Next.js vs TanStack Start benchmark; everything except the framework is shared.
+vegify began as a framework bake-off (Next.js vs TanStack Start, plus two Rust SSR spikes). TanStack Start on Bun won the web slot; the retired shells live only in history. Full methodology and numbers: [`docs/benchmark.md`](docs/benchmark.md).
 
-```
-apps/web-next    Next.js 16 (App Router, RSC)   pnpm --filter web-next dev   → :3000
-apps/web-start   TanStack Start (Vite)         pnpm --filter web-start dev  → :3001
-apps/web-fast    Rust + Axum + rusqlite (SSR)  cargo run — speed-ceiling spike (read-only)
-apps/web-leptos  Rust + Leptos (SSR components) cargo run — React-like DX in Rust (read-only)
-packages/db      Drizzle + libSQL/SQLite — schema ported from vegify-laravel
-packages/ui      shared components — shadcn on Base UI (cva + Tailwind v4)
-packages/tokens  design/tokens → Tailwind v4 @theme (build: pnpm --filter @vegify/tokens build)
-```
+## Repo layout
 
-First run:
+| Path | What |
+|------|------|
+| `apps/web` | TanStack Start SSR shell (Vite). Stateless; calls the backend over HTTP. |
+| `apps/desktop` | Tauri 2 desktop. Local-first; offline CRUD via `vegify-core`, syncs to the server. |
+| `crates/vegify-server` | Axum backend — the source of truth. Auth + content API over libSQL. |
+| `crates/vegify-core` | Shared Rust DAL, consumed by both the desktop and the server. |
+| `packages/db` | Drizzle schema + seed (libSQL/SQLite). Schema stays portable to Postgres. |
+| `packages/ui` | Shared components and the one set of screens both clients render. |
+| `packages/tokens` | Design tokens → Tailwind v4 `@theme` CSS. |
+| `infra` | AWS CDK. **AWS only** — no Vercel, no Cloudflare. |
+| `design/` | Diffable design source: tokens, personas, site map, Figma import reference. |
+
+## Quickstart
+
+Prerequisites: Node 22 + [pnpm](https://pnpm.io), a Rust toolchain (for the desktop and server), and [Bun](https://bun.sh) (the web's production runtime).
 
 ```sh
 pnpm install
-pnpm --filter @vegify/tokens build   # design tokens → theme.css
+pnpm --filter @vegify/tokens build   # design tokens → theme.css (run once / after token changes)
 pnpm db:push                         # create .data/vegify.db from the Drizzle schema
-pnpm db:seed                         # Biga + Neapolitan pizza dough sample data
-pnpm dev                             # or build: pnpm build
+pnpm db:seed                         # sample data (Biga + Neapolitan pizza dough)
 ```
 
-Database: local dev uses a SQLite file at `.data/vegify.db` (no daemon). Prod is libSQL —
-set `DATABASE_URL` (+ `DATABASE_AUTH_TOKEN`); same client. The schema stays portable to Postgres
-if the site ever outgrows SQLite-class infra.
+Run the pieces:
 
-Hosting: **AWS only, via AWS CDK** — web-next through OpenNext (Lambda + CloudFront + S3),
-web-start through a small Lambda adapter over its WinterCG fetch handler (Lambda + CloudFront + S3).
-Self-hosted libSQL (sqld) on ECS Fargate + EBS. No Vercel, no Cloudflare. See `infra/`.
+```sh
+cargo run -p vegify-server           # the backend (auth + content API)
+pnpm dev                             # web (:3001) + desktop, against that backend
+```
 
-## Benchmark
+The web is stateless and reaches the backend at `VEGIFY_API_URL` (default `http://localhost:8787`). Build and serve it on Bun the way production does:
 
-The two JS shells render **identical JSX over the shared packages** — the framework is the only
-variable. Two Rust SSR spikes (`web-fast`, `web-leptos`) were added to find vegify's speed ceiling on
-the read path. Full methodology, raw numbers, and caveats: [`docs/benchmark.md`](docs/benchmark.md).
-Measured on an M2 Max, local prod builds, same seeded SQLite db (2026-06-16) — read as ratios and
-shape, not absolutes.
+```sh
+pnpm --filter web build:aws          # build + assemble the Lambda bundle
+pnpm --filter web start:bun          # serve the build on Bun (PORT, VEGIFY_API_URL via env)
+```
 
-**Read throughput** (oha, 50 concurrent; simple = 4-ingredient recipe, complex = 20-ingredient):
+The desktop bakes its backend URL at build time from `VEGIFY_API_URL`; a runtime `VEGIFY_AUTH_URL` overrides it for local development.
 
-| impl | simple req/s · p50 | complex req/s · p50 |
-|---|--:|--:|
-| web-next (Next 16 / RSC) | 233 · 208 ms | 209 · 236 ms |
-| web-start (TanStack Start) | 286 · 137 ms | 233 · 169 ms |
-| **web-leptos** (Rust + Leptos) | **1819 · 12 ms** | **1806 · 11 ms** |
-| **web-fast** (Rust + Axum) | **1854 · 10 ms** | **1791 · 11 ms** |
+## Database
 
-All four now run the **same single recursive CTE** for nutrition (one in-DB graph walk), so this is a
-*runtime* comparison, not an algorithm one. Backporting that CTE into the JS apps was a **3.1× throughput
-win on complex recipes** (web-next 67→209, web-start 74→233 req/s vs the former N+1 recursion) and
-flattened the curve — complex ≈ simple for everyone, where the JS apps used to halve from 4→20
-ingredients. Rust still serves reads ~6–8× faster (Node + RSC/SSR render + async libSQL client vs
-in-process rusqlite); web-fast's data-only JSON ≈ its full HTML, so HTML render is nearly free — the CTE
-compute (~0.5 ms) is the whole cost. (A local Postgres wouldn't help: the CTE already runs in-process
-against SQLite; Postgres adds a socket hop per query. The lever is the query shape, not the engine.)
+Local dev uses a SQLite file at `.data/vegify.db` — no daemon. Production is self-hosted libSQL (sqld); set `DATABASE_URL` (and `DATABASE_AUTH_TOKEN` if used) — same client. The schema stays portable to Postgres if the project ever outgrows SQLite-class infra.
 
-**Operation latency** (headless Chrome / CDP, median). Client nav, save, and reactivity are
-Next-vs-Start only — the Rust spikes are read-only SSR (no client router, no hydration):
+A recipe carries an `as_ingredient_id` row (name, creator, serving/batch amounts) so recipes can nest — the seed's pizza dough consumes its Biga. `ingredient_nutrient` holds the per-100g values that make micronutrition the core.
 
-| operation | web-next | web-start | web-fast | web-leptos |
-|---|--:|--:|--:|--:|
-| full page load → detail | 91 ms | 112 ms | **52 ms** | **55 ms** |
-| in-app client nav (list → detail) | 21 ms | **3 ms** | — full reload | — full reload |
-| recipe save round-trip | 28 ms | 62 ms | n/a | n/a |
-| reactive rescale (client re-render) | 1 ms | 1 ms | n/a | n/a |
+## Deploy
 
-The throughput win is real **for the read path**, but it doesn't transfer to the whole app: a real
-vegify needs the writes and interactivity the SSR-only Rust spikes skip (instant client nav, 1 ms
-reactive panels, real saving). Rust owns raw read-serving and cold load; React owns interactivity.
-Backporting the recursive CTE into `packages/db` (done) closed most of the read gap without touching
-the app — the high-leverage move, versus a Rust rewrite that would forfeit all that interactivity.
+Production ships **only** through CI, **AWS-only via CDK** — merging release-please's PR cuts a tag and runs the ordered deploy (server → clients). The infra carries no account-specific values; CI injects them from repository secrets. To deploy your own:
 
-**Build & bundle:** web-start builds ~3.2× faster (1.4 s vs 4.5 s) with a smaller total bundle;
-web-next ships ~half the per-route first-load JS (RSC keeps read pages off the client).
+| Secret | Purpose |
+|--------|---------|
+| `AWS_DEPLOY_ROLE_ARN` | OIDC role assumed to run `cdk deploy`. |
+| `AWS_RELEASE_SIGNING_ROLE_ARN` | OIDC role to read the Apple signing secret (notarized desktop). |
+| `APPLE_SIGNING_SECRET_ID` | Secrets Manager id of the Developer ID cert + ASC API key. |
+| `VEGIFY_API_URL` | Public origin of the deployed backend. |
+| `VEGIFY_INGEST_ORIGIN` | Function URL host of the browser-log ingestion Lambda. |
+| `VEGIFY_DOMAIN_NAMES` | Comma-separated custom domains (apex,www). |
+| `VEGIFY_HOSTED_ZONE_ID` | Route 53 hosted zone id for those domains. |
+| `VEGIFY_CERT_ARN` | us-east-1 ACM certificate ARN covering the domains. |
+| `ORIGIN_VERIFY_SECRET` | Shared header that restricts the Lambda Function URLs to CloudFront. |
 
-**React Compiler:** enabled in both apps (Next `reactCompiler`, Vite `babel-plugin-react-compiler`).
-It's **throughput-neutral** here — the read path is SSR, which has no cross-render memoization to gain —
-and adds ~20–25% to build time (the figures above are compiler-off). Its win is client-render
-performance as the UI grows, orthogonal to these server metrics.
+CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `VegifyCi`. Without the secrets, `cdk synth` still succeeds against inert placeholders.
+
+## Design
+
+The living design is a private Figma file; binary archives stay out of the repo (`.sketch`/`.fig`/`.psd` are gitignored by policy). What's diffable lives here:
+
+- **Design tokens:** [`design/tokens/`](design/tokens/) — W3C DTCG JSON, the seed for the Tailwind theme.
+- **Personas:** [`design/personas/`](design/personas/).
+- **Site map:** [`design/site-map.md`](design/site-map.md) — the app's information architecture.
+- **Figma import reference:** [`design/figma-import/`](design/figma-import/) — text-override inventory from the Sketch → Figma migration.
