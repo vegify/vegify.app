@@ -7,8 +7,9 @@
     declared here AND the app listed in https://vegify.app/.well-known/apple-app-site-association, the
     OS associates the app with vegify.app's saved logins, so the system Keychain and 1Password offer
     to fill the shared auth forms (which already carry autocomplete="email"/"current-password"/
-    "new-password"). Validated at runtime against the AASA — Developer ID signing needs no provisioning
-    profile for webcredentials.
+    "new-password"). Validated at runtime against the AASA. This restricted entitlement requires an
+    embedded Developer ID provisioning profile (Contents/embedded.provisionprofile, injected by CI and
+    copied in via bundle.macOS.files) to authorize it — without it amfid refuses to launch the app.
   -->
   <key>com.apple.developer.associated-domains</key>
   <array>

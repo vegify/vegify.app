@@ -2,3 +2,7 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Developer ID provisioning profile — injected in CI from the VEGIFY_PROVISION_PROFILE_B64 secret;
+# never commit it (it authorizes the associated-domains entitlement and is account-specific).
+/embedded.provisionprofile
