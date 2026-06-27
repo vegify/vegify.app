@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/vegify/vegify.app/compare/v0.2.0...v0.2.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **desktop:** embed Developer ID provisioning profile to authorize associated-domains ([15f9a04](https://github.com/vegify/vegify.app/commit/15f9a04dbb9bb8ffcbf24c44a5a1f4e0aec0168c))
+
 ## [0.2.0](https://github.com/vegify/vegify.app/compare/v0.1.3...v0.2.0) (2026-06-27)
 
 
