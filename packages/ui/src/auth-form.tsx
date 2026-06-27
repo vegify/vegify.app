@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { buttonClasses } from "./button";
 import { cn } from "./cn";
 import { Input } from "./input";
@@ -426,5 +426,129 @@ export function ResetPasswordView({
         )}
       </div>
     </AuthLayout>
+  );
+}
+
+/**
+ * Confirm an email address from a verification link. `token` comes from the link's `?token=`; the view
+ * submits it once on mount (a verification link is a single click, not a form) and shows the outcome.
+ * The backend stamps the account verified and burns the token; an absent/expired/used token shows a
+ * re-request prompt. Rendered by both shells.
+ */
+export function VerifyEmailView({
+  token,
+  onSubmit,
+  LinkComponent,
+}: {
+  token: string;
+  onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>;
+  LinkComponent: NavLink;
+}) {
+  const [status, setStatus] = useState<"verifying" | "done" | "error">(token ? "verifying" : "error");
+  const [error, setError] = useState<string | null>(
+    token ? null : "This verification link is missing its token.",
+  );
+  const ran = useRef(false);
+
+  useEffect(() => {
+    if (!token || ran.current) return;
+    ran.current = true; // the link is single-use — submit exactly once
+    void (async () => {
+      try {
+        const res = await onSubmit({ token });
+        if (res?.error) {
+          setError(res.error);
+          setStatus("error");
+        } else {
+          setStatus("done");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+        setStatus("error");
+      }
+    })();
+  }, [token, onSubmit]);
+
+  return (
+    <AuthLayout>
+      <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
+        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+          {status === "done" ? "Email confirmed" : "Confirm your email"}
+        </h1>
+        {status === "verifying" ? (
+          <p className="text-center text-sm text-muted-foreground">Confirming your email address…</p>
+        ) : status === "done" ? (
+          <>
+            <p className="text-center text-sm text-muted-foreground">
+              Your email address is verified — you&apos;re all set.
+            </p>
+            <LinkComponent href="/" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+              Continue to Vegify
+            </LinkComponent>
+          </>
+        ) : (
+          <>
+            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+            <p className="text-center text-sm text-muted-foreground">
+              The link may have expired or already been used. Sign in and we can send you a fresh one.
+            </p>
+            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+              Go to sign in
+            </LinkComponent>
+          </>
+        )}
+      </div>
+    </AuthLayout>
+  );
+}
+
+/**
+ * A slim banner shown in the app chrome when the signed-in user hasn't verified their email yet.
+ * `onResend` re-requests the verification email (enumeration-safe on the backend). Rendered by both
+ * shells above the page content — styled to sit inside the app, not the centered AuthLayout.
+ */
+export function EmailVerificationBanner({
+  email,
+  onResend,
+}: {
+  email: string;
+  onResend: () => Promise<AuthSubmitResult>;
+}) {
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function handleResend() {
+    if (state === "sending") return;
+    setState("sending");
+    try {
+      await onResend();
+    } finally {
+      setState("sent");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-primary/20 bg-primary/5 px-4 py-2 text-center text-sm text-foreground">
+      {state === "sent" ? (
+        <span>
+          Verification link sent to <span className="font-medium">{email}</span>. Check your inbox.
+        </span>
+      ) : (
+        <>
+          <span>
+            Please verify your email <span className="font-medium">({email})</span> to secure your account.
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleResend()}
+            disabled={state === "sending"}
+            className="font-semibold text-primary hover:underline disabled:opacity-60"
+          >
+            {state === "sending" ? "Sending…" : "Resend email"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }

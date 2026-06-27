@@ -33,6 +33,8 @@ export {
   SignupView,
   ForgotPasswordView,
   ResetPasswordView,
+  VerifyEmailView,
+  EmailVerificationBanner,
   SIGNUPS_ENABLED,
   type AuthSubmitResult,
 } from "./auth-form";

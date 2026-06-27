@@ -7,7 +7,7 @@ import { api, ApiError, SESSION_COOKIE } from './api'
 
 export { SESSION_COOKIE }
 
-export type AuthUser = { id: string; name: string; email: string }
+export type AuthUser = { id: string; name: string; email: string; email_verified: boolean }
 
 // Matches the server's session TTL (auth.rs SESSION_TTL_MS). The cookie may outlive the server session
 // by milliseconds of clock skew — harmless: the backend 401s and the auth gate redirects to /login.
@@ -116,5 +116,38 @@ export const confirmPasswordResetFn = createServerFn({ method: 'POST' })
     } catch (e) {
       // 400 on an invalid/expired/used token or a too-short password.
       return { ok: false, error: e instanceof Error ? e.message : 'Could not reset your password.' }
+    }
+  })
+
+export const requestEmailVerificationFn = createServerFn({ method: 'POST' })
+  .validator((d: { email: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    // Enumeration-safe like the reset request: the backend always 200s, and we swallow transport errors
+    // so the UI shows the same result regardless of whether the address has an unverified account.
+    try {
+      await api('/api/auth/email-verification/request', {
+        method: 'POST',
+        auth: false,
+        body: { email: data.email },
+      })
+    } catch {
+      // ignore — never reveal request success/failure to the client
+    }
+    return { ok: true }
+  })
+
+export const confirmEmailVerificationFn = createServerFn({ method: 'POST' })
+  .validator((d: { token: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await api('/api/auth/email-verification/confirm', {
+        method: 'POST',
+        auth: false,
+        body: { token: data.token },
+      })
+      return { ok: true }
+    } catch (e) {
+      // 400 on an invalid/expired/used token.
+      return { ok: false, error: e instanceof Error ? e.message : 'Could not verify your email.' }
     }
   })

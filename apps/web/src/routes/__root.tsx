@@ -10,17 +10,17 @@ import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { AppShell, themeScript, useChromeSearch } from '@vegify/ui'
+import { AppShell, EmailVerificationBanner, themeScript, useChromeSearch } from '@vegify/ui'
 
 import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
-import { fetchUser, logoutFn } from '../auth'
+import { fetchUser, logoutFn, requestEmailVerificationFn } from '../auth'
 import { initClientLogging } from '../client-log'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
 // Accounts are required: every page is gated except these. Login/signup render bare (no chrome).
-const PUBLIC_PATHS = new Set(['/login', '/signup', '/forgot', '/reset'])
+const PUBLIC_PATHS = new Set(['/login', '/signup', '/forgot', '/reset', '/verify'])
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
@@ -118,6 +118,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               await router.navigate({ to: '/login' })
             }}
           >
+            {user && !user.email_verified ? (
+              <EmailVerificationBanner
+                email={user.email}
+                onResend={async () => {
+                  await requestEmailVerificationFn({ data: { email: user.email } })
+                }}
+              />
+            ) : null}
             {query ? (
               <SearchOverlay query={query} LinkComponent={LinkAdapter} />
             ) : (
