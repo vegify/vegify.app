@@ -123,6 +123,14 @@ export class WebStartStack extends Stack {
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
+        // Apple App Site Association (and any future /.well-known/*) — static, from S3, uncached so a
+        // Team-ID fix or rotation goes live immediately. Lets macOS Password AutoFill associate the
+        // desktop app with vegify.app (webcredentials).
+        "/.well-known/*": {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        },
       },
     });
 

@@ -180,6 +180,7 @@ jobs:
       - name: Build the deployable web bundle (validates against the just-built server)
         env:
           VITE_CLIENT_LOG_URL: /__ingest
+          VEGIFY_APPLE_TEAM_ID: ${{ secrets.VEGIFY_APPLE_TEAM_ID }}
         run: pnpm --filter web build:aws
       - uses: actions/upload-artifact@v4
         with:
