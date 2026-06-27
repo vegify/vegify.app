@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/vegify/vegify.app/compare/v0.2.1...v0.2.2) (2026-06-27)
+
+
+### Bug Fixes
+
+* **desktop:** resolve the on-device DB path at runtime so shipped builds launch ([159ea15](https://github.com/vegify/vegify.app/commit/159ea15facd4061cd1f6197f6deff2da85d13e76))
+
 ## [0.2.1](https://github.com/vegify/vegify.app/compare/v0.2.0...v0.2.1) (2026-06-27)
 
 
