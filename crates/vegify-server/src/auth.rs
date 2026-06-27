@@ -19,6 +19,7 @@ use crate::error::AppError;
 
 const SESSION_TTL_MS: i64 = 1000 * 60 * 60 * 24 * 30; // 30 days
 const RESET_TTL_MS: i64 = 1000 * 60 * 60; // 1 hour — password-reset links are short-lived
+const EMAIL_VERIFY_TTL_MS: i64 = 1000 * 60 * 60 * 24; // 24 hours — verification links live longer than resets
 
 /// The signed-in user — the `{id, name, email}` the auth routes return, and the viewer the content
 /// gates scope to. Serializes with bare field names (matching the web's response).
@@ -27,6 +28,9 @@ pub struct User {
     pub id: String,
     pub name: String,
     pub email: String,
+    /// Whether `users.email_verified_at` is set — surfaced to the clients so they can prompt for
+    /// verification (and gate verified-only actions later) without a second round trip.
+    pub email_verified: bool,
 }
 
 fn now_ms() -> i64 {
@@ -80,24 +84,23 @@ pub fn create_user(conn: &Connection, name: &str, email: &str, password: &str) -
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
         params![id, name, email, hash, now],
     )?;
-    Ok(User { id, name: name.to_string(), email })
+    Ok(User { id, name: name.to_string(), email, email_verified: false })
 }
 
 /// Verify credentials. Returns the user on success, None otherwise. Timing-equalized: exactly one
 /// argon2 verify per path (the real hash for a known account, a dummy otherwise).
 pub fn authenticate(conn: &Connection, email: &str, password: &str) -> Result<Option<User>, AppError> {
     let email = normalize_email(email);
-    let row: Option<(String, String, String, Option<String>)> = conn
+    let row: Option<(String, String, String, Option<String>, Option<i64>)> = conn
         .query_row(
-            "SELECT id, name, email, password_hash FROM users WHERE email = ?1",
+            "SELECT id, name, email, password_hash, email_verified_at FROM users WHERE email = ?1",
             [&email],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
     match row {
-        Some((id, name, email, Some(hash))) => {
-            Ok(verify_password(&hash, password).then_some(User { id, name, email }))
-        }
+        Some((id, name, email, Some(hash), verified_at)) => Ok(verify_password(&hash, password)
+            .then_some(User { id, name, email, email_verified: verified_at.is_some() })),
         _ => {
             // unknown email or an account with no password: burn the same time, reveal nothing
             verify_password(dummy_hash(), password);
@@ -138,9 +141,16 @@ pub fn validate_session(conn: &Connection, token: &str) -> Result<Option<User>, 
     let Some(uid) = uid else { return Ok(None) };
     let user = conn
         .query_row(
-            "SELECT id, name, email FROM users WHERE id = ?1",
+            "SELECT id, name, email, email_verified_at FROM users WHERE id = ?1",
             [&uid],
-            |r| Ok(User { id: r.get(0)?, name: r.get(1)?, email: r.get(2)? }),
+            |r| {
+                Ok(User {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    email: r.get(2)?,
+                    email_verified: r.get::<_, Option<i64>>(3)?.is_some(),
+                })
+            },
         )
         .optional()?;
     Ok(user)
@@ -240,6 +250,65 @@ pub fn consume_password_reset(conn: &Connection, token: &str, new_password: &str
     Ok(())
 }
 
+/// Mint a single-use email-verification token for the account with this email, if one exists and is not
+/// already verified. Returns `(name, raw_token)` for the verification link, or None (no such account, or
+/// the email is already verified). The request endpoint always 200s, so this never reveals registration
+/// state. Only the sha256 hash of the token is stored, like sessions and reset tokens.
+pub fn create_email_verification(
+    conn: &Connection,
+    email: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let email = normalize_email(email);
+    let row: Option<(String, String, Option<i64>)> = conn
+        .query_row(
+            "SELECT id, name, email_verified_at FROM users WHERE email = ?1",
+            [&email],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((user_id, name, verified_at)) = row else { return Ok(None) };
+    if verified_at.is_some() {
+        return Ok(None); // already verified — nothing to send
+    }
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO email_verification_tokens(id, user_id, hashed_token, expires_at, used_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5)",
+        params![vegify_core::new_id(), user_id, token_hash(&token), now + EMAIL_VERIFY_TTL_MS, now],
+    )?;
+    Ok(Some((name, token)))
+}
+
+/// Consume an email-verification token: stamp `users.email_verified_at` and mark every pending token for
+/// the account used (strictly single-use). Rejects an unknown, expired, or already-used token with a
+/// generic 400. Unlike a password reset this does NOT touch sessions — verifying shouldn't sign you out.
+pub fn consume_email_verification(conn: &Connection, token: &str) -> Result<(), AppError> {
+    let now = now_ms();
+    let user_id: Option<String> = conn
+        .query_row(
+            "SELECT user_id FROM email_verification_tokens
+             WHERE hashed_token = ?1 AND used_at IS NULL AND expires_at > ?2",
+            params![token_hash(token), now],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(user_id) = user_id else {
+        return Err(AppError::BadRequest("This verification link is invalid or has expired.".into()));
+    };
+    conn.execute(
+        "UPDATE users SET email_verified_at = ?2, updated_at = ?2 WHERE id = ?1",
+        params![user_id, now],
+    )?;
+    conn.execute(
+        "UPDATE email_verification_tokens SET used_at = ?2, updated_at = ?2 WHERE user_id = ?1 AND used_at IS NULL",
+        params![user_id, now],
+    )?;
+    Ok(())
+}
+
 /// Pull the bearer token out of an Authorization header (case-insensitive `Bearer `, then trimmed).
 pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let h = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
@@ -260,6 +329,9 @@ mod reset_tests {
              CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, hashed_token TEXT NOT NULL UNIQUE,
                 expires_at INTEGER NOT NULL, created_at INTEGER, updated_at INTEGER);
              CREATE TABLE password_reset_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                hashed_token TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, used_at INTEGER,
+                created_at INTEGER, updated_at INTEGER);
+             CREATE TABLE email_verification_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                 hashed_token TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, used_at INTEGER,
                 created_at INTEGER, updated_at INTEGER);",
         )
@@ -292,5 +364,28 @@ mod reset_tests {
         // A new token still requires an 8+ char password.
         let (_, t2) = create_password_reset(&conn, "user@example.com").unwrap().unwrap();
         assert!(consume_password_reset(&conn, &t2, "short").is_err());
+    }
+
+    #[test]
+    fn email_verification_round_trip() {
+        let conn = test_conn();
+        let user = create_user(&conn, "Test User", "user@example.com", "a-password").unwrap();
+        assert!(!user.email_verified, "a fresh account starts unverified");
+
+        // Unknown email mints nothing (enumeration-safe).
+        assert!(create_email_verification(&conn, "nobody@example.com").unwrap().is_none());
+
+        // Known, unverified email mints a token (case/space-insensitive) and returns the name.
+        let (name, token) = create_email_verification(&conn, "  User@Example.com ").unwrap().unwrap();
+        assert_eq!(name, "Test User");
+
+        // Consuming it stamps email_verified_at — a fresh session now reports verified.
+        consume_email_verification(&conn, &token).unwrap();
+        let session = create_session(&conn, &user.id).unwrap();
+        assert!(validate_session(&conn, &session).unwrap().unwrap().email_verified);
+
+        // The link is single-use, and an already-verified account mints no further tokens.
+        assert!(consume_email_verification(&conn, &token).is_err());
+        assert!(create_email_verification(&conn, "user@example.com").unwrap().is_none());
     }
 }

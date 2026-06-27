@@ -122,6 +122,7 @@ async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> 
     if password.chars().count() < 8 {
         return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
     }
+    let verify_email = email.clone();
     let out = db(&state, move |conn| {
         if auth::email_exists(conn, &email)? {
             return Err(AppError::Conflict("An account with that email already exists.".into()));
@@ -132,6 +133,14 @@ async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> 
         Ok(json!({ "token": token, "user": user }))
     })
     .await?;
+    // New account → send a verification email, best-effort and outside the blocking closure (mirrors the
+    // reset send). A second DB hit mints the token; signup already succeeded, so a send failure only logs.
+    let to = verify_email.clone();
+    if let Some((name, token)) =
+        db(&state, move |conn| auth::create_email_verification(conn, &verify_email)).await?
+    {
+        email::send_email_verification(&to, &name, &token).await;
+    }
     Ok(Json(out))
 }
 
@@ -210,6 +219,44 @@ async fn confirm_password_reset(
     }
     db(&state, move |conn| auth::consume_password_reset(conn, &token, &password)).await?;
     tracing::info!("password reset completed");
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Begin (or resend) email verification: mint a token if the email matches an unverified account, and
+/// email the link. ALWAYS 200 — like the reset request, the response never reveals registration state.
+async fn request_email_verification(
+    State(state): State<AppState>,
+    Json(body): Json<ResetRequestBody>,
+) -> Result<Json<Value>, AppError> {
+    let email = body.email.unwrap_or_default().trim().to_string();
+    if !email.is_empty() {
+        let to = email.clone();
+        if let Some((name, token)) =
+            db(&state, move |conn| auth::create_email_verification(conn, &email)).await?
+        {
+            email::send_email_verification(&to, &name, &token).await;
+        }
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct VerifyConfirmBody {
+    token: Option<String>,
+}
+
+/// Complete email verification: stamp the account verified and burn the token. 400 on a
+/// missing/invalid/expired/used token.
+async fn confirm_email_verification(
+    State(state): State<AppState>,
+    Json(body): Json<VerifyConfirmBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = body.token.unwrap_or_default();
+    if token.is_empty() {
+        return Err(AppError::BadRequest("A verification token is required.".into()));
+    }
+    db(&state, move |conn| auth::consume_email_verification(conn, &token)).await?;
+    tracing::info!("email verified");
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -462,7 +509,17 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER,
             updated_at INTEGER
         );
-        CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens(user_id);",
+        CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens(user_id);
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            hashed_token TEXT NOT NULL UNIQUE,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx ON email_verification_tokens(user_id);",
     )?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
@@ -494,6 +551,10 @@ mod migration_tests {
             .query_row("SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')", [], |r| r.get(0))
             .unwrap();
         assert!(prt_cols >= 6, "password_reset_tokens should be created with its columns");
+        let evt_cols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('email_verification_tokens')", [], |r| r.get(0))
+            .unwrap();
+        assert!(evt_cols >= 6, "email_verification_tokens should be created with its columns");
         let added: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -547,6 +608,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/session", get(session))
         .route("/api/auth/password-reset/request", post(request_password_reset))
         .route("/api/auth/password-reset/confirm", post(confirm_password_reset))
+        .route("/api/auth/email-verification/request", post(request_email_verification))
+        .route("/api/auth/email-verification/confirm", post(confirm_email_verification))
         .route(
             "/api/content/recipes",
             get(list_recipes).post(save_recipe).delete(delete_recipe),

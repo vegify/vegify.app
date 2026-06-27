@@ -33,6 +33,11 @@ fn reset_link(token: &str) -> String {
     format!("{}/reset?token={}", base.trim_end_matches('/'), token)
 }
 
+fn verify_link(token: &str) -> String {
+    let base = env::var("VEGIFY_PUBLIC_URL").unwrap_or_else(|_| "https://vegify.app".to_string());
+    format!("{}/verify?token={}", base.trim_end_matches('/'), token)
+}
+
 /// Send the password-reset email. Best-effort by design: a failure is logged but NOT propagated, because
 /// the request endpoint always returns 200 to avoid revealing whether an email is registered. Runs on
 /// the async side, outside the blocking DB closure.
@@ -56,6 +61,31 @@ pub async fn send_password_reset(to: &str, name: &str, token: &str) {
     match try_send(to, "Reset your Vegify password", &text, &html).await {
         Ok(()) => tracing::info!(to = %to, "password-reset email sent"),
         Err(e) => tracing::error!(to = %to, error = %e, "password-reset email send failed"),
+    }
+}
+
+/// Send the email-verification email (on signup, and on an explicit resend). Best-effort by design, like
+/// the reset send: a failure is logged but never propagated, so the request endpoint can always 200
+/// without revealing whether an email is registered.
+pub async fn send_email_verification(to: &str, name: &str, token: &str) {
+    let link = verify_link(token);
+    let text = format!(
+        "Hi {name},\n\nWelcome to Vegify! Confirm your email address by opening the link below within \
+         24 hours:\n\n{link}\n\nIf you didn't create a Vegify account, you can safely ignore this \
+         email.\n\n— Vegify"
+    );
+    let html = format!(
+        "<p>Hi {name},</p>\
+         <p>Welcome to Vegify! Confirm your email address using the button below within 24 hours:</p>\
+         <p><a href=\"{link}\" style=\"display:inline-block;padding:10px 16px;background:#16a34a;\
+         color:#ffffff;border-radius:8px;text-decoration:none\">Confirm your email</a></p>\
+         <p>Or paste this link into your browser:<br><a href=\"{link}\">{link}</a></p>\
+         <p>If you didn't create a Vegify account, you can safely ignore this email.</p>\
+         <p>— Vegify</p>"
+    );
+    match try_send(to, "Confirm your Vegify email", &text, &html).await {
+        Ok(()) => tracing::info!(to = %to, "email-verification email sent"),
+        Err(e) => tracing::error!(to = %to, error = %e, "email-verification email send failed"),
     }
 }
 
