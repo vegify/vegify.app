@@ -38,6 +38,10 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # PAT so the Cargo.lock-sync commit below is pushed as a real user, not github-actions[bot]:
+          # a bot-pushed PR HEAD makes GitHub gate the release PR's CI behind a manual approval.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
       - uses: googleapis/release-please-action@v5
         id: release
         with:
@@ -52,6 +56,7 @@ jobs:
       - name: Sync Cargo.lock to the release version
         if: ${{ steps.release.outputs.pr }}
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
           set -euo pipefail
@@ -62,8 +67,12 @@ jobs:
           VER="$version" perl -0pi -e 's/(name = "vegify-server"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
           VER="$version" perl -0pi -e 's/(name = "app"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
           if git diff --quiet -- Cargo.lock; then echo "Cargo.lock already in sync at $version"; exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Author as the PAT user (not github-actions[bot]) — gh reads GH_TOKEN (the PAT) above. With
+          # the PAT checkout, the push below is the PAT user's too, so the PR's CI runs without approval.
+          login=$(gh api user --jq '.login')
+          uid=$(gh api user --jq '.id')
+          git config user.name "$login"
+          git config user.email "${uid}+${login}@users.noreply.github.com"
           git add Cargo.lock
           git commit -m "chore: sync Cargo.lock to $version"
           git push origin "HEAD:$PR_BRANCH"
@@ -103,7 +112,19 @@ jobs:
             exit 0
           fi
           echo "Auto-merging release PR #$PR_NUMBER"
-          gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"
+          # The PR's required checks (CodeQL, ci) may still be running when this step fires; an
+          # immediate --squash merge then errors with "Pull Request is not mergeable". Retry until
+          # the checks pass (or give up), so a slow check doesn't strand the release.
+          for i in $(seq 1 30); do
+            if gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"; then
+              echo "merged release PR #$PR_NUMBER"
+              exit 0
+            fi
+            echo "PR #$PR_NUMBER not mergeable yet (attempt $i) — waiting for required checks; retry in 20s…"
+            sleep 20
+          done
+          echo "::error::release PR #$PR_NUMBER never became mergeable"
+          exit 1
 
   # ── Build + test gate ───────────────────────────────────────────────────────────────────────────
   # build-server is the anchor: it resolves the tag, gates the whole orchestration, and (for the
