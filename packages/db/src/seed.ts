@@ -28,7 +28,7 @@ async function main() {
   const [john] = await db
     .insert(users)
     .values({
-      name: "John",
+      name: "Dev User",
       email: "dev@example.com",
       passwordHash: await hashPassword("dev-password"),
     })

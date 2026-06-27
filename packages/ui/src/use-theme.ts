@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * Theme system (the example.com pattern, implemented directly rather than via next-themes —
+ * Theme system (implemented directly rather than via next-themes —
  * which doesn't integrate cleanly with TanStack Start SSR). System-aware: it follows the OS AND
  * reacts to live appearance changes (matchMedia "change" listener), with a persisted light/dark
  * override. The `.dark` class on <html> is the target (matches @vegify/tokens).

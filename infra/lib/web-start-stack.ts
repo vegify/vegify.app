@@ -13,24 +13,24 @@ import type { Construct } from "constructs";
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const webStart = path.join(repoRoot, "apps/web");
 
-// The standing Axum backend's public origin — the web SSR shell calls it for ALL auth + content
-// (P4: web-SSR-calls-Axum). Stable CloudFront domain (matches the desktop's VEGIFY_AUTH_URL default).
-const VEGIFY_API_URL = "https://EXAMPLEDISTAPI.cloudfront.net";
-
-// The browser-log ingestion Lambda's Function URL host (VegifyClientLogs). The client beacons a
-// SAME-ORIGIN POST to /__ingest on this distribution, which forwards here — first-party, so there's
-// no CORS preflight AND ad/tracking blockers don't silently drop it (a raw cross-origin lambda-url
-// telemetry beacon gets eaten by uBlock / Firefox tracking protection). Stable host, hardcoded like
-// VEGIFY_API_URL above; if VegifyClientLogs is ever recreated, update this.
-const INGEST_ORIGIN = "EXAMPLEINGESTLAMBDAURLID.lambda-url.us-east-1.on.aws";
-
-// Custom domain: the apex + www both serve this distribution. DNS is our Route53 zone (ZEXAMPLE00000000);
-// the cert is the already-ISSUED us-east-1 `*.vegify.app` cert whose SANs include the apex + www
-// (reused by ARN rather than minted here — it covers apex/www/prod/staging/dev). CloudFront requires
-// the cert in us-east-1, which this stack is (CDK_DEFAULT_REGION=us-east-1).
-const DOMAIN_NAMES = ["vegify.app", "www.vegify.app"];
-const HOSTED_ZONE_ID = "ZEXAMPLE00000000";
-const CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000";
+// Deployment-specific identifiers come from the environment (CI injects them from repository
+// secrets) so the open-source tree carries no account-specific values. The fallbacks are inert
+// placeholders that let a fresh `cdk synth` succeed; real deploys set the env.
+//
+//   VEGIFY_API_URL        — the standing Axum backend's public origin; the SSR shell calls it for
+//                           ALL auth + content (P4: web-SSR-calls-Axum).
+//   VEGIFY_INGEST_ORIGIN  — the browser-log Lambda's Function URL host (VegifyClientLogs); the client
+//                           beacons a SAME-ORIGIN POST to /__ingest, forwarded here first-party so ad/
+//                           tracking blockers don't eat it (a raw cross-origin beacon gets dropped).
+//   VEGIFY_DOMAIN_NAMES / _HOSTED_ZONE_ID / _CERT_ARN — custom-domain wiring; the cert must be in
+//                           us-east-1 (CloudFront requirement), which this stack is.
+const VEGIFY_API_URL = process.env.VEGIFY_API_URL ?? "https://api.example.com";
+const INGEST_ORIGIN = process.env.VEGIFY_INGEST_ORIGIN ?? "ingest.example.com";
+const DOMAIN_NAMES = (process.env.VEGIFY_DOMAIN_NAMES ?? "example.com,www.example.com").split(",");
+const HOSTED_ZONE_ID = process.env.VEGIFY_HOSTED_ZONE_ID ?? "ZEXAMPLE00000000";
+const CERTIFICATE_ARN =
+  process.env.VEGIFY_CERT_ARN ??
+  "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000";
 
 /**
  * web-start — a STATELESS SSR shell (P4: web-SSR-calls-Axum). It holds NO database: TanStack Start's
@@ -90,7 +90,7 @@ export class WebStartStack extends Stack {
 
     const zone = route53.HostedZone.fromHostedZoneAttributes(this, "Zone", {
       hostedZoneId: HOSTED_ZONE_ID,
-      zoneName: "vegify.app",
+      zoneName: DOMAIN_NAMES[0],
     });
     const certificate = acm.Certificate.fromCertificateArn(this, "Cert", CERTIFICATE_ARN);
 
@@ -134,7 +134,7 @@ export class WebStartStack extends Stack {
     new route53.AaaaRecord(this, "WwwAaaa", { zone, recordName: "www", target: aliasTarget });
 
     new CfnOutput(this, "Url", { value: `https://${distribution.distributionDomainName}` });
-    new CfnOutput(this, "CustomDomain", { value: "https://vegify.app" });
+    new CfnOutput(this, "CustomDomain", { value: `https://${DOMAIN_NAMES[0]}` });
     new CfnOutput(this, "FunctionUrl", { value: fnUrl.url });
   }
 }

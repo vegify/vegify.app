@@ -102,12 +102,14 @@ struct AuthErrorBody {
 const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
 const KEYCHAIN_ACCOUNT: &str = "session";
 
-/// Base URL of the standing backend (vegify-server on EC2) that owns auth + the content API. Override
-/// with VEGIFY_AUTH_URL (dev → a local `bun serve-bun.mjs` or a local `vegify-server`); default = the
-/// deployed VegifyServer CloudFront origin.
+/// Base URL of the standing backend (vegify-server on EC2) that owns auth + the content API. Runtime
+/// `VEGIFY_AUTH_URL` wins (dev → a local `bun serve-bun.mjs` or a local `vegify-server`). Otherwise the
+/// release backend is baked at BUILD time from `VEGIFY_API_URL` (CI sets it on the desktop build) so the
+/// open-source tree carries no deployment host; an inert placeholder stands in when it's unset.
 fn auth_base_url() -> String {
-    std::env::var("VEGIFY_AUTH_URL")
-        .unwrap_or_else(|_| "https://EXAMPLEDISTAPI.cloudfront.net".to_string())
+    std::env::var("VEGIFY_AUTH_URL").unwrap_or_else(|_| {
+        option_env!("VEGIFY_API_URL").unwrap_or("https://api.example.com").to_string()
+    })
 }
 
 /// The `/ws` WebSocket URL derived from the auth base (https→wss, http→ws). Pushed change signals arrive

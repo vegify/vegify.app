@@ -8,9 +8,9 @@ name: release
 #       publish-web ∥ publish-desktop
 #
 # web/desktop build AFTER the server so they validate against current types; the server deploys before
-# the clients that depend on it; desktop is signed + notarized with the Apple creds REUSED from
-# johncarmack1984/lux (your-org/apple-signing in Secrets Manager). A normal push to main only runs
-# release-please (no deploy); ci.yml handles build+test for pushes/PRs.
+# the clients that depend on it; desktop is signed + notarized with an Apple Developer ID cert + ASC API
+# key stored in Secrets Manager (id via the APPLE_SIGNING_SECRET_ID secret). A normal push to main only
+# runs release-please (no deploy); ci.yml handles build+test for pushes/PRs.
 on:
   push:
     branches: [main]
@@ -260,7 +260,7 @@ jobs:
           path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
       - name: Deploy the server
         env:
@@ -312,11 +312,17 @@ jobs:
           path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/vegify-github-deploy
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
       - name: Publish the web shell
         env:
           ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+          # Deployment-specific identifiers (kept out of the open-source tree) — see web-start-stack.ts.
+          VEGIFY_API_URL: ${{ secrets.VEGIFY_API_URL }}
+          VEGIFY_INGEST_ORIGIN: ${{ secrets.VEGIFY_INGEST_ORIGIN }}
+          VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
+          VEGIFY_HOSTED_ZONE_ID: ${{ secrets.VEGIFY_HOSTED_ZONE_ID }}
+          VEGIFY_CERT_ARN: ${{ secrets.VEGIFY_CERT_ARN }}
         run: |
           pnpm --filter @vegify/infra exec cdk deploy VegifyWebStart VegifyClientLogs \
             --require-approval never
@@ -347,15 +353,17 @@ jobs:
       - run: pnpm --filter @vegify/tokens build
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/vegify-release-signing
+          role-to-assume: ${{ secrets.AWS_RELEASE_SIGNING_ROLE_ARN }}
           aws-region: us-west-1
-      - name: Load the Apple signing secret (REUSED from your-org/apple-signing)
-        # JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
-        # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID
-        # cert + ASC API key are Apple-account-wide, so Vegify reuses lux's secret verbatim.
+      - name: Load the Apple signing secret
+        # Secrets Manager JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
+        # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID cert
+        # + ASC API key are Apple-account-wide; the secret's id is supplied via APPLE_SIGNING_SECRET_ID.
+        env:
+          APPLE_SIGNING_SECRET_ID: ${{ secrets.APPLE_SIGNING_SECRET_ID }}
         run: |
           set -euo pipefail
-          s=$(aws secretsmanager get-secret-value --secret-id your-org/apple-signing --query SecretString --output text)
+          s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
           echo "::add-mask::$(printf '%s' "$s" | jq -r '.certificate_password')"
           {
             echo "APPLE_CERTIFICATE=$(printf '%s' "$s" | jq -r '.certificate')"
@@ -370,6 +378,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the binary via option_env! (apps/desktop/.../data.rs auth_base_url) so the
+          # shipped app points at the real backend without the host living in the source tree.
+          VEGIFY_API_URL: ${{ secrets.VEGIFY_API_URL }}
         with:
           projectPath: apps/desktop
           tagName: ${{ needs.build-server.outputs.tag }}

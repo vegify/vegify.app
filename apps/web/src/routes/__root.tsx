@@ -97,7 +97,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
-        {/* No-FOUC: set the theme class before first paint (the example.com pattern). */}
+        {/* No-FOUC: set the theme class before first paint. */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
