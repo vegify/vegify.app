@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Associated Domains → macOS Password AutoFill in the WKWebView. With `webcredentials:vegify.app`
+    declared here AND the app listed in https://vegify.app/.well-known/apple-app-site-association, the
+    OS associates the app with vegify.app's saved logins, so the system Keychain and 1Password offer
+    to fill the shared auth forms (which already carry autocomplete="email"/"current-password"/
+    "new-password"). Validated at runtime against the AASA — Developer ID signing needs no provisioning
+    profile for webcredentials.
+  -->
+  <key>com.apple.developer.associated-domains</key>
+  <array>
+    <string>webcredentials:vegify.app</string>
+  </array>
+</dict>
+</plist>
