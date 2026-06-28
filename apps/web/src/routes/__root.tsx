@@ -72,7 +72,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     beforeLoad: async ({ location }) => {
       // The auth gate is a plain per-navigation fetch (NOT a TanStack Query): caching the user in the
       // query cache would risk a stale-login gate. Content reads go through Query; this stays direct.
-      const user = await fetchUser()
+      // Graceful degradation: fetchUser returns null on a clean 401, so a throw here means the backend is
+      // unreachable (e.g. the brief window during a backend redeploy). Don't take the public pages down
+      // with it — render the landing and auth forms anonymously; only gated pages (which we can't serve
+      // without knowing the user) fall through to the retry boundary.
+      const user = await fetchUser().catch((e) => {
+        if (PUBLIC_PATHS.has(location.pathname)) return null
+        throw e
+      })
       if (!user && !PUBLIC_PATHS.has(location.pathname))
         throw redirect({ to: '/login' })
       if (user && BOUNCE_WHEN_AUTHED.has(location.pathname))
