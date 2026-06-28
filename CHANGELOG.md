@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/vegify/vegify.app/compare/v0.3.2...v0.3.3) (2026-06-28)
+
+
+### Bug Fixes
+
+* **ci:** exclude the release version-bump commit from the server-change diff ([e644ed1](https://github.com/vegify/vegify.app/commit/e644ed156f684a13ffcc4a39edb37b8f85f09359))
+* **web:** stop mirroring client logs to the production console ([1352991](https://github.com/vegify/vegify.app/commit/1352991860fc339060f0c6e305dd9ea631a1baa3))
+
 ## [0.3.2](https://github.com/vegify/vegify.app/compare/v0.3.1...v0.3.2) (2026-06-28)
 
 
