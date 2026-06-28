@@ -1,6 +1,6 @@
 [package]
 name = "vegify-server"
-version = "0.3.2" # x-release-please-version
+version = "0.3.3" # x-release-please-version
 edition = "2021"
 description = "Vegify standing backend — Axum over SQLite-WAL, serving the SAME /api/auth + /api/content contract the clients already speak. Owns the single source-of-truth DB; consumes vegify-core."
 
