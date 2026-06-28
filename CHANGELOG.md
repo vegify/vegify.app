@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/vegify/vegify.app/compare/v0.3.0...v0.3.1) (2026-06-28)
+
+
+### Bug Fixes
+
+* **web:** serve robots.txt and sitemap.xml from S3, not the gated SSR Lambda ([bb3d01b](https://github.com/vegify/vegify.app/commit/bb3d01bd2d87c24d73f3e80f3220ce3d8c2781fd))
+
 ## [0.3.0](https://github.com/vegify/vegify.app/compare/v0.2.4...v0.3.0) (2026-06-28)
 
 
