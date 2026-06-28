@@ -126,6 +126,57 @@ jobs:
           echo "::error::release PR #$PR_NUMBER never became mergeable"
           exit 1
 
+  # ── Did this release touch the server? ──────────────────────────────────────────────────────────
+  # The web SSR calls the backend on every page, and deploying the backend REPLACES the single t4g.nano
+  # instance (a brief 504 window — the EBS data volume is force-detached + re-attached). So deploy the
+  # server only when the release actually changed it; a web/desktop/docs-only release skips deploy-server
+  # entirely → no instance replacement, no blip. The build jobs still run (they validate, and build-server
+  # produces the asset cdk synth needs for every stack) — only the server *deploy* is gated. See docs/deploys.md.
+  changes:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      server: ${{ steps.diff.outputs.server }}
+    steps:
+      - id: tag
+        run: echo "tag=${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0 # full history + tags, so we can diff this release tag against the previous one
+      - id: diff
+        run: |
+          set -euo pipefail
+          # A manual (re)deploy is explicit — always deploy the server (this is the recovery path).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "manual dispatch → deploy the server"
+            echo "server=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          TAG="${{ steps.tag.outputs.tag }}"
+          PREV="$(git tag --sort=-v:refname | grep -vFx "$TAG" | head -n1 || true)"
+          if [ -z "$PREV" ] || [ "$PREV" = "$TAG" ]; then
+            echo "no previous release tag → deploy the server"
+            echo "server=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Server-relevant paths: the Rust crates (the binary), packages/db (feeds the seed baked into the
+          # instance user-data), the server + VPC CDK stacks and the app wiring, and the Cargo manifests.
+          # Deliberately NOT infra/lib/web-start-stack.ts — that is WEB infra (publish-web handles it), and
+          # is exactly the robots.txt-style release that must NOT redeploy the backend.
+          echo "comparing $PREV..$TAG for server-relevant changes"
+          if git diff --quiet "$PREV" "$TAG" -- \
+            crates/ packages/db/ \
+            infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/bin/ \
+            Cargo.toml Cargo.lock; then
+            echo "server unchanged → skipping deploy-server (no backend blip)"
+            echo "server=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "server changed → deploy-server will run"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Build + test gate ───────────────────────────────────────────────────────────────────────────
   # build-server is the anchor: it resolves the tag, gates the whole orchestration, and (for the
   # cross-musl deployable) carries PR#1's rust-cache + prebuilt cross.
@@ -253,8 +304,11 @@ jobs:
 
   # ── Deploy: server first, then wait for it to be live ───────────────────────────────────────────
   deploy-server:
-    needs: [build-server, build-web, build-desktop]
-    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' }}
+    needs: [build-server, build-web, build-desktop, changes]
+    # Build gate unchanged (all three green before we touch prod) PLUS the server actually changed. The
+    # check is `!= 'false'` (not `== 'true'`) so a failed/empty detection biases to deploy: a needless blip
+    # is far cheaper than leaving the backend out of sync with a release that did change it.
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && needs.changes.outputs.server != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # AWS OIDC
@@ -307,8 +361,12 @@ jobs:
 
   # ── Publish the clients in parallel, now that the server they depend on is live ──────────────────
   publish-web:
-    needs: [build-server, deploy-server]
-    if: ${{ always() && needs.deploy-server.result == 'success' }}
+    needs: [build-server, build-web, build-desktop, deploy-server]
+    # Run when all builds are green AND the server is current: deploy-server SUCCEEDED (server changed +
+    # deployed) OR was SKIPPED (no server change — the existing backend is already current). A failed or
+    # cancelled deploy-server blocks the web publish. Requiring all three builds green keeps the release
+    # all-or-nothing — a 'skipped' deploy-server must not let a half-built release slip through.
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -350,8 +408,9 @@ jobs:
             --require-approval never
 
   publish-desktop:
-    needs: [build-server, deploy-server]
-    if: ${{ always() && needs.deploy-server.result == 'success' }}
+    needs: [build-server, build-web, build-desktop, deploy-server]
+    # Same gate as publish-web: all builds green AND deploy-server succeeded-or-was-skipped (see there).
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') }}
     runs-on: macos-latest
     permissions:
       contents: write # attach the signed .dmg to the GitHub Release
