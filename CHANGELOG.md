@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/vegify/vegify.app/compare/v0.2.3...v0.2.4) (2026-06-28)
+
+
+### Bug Fixes
+
+* **desktop:** bootstrap the content schema on a fresh on-device DB ([b765f49](https://github.com/vegify/vegify.app/commit/b765f4982925c775163f1b20dabb8a8754f18d2e))
+
 ## [0.2.3](https://github.com/vegify/vegify.app/compare/v0.2.2...v0.2.3) (2026-06-28)
 
 
