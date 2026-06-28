@@ -24,8 +24,8 @@ import { initClientLogging } from '../client-log'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
-// Auth forms render bare (no chrome) and bounce logged-in users back to "/".
-const AUTH_PATHS = new Set([
+// Auth and token pages render bare (no app shell): the auth forms plus the email-link actions.
+const BARE_PATHS = new Set([
   '/login',
   '/signup',
   '/forgot',
@@ -35,7 +35,12 @@ const AUTH_PATHS = new Set([
 // Pages reachable without a session. "/" is the public marketing landing for logged-out
 // visitors (and crawlers) AND the app home for signed-in users — the index route branches on
 // `user` — so it is public but never redirected in either direction. Everything else is gated.
-const PUBLIC_PATHS = new Set(['/', ...AUTH_PATHS])
+const PUBLIC_PATHS = new Set(['/', ...BARE_PATHS])
+// Auth FORMS a signed-in user has no use for → bounce them to "/". Deliberately NOT /verify or
+// /reset: those consume a one-time token from an email link and must work even while signed in. (A
+// signed-in user who clicks a verification link would otherwise be redirected to "/" before the
+// token is consumed, so the email never gets marked verified and the banner never clears.)
+const BOUNCE_WHEN_AUTHED = new Set(['/login', '/signup', '/forgot'])
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -70,7 +75,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       const user = await fetchUser()
       if (!user && !PUBLIC_PATHS.has(location.pathname))
         throw redirect({ to: '/login' })
-      if (user && AUTH_PATHS.has(location.pathname)) throw redirect({ to: '/' })
+      if (user && BOUNCE_WHEN_AUTHED.has(location.pathname))
+        throw redirect({ to: '/' })
       return { user }
     },
     errorComponent: RootErrorBoundary,
@@ -109,7 +115,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const { search, setSearch, query } = useChromeSearch(pathname)
   // The app chrome is for signed-in users only. Logged-out "/" (the marketing landing) and the
   // auth forms render bare — they bring their own layout.
-  const showShell = !!user && !AUTH_PATHS.has(pathname)
+  const showShell = !!user && !BARE_PATHS.has(pathname)
 
   // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
   useEffect(() => {
