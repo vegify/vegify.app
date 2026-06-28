@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/vegify/vegify.app/compare/v0.2.2...v0.2.3) (2026-06-28)
+
+
+### Bug Fixes
+
+* **web:** serve apple-app-site-association as application/json ([2d810dd](https://github.com/vegify/vegify.app/commit/2d810dd373d2383057f2efd355b769e1ec60cf7f))
+
 ## [0.2.2](https://github.com/vegify/vegify.app/compare/v0.2.1...v0.2.2) (2026-06-27)
 
 
