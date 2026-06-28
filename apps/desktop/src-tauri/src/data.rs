@@ -459,6 +459,19 @@ fn init_meta_tables(conn: &Connection) -> Result<(), DataError> {
     Ok(())
 }
 
+/// The content tables the local cache holds (users/ingredients/recipes/amounts/ingredient_in_recipe/
+/// ingredient_nutrient/nutrients/…). Generated from the Drizzle dev DB into `schema.sql` and run
+/// idempotently on every open — every statement is `IF NOT EXISTS`, so it's a no-op once the tables
+/// exist — mirroring the server's own boot-time `ensure_schema`. Dev's `.data/vegify.db` already
+/// carries this schema (from `pnpm db:push`); the load-bearing case is a SHIPPED build's FRESH
+/// app-data DB, where WITHOUT this the first sign-in pull (`apply_pull` → vegify-core `do_save_*`)
+/// fails with "no such table". `schema_sql_matches_drizzle_dev_db` (below) guards `schema.sql` against
+/// drifting from Drizzle.
+fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
+    conn.execute_batch(include_str!("../schema.sql"))?;
+    Ok(())
+}
+
 /// Serialize a mutation input to its content-API JSON body (camelCase). Used to build an outbox payload.
 fn to_json<T: Serialize>(v: &T) -> Result<serde_json::Value, DataError> {
     serde_json::to_value(v).map_err(|e| DataError::Db(e.to_string()))
@@ -475,6 +488,7 @@ impl Db {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
             .ok();
         init_meta_tables(&conn)?;
+        ensure_content_schema(&conn)?;
         Ok(Self { conn: Mutex::new(conn), auth: Mutex::new(keychain_load()) })
     }
 
@@ -1545,5 +1559,93 @@ mod tests {
             .unwrap();
         assert_eq!(owned_after, owned_before, "the seed user's content now belongs to the server id");
         eprintln!("reconcile OK: email collision resolved, content re-pointed {seed_id} → {server_id}");
+    }
+
+    /// Drift guard: Drizzle (`.data/vegify.db` via `pnpm db:push`) is the content-schema source of
+    /// truth. Assert the embedded `schema.sql` is a faithful SUPERSET — every (table, column) the dev
+    /// DB has, a fresh DB built from `schema.sql` also has — so vegify-core's mutations (proven against
+    /// the dev DB by the tests above) hold on a shipped fresh DB too. Fails if the Drizzle schema
+    /// changes without `schema.sql` being regenerated.
+    #[test]
+    fn schema_sql_matches_drizzle_dev_db() {
+        use std::collections::BTreeSet;
+        fn table_columns(conn: &Connection) -> BTreeSet<String> {
+            let names: Vec<String> = conn
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' \
+                     AND name NOT LIKE 'sqlite_%' AND name <> '_outbox'",
+                )
+                .unwrap()
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            let mut cols = BTreeSet::new();
+            for t in names {
+                let mut q = conn.prepare(&format!("SELECT name FROM pragma_table_info('{t}')")).unwrap();
+                for c in q.query_map([], |r| r.get::<_, String>(0)).unwrap() {
+                    cols.insert(format!("{t}.{}", c.unwrap()));
+                }
+            }
+            cols
+        }
+
+        // Truth = the Drizzle dev DB. Copy to a temp file so the test never mutates the shared one.
+        let truth_path =
+            std::env::temp_dir().join(format!("vegify-schema-truth-{}.db", std::process::id()));
+        let _ = fs::remove_file(&truth_path);
+        fs::copy(crate::db_path(), &truth_path).expect("dev DB present — run `pnpm db:push`");
+        let truth_cols = table_columns(&Connection::open(&truth_path).unwrap());
+
+        // Candidate = a fresh in-memory DB built ONLY from the embedded schema.sql.
+        let fresh = Connection::open_in_memory().unwrap();
+        ensure_content_schema(&fresh).unwrap();
+        let fresh_cols = table_columns(&fresh);
+
+        let missing: Vec<_> = truth_cols.difference(&fresh_cols).collect();
+        assert!(
+            missing.is_empty(),
+            "schema.sql drifted from the Drizzle dev DB — regenerate it; missing: {missing:?}"
+        );
+        let _ = fs::remove_file(&truth_path);
+        eprintln!("schema.sql covers all {} dev-DB columns", truth_cols.len());
+    }
+
+    /// Reproduces + fixes the v0.2.x "can't be opened / no such table" crash: a SHIPPED fresh install
+    /// opens a brand-new app-data DB that never saw `pnpm db:push`. `Db::open` must create the content
+    /// schema so the first pull's per-row `do_save_ingredient` (exactly what `apply_pull` replays)
+    /// succeeds instead of erroring "no such table: ingredients".
+    #[test]
+    fn fresh_db_accepts_content_writes_without_dev_seed() {
+        let path = std::env::temp_dir().join(format!("vegify-fresh-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = Db::open(path.to_str().unwrap()).expect("open fresh app-data DB");
+        let conn = db.conn.lock().unwrap();
+        let input = SaveIngredientInput {
+            id: None,
+            visibility: Some(Visibility::Public),
+            name: "Rolled Oats".into(),
+            description: None,
+            price: None,
+            calories_per_100g: Some(389.0),
+            serving_grams: Some(40.0),
+            package_grams: Some(1000.0),
+            nutrients: vec![IngredientNutrientInput {
+                name: "Protein".into(),
+                amount_per_100g: 16.9,
+                unit: "g".into(),
+            }],
+        };
+        let id = do_save_ingredient(&conn, &input, None).expect("save into the freshly-created schema");
+        let name: String =
+            conn.query_row("SELECT name FROM ingredients WHERE id = ?1", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(name, "Rolled Oats");
+        // The on-demand catalog/amount rows landed too (find_or_create_nutrient / upsert_amount).
+        let nutrients: i64 = conn.query_row("SELECT count(*) FROM nutrients", [], |r| r.get(0)).unwrap();
+        let amounts: i64 = conn.query_row("SELECT count(*) FROM amounts", [], |r| r.get(0)).unwrap();
+        assert!(nutrients >= 1 && amounts >= 1, "nutrient + amount rows created on demand");
+        drop(conn);
+        let _ = fs::remove_file(&path);
+        eprintln!("fresh DB accepted a content write: ingredient {id}");
     }
 }
