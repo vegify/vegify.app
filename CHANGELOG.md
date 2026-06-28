@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/vegify/vegify.app/compare/v0.2.4...v0.3.0) (2026-06-28)
+
+
+### Features
+
+* **web:** public marketing landing at / with SEO and GEO surface ([b283c59](https://github.com/vegify/vegify.app/commit/b283c59c4219b1ed9b32a8ce3f995039151accc5))
+
 ## [0.2.4](https://github.com/vegify/vegify.app/compare/v0.2.3...v0.2.4) (2026-06-28)
 
 
