@@ -35,7 +35,7 @@ const net = new VpcStack(app, "VegifyVpc", { env });
 // backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle).
 new WebStartStack(app, "VegifyWebStart", { env, originSecret });
 
-// The standing Axum backend (P2): a t3.micro running vegify-server over SQLite-WAL + Litestream→S3,
+// The standing Axum backend (P2): a t4g.nano running vegify-server over SQLite-WAL + Litestream→S3,
 // fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
 new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 
