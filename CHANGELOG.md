@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/vegify/vegify.app/compare/v0.3.3...v0.3.4) (2026-06-28)
+
+
+### Bug Fixes
+
+* **server:** send transactional email from hello@ instead of no-reply@ ([93b10fe](https://github.com/vegify/vegify.app/commit/93b10fe99d652d82f811da0bb9b04798aecab89e))
+
 ## [0.3.3](https://github.com/vegify/vegify.app/compare/v0.3.2...v0.3.3) (2026-06-28)
 
 
