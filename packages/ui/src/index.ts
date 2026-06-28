@@ -39,6 +39,7 @@ export {
   type AuthSubmitResult,
 } from "./auth-form";
 export { VisibilityField, type Visibility } from "./visibility-field";
+export { LandingView } from "./landing";
 export {
   HomeView,
   RecipeListView,

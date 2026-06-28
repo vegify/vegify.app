@@ -1,3 +1,30 @@
-# https://www.robotstxt.org/robotstxt.html
+# robots.txt for vegify.app
+# Vegify is a public micronutrition tracker for plant-based cooking. The marketing
+# landing at / is indexable; the app itself lives behind /login and is gated.
+
 User-agent: *
-Disallow:
+Allow: /
+
+# Answer-engine / LLM crawlers are explicitly welcome (this is the GEO surface).
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+# AI *training* scrapers are allowed by default so the brand is known to LLMs.
+# To opt out of model training while keeping answer-engine visibility, change each
+# "Allow: /" in this block to "Disallow: /".
+User-agent: GPTBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://vegify.app/sitemap.xml
