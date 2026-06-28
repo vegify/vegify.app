@@ -161,12 +161,17 @@ jobs:
             echo "no previous release tag → deploy the server"
             echo "server=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          # Diff up to "$TAG^" — the PARENT of the release tag — NOT "$TAG" itself. The release tag is
+          # release-please's squash-merged version-bump commit, which edits crates/*/Cargo.toml + Cargo.lock
+          # on EVERY release; diffing up to $TAG therefore sees a "server change" every time (this exact
+          # false-positive redeployed the server on v0.3.2 for a web-only release). $TAG^ is the last real
+          # commit before the bump, so the version churn drops out and only genuine changes remain.
           # Server-relevant paths: the Rust crates (the binary), packages/db (feeds the seed baked into the
           # instance user-data), the server + VPC CDK stacks and the app wiring, and the Cargo manifests.
           # Deliberately NOT infra/lib/web-start-stack.ts — that is WEB infra (publish-web handles it), and
           # is exactly the robots.txt-style release that must NOT redeploy the backend.
-          echo "comparing $PREV..$TAG for server-relevant changes"
-          if git diff --quiet "$PREV" "$TAG" -- \
+          echo "comparing $PREV..$TAG^ (excludes the release version-bump commit) for server-relevant changes"
+          if git diff --quiet "$PREV" "$TAG^" -- \
             crates/ packages/db/ \
             infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/bin/ \
             Cargo.toml Cargo.lock; then
