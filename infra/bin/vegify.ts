@@ -5,6 +5,7 @@ import { WebStartStack } from "../lib/web-start-stack.js";
 import { ServerStack } from "../lib/server-stack.js";
 import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { CiStack } from "../lib/ci-stack.js";
+import { DnsStack } from "../lib/dns-stack.js";
 
 // Hosting decision (see infra/README "Hosting decision"): the bake-off winner is TanStack Start
 // (web-start); web-next is dropped. As of P4 (web-SSR-calls-Axum) the web is a STATELESS SSR shell —
@@ -51,3 +52,7 @@ new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret });
 
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it.
 new CiStack(app, "VegifyCi", { env, githubRepo: "vegify/vegify.app" });
+
+// DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's
+// Terraform so the domain is owned in this repo. Standing stack — deploy on demand, NOT in the cascade.
+new DnsStack(app, "VegifyDns", { env });
