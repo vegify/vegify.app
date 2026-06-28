@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/vegify/vegify.app/compare/v0.3.1...v0.3.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* **web:** keep public pages up when the backend is briefly unreachable ([f6b4260](https://github.com/vegify/vegify.app/commit/f6b4260cf67e13319f1bcd821646a110c9d04969))
+* **web:** let signed-in users complete email verification and password reset ([4447f56](https://github.com/vegify/vegify.app/commit/4447f5683bc2b2d4ec9153d0a92c41a5036eae21))
+
 ## [0.3.1](https://github.com/vegify/vegify.app/compare/v0.3.0...v0.3.1) (2026-06-28)
 
 
