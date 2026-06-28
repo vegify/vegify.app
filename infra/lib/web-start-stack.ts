@@ -94,6 +94,18 @@ export class WebStartStack extends Stack {
     });
     const certificate = acm.Certificate.fromCertificateArn(this, "Cert", CERTIFICATE_ARN);
 
+    // Force `Content-Type: application/json` on /.well-known/* responses. S3 stores the extensionless
+    // apple-app-site-association file as `binary/octet-stream`, but Apple's swcd requires
+    // `application/json` to accept a webcredentials association — without it macOS Password AutoFill
+    // never recognizes the domain (1Password offers nothing at the sign-in form). override=true so it
+    // replaces S3's default type. (The AASA is the only well-known file today; revisit if a non-JSON
+    // /.well-known/* file is ever added.)
+    const wellKnownJson = new cloudfront.ResponseHeadersPolicy(this, "WellKnownJson", {
+      customHeadersBehavior: {
+        customHeaders: [{ header: "content-type", value: "application/json", override: true }],
+      },
+    });
+
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       domainNames: DOMAIN_NAMES,
       certificate,
@@ -125,11 +137,13 @@ export class WebStartStack extends Stack {
         },
         // Apple App Site Association (and any future /.well-known/*) — static, from S3, uncached so a
         // Team-ID fix or rotation goes live immediately. Lets macOS Password AutoFill associate the
-        // desktop app with vegify.app (webcredentials).
+        // desktop app with vegify.app (webcredentials). The response-headers policy rewrites S3's
+        // binary/octet-stream to application/json (swcd requires it — see above).
         "/.well-known/*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          responseHeadersPolicy: wellKnownJson,
         },
       },
     });
