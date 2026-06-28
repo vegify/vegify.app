@@ -25,7 +25,7 @@ async fn client() -> &'static Client {
 }
 
 fn from_address() -> String {
-    env::var("VEGIFY_EMAIL_FROM").unwrap_or_else(|_| "Vegify <no-reply@vegify.app>".to_string())
+    env::var("VEGIFY_EMAIL_FROM").unwrap_or_else(|_| "Vegify <hello@vegify.app>".to_string())
 }
 
 fn reset_link(token: &str) -> String {
