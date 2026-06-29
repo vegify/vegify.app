@@ -42,9 +42,7 @@ Re-extract anytime: the font binaries live inside the .sketch zip under `fonts/`
    **Run the replacement across all pages, not "This page",** before judging anything as lost.
 2. **Instance layers are renamed** to their component's name (custom names like `field Copy 3`
    are gone) and some scaled instances are detached into frames/groups.
-3. Whether any override values were truly dropped is an empirical question: run the **Audit**
-   (read-only) mode of [`tools/figma-restore-overrides/`](../../tools/figma-restore-overrides/)
-   after the font replacement; only nodes still showing master defaults are Restore candidates.
+3. Whether any override values were truly dropped is an empirical question: it was audited (read-only) with the `figma-restore-overrides` Figma plugin (removed once the migration was done) after the font replacement; only nodes still showing master defaults were Restore candidates.
 
 Reference data: [text-overrides.md](text-overrides.md) (392 real-content text overrides across
 20 pages) + complete JSON dump alongside. Personas live as docs in [`../personas/`](../personas/).
