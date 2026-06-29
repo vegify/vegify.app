@@ -66,28 +66,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "app"
-version = "0.4.0"
-dependencies = [
- "dirs",
- "futures-util",
- "keyring",
- "rusqlite",
- "serde",
- "serde_json",
- "specta",
- "tauri",
- "tauri-build",
- "tauri-plugin-tracing",
- "tauri-typed-ipc",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "ureq",
- "vegify-core",
-]
-
-[[package]]
 name = "arc-swap"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5436,6 +5414,28 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "vegify"
+version = "0.4.0"
+dependencies = [
+ "dirs",
+ "futures-util",
+ "keyring",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "specta",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-tracing",
+ "tauri-typed-ipc",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "ureq",
+ "vegify-core",
+]
 
 [[package]]
 name = "vegify-core"

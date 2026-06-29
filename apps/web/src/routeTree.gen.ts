@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
@@ -32,6 +33,11 @@ const VerifyRoute = VerifyRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetRoute = ResetRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
   '/ingredients/new': typeof IngredientsNewRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
   '/ingredients/new': typeof IngredientsNewRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
   '/ingredients/new': typeof IngredientsNewRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/reset'
+    | '/settings'
     | '/signup'
     | '/verify'
     | '/ingredients/new'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/reset'
+    | '/settings'
     | '/signup'
     | '/verify'
     | '/ingredients/new'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/reset'
+    | '/settings'
     | '/signup'
     | '/verify'
     | '/ingredients/new'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
   ResetRoute: typeof ResetRoute
+  SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   VerifyRoute: typeof VerifyRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset': {
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
   ResetRoute: ResetRoute,
+  SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   VerifyRoute: VerifyRoute,
   IngredientsNewRoute: IngredientsNewRoute,
