@@ -50,8 +50,10 @@ new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 // wire the IngestUrl output into the web build as VITE_CLIENT_LOG_URL. See lib/client-logs-stack.ts.
 new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret });
 
-// CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it.
-new CiStack(app, "VegifyCi", { env, githubRepo: "vegify/vegify.app" });
+// CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it. The
+// repo for the OIDC trust comes from GITHUB_REPOSITORY (auto-set in Actions; falls back to vegify's only
+// for local hand-deploys), so a fork's CI works without editing this file.
+new CiStack(app, "VegifyCi", { env, githubRepo: process.env.GITHUB_REPOSITORY ?? "vegify/vegify.app" });
 
 // DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's
 // Terraform so the domain is owned in this repo. Standing stack — deploy on demand, NOT in the cascade.
