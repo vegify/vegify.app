@@ -70,6 +70,8 @@ cdk deploy VegifyWebStart VegifyClientLogs
 
 `cdk deploy VegifyEmail` creates an SES domain identity for your domain with **Easy DKIM** and a **custom MAIL FROM**, and writes the DKIM CNAMEs + MAIL FROM records into your zone. SES then verifies the domain by DNS (async, usually minutes — the deploy returns immediately).
 
+If you manage DNS outside CDK, set `VEGIFY_EMAIL_MANAGE_DNS=0` to create the identity **only** and publish the DKIM/MAIL FROM records yourself (also set `VEGIFY_MAIL_FROM_DOMAIN` to your chosen subdomain). This identity-only mode is how vegify itself runs — its records live in the `VegifyDns` stack, and its existing live identity was adopted into `VegifyEmail` via `cdk import` rather than recreated.
+
 Two records the stack deliberately does **not** manage (because the apex TXT usually carries other records too) — add them to your zone:
 
 - **Apex SPF** (TXT on the apex): `"v=spf1 include:amazonses.com ~all"`
