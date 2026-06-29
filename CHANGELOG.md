@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/vegify/vegify.app/compare/v0.5.1...v0.5.2) (2026-06-29)
+
+
+### Bug Fixes
+
+* make /&lt;username&gt; profile pages publicly viewable ([ae850bb](https://github.com/vegify/vegify.app/commit/ae850bbd14f980ae55fc08236abd94bb009adb53))
+
 ## [0.5.1](https://github.com/vegify/vegify.app/compare/v0.5.0...v0.5.1) (2026-06-29)
 
 
