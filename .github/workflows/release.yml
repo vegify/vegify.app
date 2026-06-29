@@ -65,7 +65,7 @@ jobs:
           git checkout "$PR_BRANCH"
           version=$(jq -r '."."' .release-please-manifest.json)
           VER="$version" perl -0pi -e 's/(name = "vegify-server"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
-          VER="$version" perl -0pi -e 's/(name = "app"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
+          VER="$version" perl -0pi -e 's/(name = "vegify"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
           if git diff --quiet -- Cargo.lock; then echo "Cargo.lock already in sync at $version"; exit 0; fi
           # Author as the PAT user (not github-actions[bot]) — gh reads GH_TOKEN (the PAT) above. With
           # the PAT checkout, the push below is the PAT user's too, so the PR's CI runs without approval.
@@ -111,19 +111,31 @@ jobs:
             echo "No open release PR to auto-merge."
             exit 0
           fi
-          echo "Auto-merging release PR #$PR_NUMBER"
-          # The PR's required checks (CodeQL, ci) may still be running when this step fires; an
-          # immediate --squash merge then errors with "Pull Request is not mergeable". Retry until
-          # the checks pass (or give up), so a slow check doesn't strand the release.
-          for i in $(seq 1 30); do
-            if gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"; then
-              echo "merged release PR #$PR_NUMBER"
-              exit 0
+          echo "Auto-merging release PR #$PR_NUMBER — gating on its checks first."
+          # Branch protection is NOT relied on, so an immediate `gh pr merge --squash` would ship a RED
+          # build (it once merged a release PR while its ci was still running). Wait for the PR's checks
+          # to finish and require they ALL pass. `gh pr checks --json` buckets each check as
+          # pass/fail/pending/skipping/cancel; read via `<<<` (not a pipe) so `set -o pipefail` doesn't
+          # trip on gh's non-zero exit while checks are pending/failing.
+          for i in $(seq 1 40); do
+            checks=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json bucket,name,state 2>/dev/null) || true
+            if [ -z "$checks" ]; then checks='[]'; fi
+            total=$(jq 'length' <<<"$checks")
+            if [ "$total" -eq 0 ]; then echo "no checks on #$PR_NUMBER yet ($i); waiting 15s…"; sleep 15; continue; fi
+            pending=$(jq '[.[] | select(.bucket=="pending")] | length' <<<"$checks")
+            if [ "$pending" -gt 0 ]; then echo "$pending/$total check(s) still running ($i)…"; sleep 20; continue; fi
+            bad=$(jq '[.[] | select(.bucket=="fail" or .bucket=="cancel")] | length' <<<"$checks")
+            if [ "$bad" -gt 0 ]; then
+              echo "::error::release PR #$PR_NUMBER has $bad failing check(s) — refusing to auto-merge:"
+              jq -r '.[] | select(.bucket=="fail" or .bucket=="cancel") | "  \(.name): \(.state)"' <<<"$checks"
+              exit 1
             fi
-            echo "PR #$PR_NUMBER not mergeable yet (attempt $i) — waiting for required checks; retry in 20s…"
-            sleep 20
+            echo "all $total check(s) passed — merging #$PR_NUMBER."
+            gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"
+            echo "merged release PR #$PR_NUMBER"
+            exit 0
           done
-          echo "::error::release PR #$PR_NUMBER never became mergeable"
+          echo "::error::release PR #$PR_NUMBER checks did not conclude in ~12min — refusing to auto-merge."
           exit 1
 
   # ── Did this release touch the server? ──────────────────────────────────────────────────────────
