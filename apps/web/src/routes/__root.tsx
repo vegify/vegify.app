@@ -41,6 +41,14 @@ const PUBLIC_PATHS = new Set(['/', ...BARE_PATHS])
 // signed-in user who clicks a verification link would otherwise be redirected to "/" before the
 // token is consumed, so the email never gets marked verified and the banner never clears.)
 const BOUNCE_WHEN_AUTHED = new Set(['/login', '/signup', '/forgot'])
+// Public, shareable profile links: "/<username>". A username is one [a-z0-9-] segment that can never
+// shadow a real route — the backend reserves every top-level route segment as a handle (handles.rs
+// `is_reserved`, guarded by the `every_current_route_segment_is_reserved` test). So a single segment
+// that is NOT a PUBLIC_PATH and NOT one of these gated sections is a profile, reachable logged-out.
+const GATED_SECTIONS = new Set(['/settings', '/recipes', '/ingredients'])
+const isPublicPath = (pathname: string) =>
+  PUBLIC_PATHS.has(pathname) ||
+  (/^\/[a-z0-9][a-z0-9-]*$/.test(pathname) && !GATED_SECTIONS.has(pathname))
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -77,10 +85,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // with it — render the landing and auth forms anonymously; only gated pages (which we can't serve
       // without knowing the user) fall through to the retry boundary.
       const user = await fetchUser().catch((e) => {
-        if (PUBLIC_PATHS.has(location.pathname)) return null
+        if (isPublicPath(location.pathname)) return null
         throw e
       })
-      if (!user && !PUBLIC_PATHS.has(location.pathname))
+      if (!user && !isPublicPath(location.pathname))
         throw redirect({ to: '/login' })
       if (user && BOUNCE_WHEN_AUTHED.has(location.pathname))
         throw redirect({ to: '/' })

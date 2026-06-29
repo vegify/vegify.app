@@ -6,8 +6,8 @@ import { LinkAdapter } from '../link'
 
 // Root-level dynamic handle: /<username>. Static routes (/recipes, /settings, …) outrank this, and
 // the backend reserves those segments (handles.rs), so a handle can never shadow a real route. The
-// profile itself is public, but the web auth gate (__root) still requires a session for non-public
-// paths — so for now this renders for signed-in viewers (the Profile nav target).
+// profile is public and shareable: __root's auth gate treats "/<username>" as a public path, and
+// getProfile is an anonymous (optionally-authed) read — logged-out visitors and crawlers see it too.
 const getProfileFn = createServerFn({ method: 'GET' })
   .validator((username: string) => username)
   .handler(async ({ data }): Promise<ProfileVM | null> => {
