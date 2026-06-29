@@ -6,6 +6,7 @@ import { ServerStack } from "../lib/server-stack.js";
 import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { CiStack } from "../lib/ci-stack.js";
 import { DnsStack } from "../lib/dns-stack.js";
+import { EmailStack } from "../lib/email-stack.js";
 
 // Hosting decision (see infra/README "Hosting decision"): the bake-off winner is TanStack Start
 // (web-start); web-next is dropped. As of P4 (web-SSR-calls-Axum) the web is a STATELESS SSR shell —
@@ -58,3 +59,9 @@ new CiStack(app, "VegifyCi", { env, githubRepo: process.env.GITHUB_REPOSITORY ??
 // DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's
 // Terraform so the domain is owned in this repo. Standing stack — deploy on demand, NOT in the cascade.
 new DnsStack(app, "VegifyDns", { env });
+
+// Email: the SES sending identity (Easy DKIM + custom MAIL FROM) for the app's domain, DNS-published
+// through its zone. Generic + parameterized for self-host; deploy on demand (`cdk deploy VegifyEmail`),
+// NOT in the cascade. vegify.app's own identity is still in Terraform — see docs/self-host.md for the
+// gated cutover.
+new EmailStack(app, "VegifyEmail", { env });
