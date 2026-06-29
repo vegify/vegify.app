@@ -1,11 +1,11 @@
 // Prevents an extra console window on Windows release builds, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use app_lib::data::*;
+use vegify_lib::data::*;
 use tauri_plugin_tracing::{Builder as TracingBuilder, LevelFilter};
 
 fn main() {
-    let db = app_lib::open_db().expect("open vegify db");
+    let db = vegify_lib::open_db().expect("open vegify db");
 
     tauri::Builder::default()
         // Structured tracing (fltsci tauri-plugin-tracing): installs the subscriber so the sync
@@ -24,7 +24,7 @@ fn main() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                    Ok(rt) => rt.block_on(app_lib::data::run_ws_push(handle)),
+                    Ok(rt) => rt.block_on(vegify_lib::data::run_ws_push(handle)),
                     Err(e) => tracing::error!(error = %e, "ws push runtime failed to start"),
                 }
             });

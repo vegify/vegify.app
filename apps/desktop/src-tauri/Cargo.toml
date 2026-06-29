@@ -1,5 +1,5 @@
 [package]
-name = "app"
+name = "vegify"
 version = "0.3.5" # x-release-please-version
 description = "Vegify desktop (local-first)"
 authors = ["you"]
@@ -7,13 +7,13 @@ edition = "2021"
 rust-version = "1.77.2"
 
 [lib]
-name = "app_lib"
+name = "vegify_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # gen_bindings (the src/bindings.ts codegen helper) lives in examples/, NOT src/bin/: `cargo build`
 # (what `tauri build` runs) never compiles examples, so Tauri's macOS bundler never tries to copy it
 # into the .app — a src/bin/ binary would be auto-discovered, built, and then fail the universal
-# bundle (only the lipo'd `app` binary lands in target/universal-apple-darwin/). Run it explicitly:
+# bundle (only the lipo'd `vegify` binary lands in target/universal-apple-darwin/). Run it explicitly:
 # `pnpm --filter desktop gen:bindings` → `cargo run --example gen_bindings`.
 
 [build-dependencies]
