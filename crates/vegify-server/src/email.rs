@@ -1,7 +1,7 @@
 //! Transactional email via Amazon SES v2 — password-reset links (A5). The client is built lazily on
-//! first send from the default AWS credential chain (the EC2 instance role in prod; env/SSO locally),
-//! pinned to us-east-1 (where the vegify.app identity is verified), so the server boots with no email
-//! config and costs nothing until a reset is actually requested.
+//! first send from the default AWS credential chain (the EC2 instance role in prod; env/SSO locally), in
+//! VEGIFY_SES_REGION (default us-east-1, where the vegify.app identity is verified), so the server boots
+//! with no email config and costs nothing until a reset is actually requested.
 
 use std::env;
 
@@ -15,8 +15,9 @@ static CLIENT: OnceCell<Client> = OnceCell::const_new();
 async fn client() -> &'static Client {
     CLIENT
         .get_or_init(|| async {
+            let region = env::var("VEGIFY_SES_REGION").unwrap_or_else(|_| "us-east-1".to_string());
             let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(Region::new("us-east-1"))
+                .region(Region::new(region))
                 .load()
                 .await;
             Client::new(&cfg)
