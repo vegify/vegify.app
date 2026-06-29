@@ -34,6 +34,7 @@ import {
   RecipeForm,
   RecipeListView,
   SearchResultsView,
+  SettingsView,
   SignupView,
   useChromeSearch,
   type AppShellLinkProps,
@@ -303,6 +304,10 @@ function RootChrome() {
         e.preventDefault()
         setSearch('')
         navigate({ to: '/ingredients' })
+      } else if (meta && e.key === ',') {
+        e.preventDefault()
+        setSearch('')
+        navigate({ to: '/settings' })
       } else if (meta && e.key === '[') {
         e.preventDefault()
         setSearch('')
@@ -585,6 +590,12 @@ const ingredientEditRoute = createRoute({
   },
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: () => <SettingsView />,
+})
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   recipesRoute,
@@ -595,6 +606,7 @@ const routeTree = rootRoute.addChildren([
   ingredientNewRoute,
   ingredientDetailRoute,
   ingredientEditRoute,
+  settingsRoute,
 ])
 
 // The desktop loads the SPA from a fixed entry (tauri://localhost/index.html), so a hard webview

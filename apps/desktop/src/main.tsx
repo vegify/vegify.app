@@ -11,7 +11,7 @@ import { App } from './App'
 void takeoverConsole().catch(() => {})
 
 // Theme is applied before paint by the inline script in index.html (themeScript); the shared
-// ThemeToggle / useTheme (@vegify/ui) manage it after mount.
+// useTheme (@vegify/ui) — surfaced as the Theme control in Settings — manages it after mount.
 createRoot(document.getElementById('app')!).render(
   <React.StrictMode>
     <App />

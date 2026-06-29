@@ -12,6 +12,7 @@ import {
 import { DetailHero } from "./detail-hero";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
 import { NutritionFactsFab } from "./nutrition-facts-fab";
+import { ThemeSetting } from "./theme-setting";
 
 /**
  * SHARED SCREENS — the actual pages (recipe list, detail, ingredient list/detail, search, home),
@@ -332,6 +333,28 @@ export function SearchResultsView({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function SettingsView() {
+  return (
+    <div className="mx-auto max-w-3xl p-8">
+      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Settings</h1>
+      <p className="mb-8 text-gray-500">Preferences for this account</p>
+
+      <section>
+        <h2 className="mb-3 font-serif text-xl font-bold">Appearance</h2>
+        <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <p className="font-semibold">Theme</p>
+            <p className="text-sm text-muted-foreground">
+              Match your system, or always use light or dark.
+            </p>
+          </div>
+          <ThemeSetting className="self-start sm:self-auto" />
+        </div>
+      </section>
     </div>
   );
 }

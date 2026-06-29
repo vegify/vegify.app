@@ -8,7 +8,7 @@ export {
 } from "./app-shell";
 export { useChromeSearch } from "./use-chrome-search";
 export { VegifyLogo } from "./vegify-logo";
-export { ThemeToggle } from "./theme-toggle";
+export { ThemeSetting } from "./theme-setting";
 export { useTheme, themeScript, type Theme } from "./use-theme";
 export { DetailHero } from "./detail-hero";
 export {
@@ -47,6 +47,7 @@ export {
   IngredientListView,
   IngredientDetailView,
   SearchResultsView,
+  SettingsView,
   type NavLink,
   type RecipeListItem,
   type IngredientListItem,

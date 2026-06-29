@@ -1,7 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import { Bell, Carrot, House, LogOut, Mail, Salad, Search, Settings, User } from "lucide-react";
 import { cn } from "./cn";
-import { ThemeToggle } from "./theme-toggle";
 import { VegifyLogo } from "./vegify-logo";
 
 type IconType = ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -40,7 +39,7 @@ export const APP_NAV: AppShellNavItem[] = [
   { key: "notifications", label: "Notifications", icon: Bell, inMobileBar: true },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
   { key: "inbox", label: "Inbox", icon: Mail },
-  { key: "settings", label: "Settings", icon: Settings },
+  { key: "settings", label: "Settings", icon: Settings, href: "/settings" },
 ];
 
 function pathIsActive(currentPath: string, href?: string) {
@@ -121,13 +120,14 @@ export function AppShell({
               ) : null}
             </div>
           ) : null}
-          <ThemeToggle />
         </div>
       </aside>
 
       {/* ===== Mobile top bar ===== */}
       <header className="flex h-14 shrink-0 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
-        <Settings className="size-6" aria-label="Settings" />
+        <LinkComponent href="/settings" aria-label="Settings">
+          <Settings className="size-6" />
+        </LinkComponent>
         <VegifyLogo className="h-6 w-auto" />
         {onSignOut ? (
           <button type="button" onClick={onSignOut} aria-label="Sign out">
