@@ -27,6 +27,13 @@ infra/assets/
 *.fig
 *.psd
 
+# AWS CDK synth output + cached context. cdk.context.json caches account-specific lookups (e.g. the
+# deploy account's AZ list) — committing it would break a clone deploying to a different account.
+# infra/.gitignore covers the in-app copies; these catch stray runs from the repo root.
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
 CLAUDE.md
 CLAUDE.local.md
 .claude/
