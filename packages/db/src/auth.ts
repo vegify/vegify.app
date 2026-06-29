@@ -46,6 +46,26 @@ export async function verifyPassword(
 let dummyHash: Promise<string> | null = null;
 const getDummyHash = () => (dummyHash ??= hashPassword("vegify-timing-equalizer"));
 
+// Derive a unique handle for a new user: slug the name (else the email local-part), then append
+// -1, -2, … until free. Mirrors vegify-server's auth::derive_unique_username (the live path); this
+// TS port stays in parity for the seed/tests that still use it.
+const slugifyHandle = (s: string) =>
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "").slice(0, 24);
+
+async function deriveUniqueUsername(name: string, email: string): Promise<string> {
+  const base = slugifyHandle(name) || slugifyHandle(email.split("@")[0] ?? "") || "user";
+  for (let n = 0; n < 10_000; n++) {
+    const candidate = n === 0 ? base : `${base}-${n}`;
+    const [taken] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, candidate))
+      .limit(1);
+    if (!taken) return candidate;
+  }
+  return `${base}-${randomBytes(3).toString("hex")}`;
+}
+
 export async function createUser(input: {
   name: string;
   email: string;
@@ -56,6 +76,7 @@ export async function createUser(input: {
     .insert(users)
     .values({
       name: input.name,
+      username: await deriveUniqueUsername(input.name, input.email),
       email: normalizeEmail(input.email),
       passwordHash,
     })

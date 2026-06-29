@@ -21,8 +21,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - name: Test the server + shared core (native — the GUI crate is covered in release.yml)
-        run: cargo test -p vegify-server -p vegify-core
+        run: just rust-core
 
   js:
     runs-on: ubuntu-latest
@@ -33,12 +36,17 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - run: pnpm install --frozen-lockfile
+      # Each step is a `just` recipe — the SAME commands `just check` runs locally, so dev and CI
+      # share one source (the justfile) and can't drift (the failure that motivated this).
       - name: Build design tokens (theme.css is gitignored)
-        run: pnpm --filter @vegify/tokens build
+        run: just tokens
       - name: Typecheck
-        run: pnpm typecheck
+        run: just typecheck
       - name: Web unit tests
-        run: pnpm --filter web test
+        run: just web-test
       - name: Build the web + desktop frontends
-        run: pnpm --filter web build && pnpm --filter desktop build
+        run: just build
