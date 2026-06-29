@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/vegify/vegify.app/compare/v0.4.0...v0.5.0) (2026-06-29)
+
+
+### Features
+
+* usernames, profile pages, and login by email or username ([f8c7988](https://github.com/vegify/vegify.app/commit/f8c79888158dcbf2fec5c3bc4456178f1aa13fd3))
+
 ## [0.4.0](https://github.com/vegify/vegify.app/compare/v0.3.5...v0.4.0) (2026-06-29)
 
 
