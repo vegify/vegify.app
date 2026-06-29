@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/vegify/vegify.app/compare/v0.3.5...v0.4.0) (2026-06-29)
+
+
+### Features
+
+* add Settings page with light/dark/system theme control ([009b8b8](https://github.com/vegify/vegify.app/commit/009b8b8b042a34ed3d2dc85921c151e8548ee3bf))
+
 ## [0.3.5](https://github.com/vegify/vegify.app/compare/v0.3.4...v0.3.5) (2026-06-29)
 
 
