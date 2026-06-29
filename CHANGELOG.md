@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/vegify/vegify.app/compare/v0.3.4...v0.3.5) (2026-06-29)
+
+
+### Bug Fixes
+
+* **desktop:** persist the current route across a webview reload ([c2133e9](https://github.com/vegify/vegify.app/commit/c2133e9cd883a2b697053d48f04b1914493aad98))
+
 ## [0.3.4](https://github.com/vegify/vegify.app/compare/v0.3.3...v0.3.4) (2026-06-28)
 
 
