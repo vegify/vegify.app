@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/vegify/vegify.app/compare/v0.5.0...v0.5.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* set username in db createUser, and run CI via a shared justfile ([97ff927](https://github.com/vegify/vegify.app/commit/97ff92783d6d4fcb5832e05d4a5211391903e593))
+
 ## [0.5.0](https://github.com/vegify/vegify.app/compare/v0.4.0...v0.5.0) (2026-06-29)
 
 
