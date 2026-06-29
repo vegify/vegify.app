@@ -4,7 +4,7 @@ import {
   Link,
   Outlet,
   RouterProvider,
-  createMemoryHistory,
+  createHashHistory,
   createRootRouteWithContext,
   createRoute,
   createRouter,
@@ -597,9 +597,17 @@ const routeTree = rootRoute.addChildren([
   ingredientEditRoute,
 ])
 
+// The desktop loads the SPA from a fixed entry (tauri://localhost/index.html), so a hard webview
+// reload — right-click → Reload — re-runs the bundle. Memory history kept the route only in memory, so
+// a reload reset to the initial entry (the recipes home) instead of the page you were on. Hash history
+// parks the active route in the URL fragment: it survives a reload AND is never sent to the asset
+// server (so no sub-path 404 — the reason memory history was used). Seed a fresh launch (no fragment
+// yet) with /recipes to preserve the prior landing screen.
+if (!window.location.hash) window.location.hash = '#/recipes'
+
 const router = createRouter({
   routeTree,
-  history: createMemoryHistory({ initialEntries: ['/recipes'] }),
+  history: createHashHistory(),
   defaultPreload: 'intent',
   context: { queryClient },
 })
