@@ -47,6 +47,12 @@ export type IngredientDetailVM = {
   description?: string | null;
   nutrition: NutritionFactsData;
 };
+/** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
+export type ProfileVM = {
+  username: string;
+  name: string;
+  recipes: RecipeListItem[];
+};
 
 const cardClass =
   "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70";
@@ -100,6 +106,77 @@ export function RecipeListView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+export function ProfileView({
+  username,
+  profile,
+  LinkComponent,
+}: {
+  /** The handle from the route — shown when no account claims it. */
+  username: string;
+  profile: ProfileVM | null;
+  LinkComponent: NavLink;
+}) {
+  if (!profile) {
+    return (
+      <div className="mx-auto max-w-3xl p-8 text-center">
+        <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">@{username}</h1>
+        <p className="text-muted-foreground">No one goes by that handle.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mx-auto max-w-3xl p-8">
+      <header className="mb-8 flex items-center gap-5">
+        <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
+          {profile.name.trim().charAt(0) || "?"}
+        </div>
+        <div className="min-w-0">
+          <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
+          <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
+        </div>
+      </header>
+
+      <section className="mb-10">
+        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
+          Recipes <span className="font-normal text-muted-foreground">· {profile.recipes.length}</span>
+        </h2>
+        {profile.recipes.length === 0 ? (
+          <p className="text-muted-foreground">No public recipes yet.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {profile.recipes.map((r) => (
+              <LinkComponent key={r.id} href={`/recipes/${r.id}`} className="block">
+                <div className={cardClass}>
+                  <div className="size-16 shrink-0 rounded-lg bg-muted" />
+                  <div className="min-w-0">
+                    <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
+                    <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
+                  </div>
+                </div>
+              </LinkComponent>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
+      <section className="grid gap-3 sm:grid-cols-3">
+        {["Meal plans", "Followers", "Following"].map((label) => (
+          <div
+            key={label}
+            className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
+          >
+            <span className="text-sm font-medium text-muted-foreground">{label}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+              soon
+            </span>
+          </div>
+        ))}
+      </section>
     </div>
   );
 }

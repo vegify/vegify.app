@@ -52,7 +52,6 @@ export function AppShell({
   currentPath,
   LinkComponent,
   children,
-  footer,
   ingredientsNav,
   searchValue,
   onSearchChange,
@@ -62,24 +61,30 @@ export function AppShell({
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
   children: ReactNode;
-  /** Optional desktop-only sidebar footer (e.g. the Tauri shell's Sync/Compact controls). */
-  footer?: ReactNode;
   /** Desktop-only: inject a first-class "Ingredients" destination into the nav (web shells reach ingredients via recipe links). */
   ingredientsNav?: boolean;
   /** When provided, the chrome search becomes a controlled input (e.g. the desktop filters the active list). */
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   /** The signed-in user — renders an account block + sign-out in the sidebar and mobile bar. */
-  user?: { name: string; email: string } | null;
+  user?: { name: string; email: string; username?: string } | null;
   onSignOut?: () => void;
 }) {
-  const navItems = ingredientsNav
-    ? [
-        ...APP_NAV.slice(0, 2),
-        { key: "ingredients", label: "Ingredients", icon: Salad, href: "/ingredients" },
-        ...APP_NAV.slice(2),
-      ]
-    : APP_NAV;
+  // The Profile destination is per-user (/<username>); fill its href in from the signed-in user (the
+  // item stays a disabled "soon" until a username is known). Applied to the sidebar + the mobile bar.
+  const profileHref = user?.username ? `/${user.username}` : undefined;
+  const withProfile = (items: AppShellNavItem[]) =>
+    profileHref ? items.map((it) => (it.key === "profile" ? { ...it, href: profileHref } : it)) : items;
+  const navItems = withProfile(
+    ingredientsNav
+      ? [
+          ...APP_NAV.slice(0, 2),
+          { key: "ingredients", label: "Ingredients", icon: Salad, href: "/ingredients" },
+          ...APP_NAV.slice(2),
+        ]
+      : APP_NAV,
+  );
+  const mobileItems = withProfile(APP_NAV).filter((item) => item.inMobileBar);
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row">
       {/* ===== Desktop sidebar ===== */}
@@ -98,7 +103,6 @@ export function AppShell({
           ))}
         </nav>
         <div className="mt-auto space-y-3 px-3 pb-5">
-          {footer}
           {user ? (
             <div className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-bold uppercase">
@@ -161,7 +165,7 @@ export function AppShell({
 
       {/* ===== Mobile bottom tab bar ===== */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-center justify-around bg-green-dark text-white lg:hidden">
-        {APP_NAV.filter((item) => item.inMobileBar).map((item) => (
+        {mobileItems.map((item) => (
           <TabItem
             key={item.key}
             item={item}

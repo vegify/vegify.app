@@ -94,9 +94,9 @@ export function LoginView({
         ) : null}
         <LabeledInput
           id="email"
-          label="Email"
-          type="email"
-          autoComplete="email"
+          label="Email or username"
+          type="text"
+          autoComplete="username"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}

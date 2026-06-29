@@ -12,6 +12,7 @@ type Amount = { amount: number | null; unit: string | null; grams: number }
 type AggregatedNutrition = { caloriesPer100g: number | null; readings: Reading[] }
 
 export type RecipeCard = { id: string; name: string; subtitle: string | null }
+export type Profile = { username: string; name: string; recipes: RecipeCard[] }
 export type RecipeItem = { id: string; name: string; amount: Amount; recipeId: string | null }
 export type RecipeView = {
   id: string
@@ -67,6 +68,10 @@ export const getIngredientEdit = (id: string) =>
   api<IngredientEditData | null>(`/api/content/ingredient-edit${byId(id)}`)
 export const searchIngredients = (q: string) =>
   api<IngredientSearchItem[]>(`/api/content/search?q=${encodeURIComponent(q)}`)
+// Public profile by handle (optionally-authed: the forwarded cookie lets a viewer see their own
+// non-public recipes on their own profile). Null when the handle has no account.
+export const getProfile = (username: string) =>
+  api<Profile | null>(`/api/content/profile?username=${encodeURIComponent(username)}`)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

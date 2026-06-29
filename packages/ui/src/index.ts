@@ -48,12 +48,14 @@ export {
   IngredientDetailView,
   SearchResultsView,
   SettingsView,
+  ProfileView,
   type NavLink,
   type RecipeListItem,
   type IngredientListItem,
   type RecipeDetailItem,
   type RecipeDetailVM,
   type IngredientDetailVM,
+  type ProfileVM,
 } from "./screens";
 
 export {

@@ -7,7 +7,7 @@ import { api, ApiError, SESSION_COOKIE } from './api'
 
 export { SESSION_COOKIE }
 
-export type AuthUser = { id: string; name: string; email: string; email_verified: boolean }
+export type AuthUser = { id: string; name: string; username: string; email: string; email_verified: boolean }
 
 // Matches the server's session TTL (auth.rs SESSION_TTL_MS). The cookie may outlive the server session
 // by milliseconds of clock skew — harmless: the backend 401s and the auth gate redirects to /login.

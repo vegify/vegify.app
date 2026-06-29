@@ -62,6 +62,9 @@ impl From<vegify_core::Error> for DataError {
 pub struct AuthUser {
     pub id: String,
     pub name: String,
+    /// Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
+    /// recipe `creator` resolves on-device.
+    pub username: String,
     pub email: String,
     /// Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
     /// `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
@@ -231,6 +234,8 @@ fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataE
     struct WireUser {
         id: String,
         name: String,
+        #[serde(default)]
+        username: String,
         email: String,
         #[serde(default)]
         email_verified: bool,
@@ -249,6 +254,7 @@ fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataE
                 user: AuthUser {
                     id: w.user.id,
                     name: w.user.name,
+                    username: w.user.username,
                     email: w.user.email,
                     email_verified: w.user.email_verified,
                 },
@@ -469,6 +475,17 @@ fn init_meta_tables(conn: &Connection) -> Result<(), DataError> {
 /// drifting from Drizzle.
 fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     conn.execute_batch(include_str!("../schema.sql"))?;
+    // `users.username` (creator handles) postdates the original cache schema. schema.sql's
+    // `CREATE TABLE IF NOT EXISTS` can't alter an existing table, so add the column idempotently here
+    // (mirroring the server's ensure_schema); the next pull/sign-in refills it from the server.
+    let has_username: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'username'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_username == 0 {
+        conn.execute("ALTER TABLE users ADD COLUMN username TEXT", [])?;
+    }
     Ok(())
 }
 
@@ -600,9 +617,9 @@ impl Db {
                 conn.execute("DELETE FROM users WHERE id = ?1", params![stale_id])?;
             }
             conn.execute(
-                "INSERT INTO users(id, name, email) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email",
-                params![user.id, user.name, user.email],
+                "INSERT INTO users(id, name, username, email) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, email = excluded.email",
+                params![user.id, user.name, user.username, user.email],
             )?;
             Ok(())
         })();
@@ -615,6 +632,7 @@ impl Db {
 pub trait VegifyData {
     fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
+    fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError>;
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
@@ -653,6 +671,14 @@ impl VegifyData for Db {
         let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
         vegify_core::recipe(&conn, id, me.as_deref()).map_err(Into::into)
+    }
+
+    /// A user's public profile by handle, from the local cache — primarily the signed-in user's own
+    /// profile (other users resolve only if their rows were pulled). Mirrors /api/content/profile.
+    fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError> {
+        let me = self.current_uid();
+        let conn = self.conn.lock().unwrap();
+        vegify_core::get_profile(&conn, &username, me.as_deref()).map_err(Into::into)
     }
 
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {
@@ -820,6 +846,7 @@ mod tests {
             user: AuthUser {
                 id: id.into(),
                 name: name.into(),
+                username: name.to_lowercase(),
                 email: format!("{name}@x"),
                 email_verified: false,
             },
@@ -1036,6 +1063,7 @@ mod tests {
         db.ensure_user_local(&AuthUser {
             id: bob.clone(),
             name: "Bob".into(),
+            username: "bob".into(),
             email: "bob@x".into(),
             email_verified: false,
         })
@@ -1542,6 +1570,7 @@ mod tests {
         db.ensure_user_local(&AuthUser {
             id: server_id.clone(),
             name: "John".into(),
+            username: "john".into(),
             email: email.clone(),
             email_verified: false,
         })

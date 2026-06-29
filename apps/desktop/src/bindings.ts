@@ -24,6 +24,15 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  getProfile(username: string): Promise<{
+	username: string,
+	name: string,
+	recipes: RecipeCard[],
+} | null> {
+    return invoke("get_profile", { username });
+  },
+
+  /** @throws {DataError} */
   recipeForEdit(id: string): Promise<{
 	id: string,
 	name: string,
@@ -105,6 +114,11 @@ export const vegifyData = {
   currentUser(): Promise<{
 	id: string,
 	name: string,
+	/**
+	 *  Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
+	 *  recipe `creator` resolves on-device.
+	 */
+	username: string,
 	email: string,
 	/**
 	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
@@ -161,6 +175,11 @@ export type Amount = {
 export type AuthUser = {
 	id: string,
 	name: string,
+	/**
+	 *  Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
+	 *  recipe `creator` resolves on-device.
+	 */
+	username: string,
 	email: string,
 	/**
 	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
@@ -201,6 +220,16 @@ export type IngredientSearchResult = {
 	servingGrams: number | null,
 	caloriesPer100g: number | null,
 	readings: Reading[],
+};
+
+/**
+ *  A public profile: the handle, the display name, and the user's visible recipes. Shared by the
+ *  server's `/api/content/profile` endpoint and the desktop DAL so both render the identical screen.
+ */
+export type Profile = {
+	username: string,
+	name: string,
+	recipes: RecipeCard[],
 };
 
 export type Reading = {

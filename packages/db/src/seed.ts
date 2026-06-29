@@ -29,6 +29,7 @@ async function main() {
     .insert(users)
     .values({
       name: "Dev User",
+      username: "dev-user",
       email: "dev@example.com",
       passwordHash: await hashPassword("dev-password"),
     })

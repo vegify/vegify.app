@@ -16,17 +16,20 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
+use crate::handles;
 
 const SESSION_TTL_MS: i64 = 1000 * 60 * 60 * 24 * 30; // 30 days
 const RESET_TTL_MS: i64 = 1000 * 60 * 60; // 1 hour — password-reset links are short-lived
 const EMAIL_VERIFY_TTL_MS: i64 = 1000 * 60 * 60 * 24; // 24 hours — verification links live longer than resets
 
-/// The signed-in user — the `{id, name, email}` the auth routes return, and the viewer the content
+/// The signed-in user — the `{id, name, username, email}` the auth routes return, and the viewer the content
 /// gates scope to. Serializes with bare field names (matching the web's response).
 #[derive(Serialize, Clone)]
 pub struct User {
     pub id: String,
     pub name: String,
+    /// Public handle backing `/<username>`. Assigned at signup (see [`derive_unique_username`]).
+    pub username: String,
     pub email: String,
     /// Whether `users.email_verified_at` is set — surfaced to the clients so they can prompt for
     /// verification (and gate verified-only actions later) without a second round trip.
@@ -78,29 +81,72 @@ pub fn create_user(conn: &Connection, name: &str, email: &str, password: &str) -
     let id = vegify_core::new_id();
     let hash = hash_password(password)?;
     let email = normalize_email(email);
+    let username = derive_unique_username(conn, name, &email, &id)?;
     let now = now_ms();
     conn.execute(
-        "INSERT INTO users(id, name, email, password_hash, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![id, name, email, hash, now],
+        "INSERT INTO users(id, name, username, email, password_hash, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![id, name, username, email, hash, now],
     )?;
-    Ok(User { id, name: name.to_string(), email, email_verified: false })
+    Ok(User { id, name: name.to_string(), username, email, email_verified: false })
+}
+
+/// Assign a unique handle for a new (or backfilled) user: slug the display name, else the email
+/// local-part, else the (random) id as an always-valid last resort; then append `-1`, `-2`, … until
+/// no `users.username` row collides. Pure derivation can't fail — only the uniqueness probe can.
+pub fn derive_unique_username(
+    conn: &Connection,
+    name: &str,
+    email: &str,
+    id: &str,
+) -> rusqlite::Result<String> {
+    let mut base = handles::slugify(name);
+    if handles::validate_username(&base).is_err() {
+        base = handles::slugify(email.split('@').next().unwrap_or(""));
+    }
+    if handles::validate_username(&base).is_err() {
+        base = handles::slugify(id); // a ULID slug is always a valid handle
+    }
+    // Leave room for a `-<n>` suffix inside MAX_LEN.
+    base.truncate(handles::MAX_LEN - 5);
+    while base.ends_with('-') {
+        base.pop();
+    }
+    for n in 0..10_000 {
+        let cand = if n == 0 { base.clone() } else { format!("{base}-{n}") };
+        // A suffix can re-trip validation (length/reserved) — skip those.
+        let Ok(normalized) = handles::validate_username(&cand) else {
+            continue;
+        };
+        let taken: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?1)",
+            [&normalized],
+            |r| r.get(0),
+        )?;
+        if !taken {
+            return Ok(normalized);
+        }
+    }
+    Ok(handles::slugify(id)) // unreachable in practice — the id slug is unique
 }
 
 /// Verify credentials. Returns the user on success, None otherwise. Timing-equalized: exactly one
 /// argon2 verify per path (the real hash for a known account, a dummy otherwise).
-pub fn authenticate(conn: &Connection, email: &str, password: &str) -> Result<Option<User>, AppError> {
-    let email = normalize_email(email);
-    let row: Option<(String, String, String, Option<String>, Option<i64>)> = conn
+pub fn authenticate(conn: &Connection, identifier: &str, password: &str) -> Result<Option<User>, AppError> {
+    // Sign in with email OR username. Both are stored lower-cased, so trim+lowercase lets a single bound
+    // parameter match either column. (A username can't contain '@' and an email must, so no ambiguity.)
+    let identifier = identifier.trim().to_lowercase();
+    let row: Option<(String, String, String, String, Option<String>, Option<i64>)> = conn
         .query_row(
-            "SELECT id, name, email, password_hash, email_verified_at FROM users WHERE email = ?1",
-            [&email],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            "SELECT id, name, username, email, password_hash, email_verified_at
+             FROM users WHERE email = ?1 OR username = ?1",
+            [&identifier],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
         )
         .optional()?;
     match row {
-        Some((id, name, email, Some(hash), verified_at)) => Ok(verify_password(&hash, password)
-            .then_some(User { id, name, email, email_verified: verified_at.is_some() })),
+        Some((id, name, username, email, Some(hash), verified_at)) => Ok(verify_password(&hash, password)
+            .then_some(User { id, name, username, email, email_verified: verified_at.is_some() })),
         _ => {
             // unknown email or an account with no password: burn the same time, reveal nothing
             verify_password(dummy_hash(), password);
@@ -141,14 +187,15 @@ pub fn validate_session(conn: &Connection, token: &str) -> Result<Option<User>, 
     let Some(uid) = uid else { return Ok(None) };
     let user = conn
         .query_row(
-            "SELECT id, name, email, email_verified_at FROM users WHERE id = ?1",
+            "SELECT id, name, username, email, email_verified_at FROM users WHERE id = ?1",
             [&uid],
             |r| {
                 Ok(User {
                     id: r.get(0)?,
                     name: r.get(1)?,
-                    email: r.get(2)?,
-                    email_verified: r.get::<_, Option<i64>>(3)?.is_some(),
+                    username: r.get(2)?,
+                    email: r.get(3)?,
+                    email_verified: r.get::<_, Option<i64>>(4)?.is_some(),
                 })
             },
         )
@@ -324,8 +371,9 @@ mod reset_tests {
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
-                password_hash TEXT, email_verified_at INTEGER, created_at INTEGER, updated_at INTEGER);
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE,
+                email TEXT NOT NULL UNIQUE, password_hash TEXT, email_verified_at INTEGER,
+                created_at INTEGER, updated_at INTEGER);
              CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, hashed_token TEXT NOT NULL UNIQUE,
                 expires_at INTEGER NOT NULL, created_at INTEGER, updated_at INTEGER);
              CREATE TABLE password_reset_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
@@ -337,6 +385,20 @@ mod reset_tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn signs_in_with_email_or_username() {
+        let conn = test_conn();
+        let user = create_user(&conn, "Test User", "user@example.com", "pw-123456").unwrap();
+        assert_eq!(user.username, "test-user"); // derived handle for "Test User"
+        // email, username, and case/space-insensitive all resolve to the same account
+        assert_eq!(authenticate(&conn, "user@example.com", "pw-123456").unwrap().unwrap().id, user.id);
+        assert_eq!(authenticate(&conn, "test-user", "pw-123456").unwrap().unwrap().id, user.id);
+        assert_eq!(authenticate(&conn, "  Test-User  ", "pw-123456").unwrap().unwrap().id, user.id);
+        // wrong password and unknown identifier both fail
+        assert!(authenticate(&conn, "test-user", "wrong").unwrap().is_none());
+        assert!(authenticate(&conn, "ghost", "pw-123456").unwrap().is_none());
     }
 
     #[test]

@@ -30,6 +30,7 @@ import {
   IngredientForm,
   IngredientListView,
   LoginView,
+  ProfileView,
   RecipeDetailView,
   RecipeForm,
   RecipeListView,
@@ -43,6 +44,7 @@ import {
   type IngredientFormInput,
   type IngredientListItem,
   type NutritionFactsData,
+  type ProfileVM,
   type RecipeDetailVM,
   type RecipeFormDefaults,
   type RecipeFormInput,
@@ -86,21 +88,8 @@ const searchForForm = async (q: string) => {
 
 // --- auto-sync: a debounced, single-flight push+pull so local writes propagate to the server (and
 // other devices' changes flow back) without a manual trigger. Each write schedules one; RootChrome
-// also fires it periodically + on reconnect. Quiet by design — the bootstrap + manual Sync surface
-// status; the passive status indicator lands in step 8. Invalidates the QueryClient so loaders refetch.
-// Sync state, surfaced to the sidebar's passive indicator (sync is implicit — there's no manual
-// trigger). Components subscribe via syncStateListeners; navigator.onLine is read at render for offline.
-type SyncState = 'idle' | 'syncing'
-let syncState: SyncState = 'idle'
-const syncStateListeners = new Set<() => void>()
-function getSyncState() {
-  return syncState
-}
-function setSyncState(s: SyncState) {
-  if (s === syncState) return
-  syncState = s
-  syncStateListeners.forEach((fn) => fn())
-}
+// also fires it periodically + on reconnect. Quiet by design — no status UI; it just keeps the local
+// cache current. Invalidates the QueryClient so loaders refetch.
 
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 let syncInFlight = false
@@ -112,7 +101,6 @@ function runAutoSync() {
   }
   syncInFlight = true
   syncPending = false
-  setSyncState('syncing')
   vegifyData
     .syncNow()
     // A pull can change any cached entity (new/edited rows from this or another device), so invalidate
@@ -121,7 +109,6 @@ function runAutoSync() {
     .catch(() => {}) // offline / transient — the periodic + reconnect triggers retry
     .finally(() => {
       syncInFlight = false
-      setSyncState('idle')
       if (syncPending) scheduleSync(0)
     })
 }
@@ -221,6 +208,14 @@ const recipeDetailQuery = (id: string) =>
   })
 const recipeEditQuery = (id: string) =>
   queryOptions({ queryKey: ['recipe-edit', id], queryFn: () => vegifyData.recipeForEdit(id) })
+const profileQuery = (username: string) =>
+  queryOptions({
+    queryKey: ['profile', username],
+    queryFn: async (): Promise<ProfileVM | null> => {
+      const p = await vegifyData.getProfile(username)
+      return p ? { username: p.username, name: p.name, recipes: p.recipes.map(toRecipeListItem) } : null
+    },
+  })
 const ingredientsQuery = queryOptions({
   queryKey: ['ingredients'],
   queryFn: async (): Promise<IngredientListItem[]> =>
@@ -280,11 +275,6 @@ function RootChrome() {
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { search, setSearch, query } = useChromeSearch(pathname)
-  // Mirror the module-level sync state + online status into React for the passive footer indicator.
-  const [syncView, setSyncView] = useState<{ state: SyncState; online: boolean }>(() => ({
-    state: getSyncState(),
-    online: typeof navigator === 'undefined' ? true : navigator.onLine,
-  }))
 
   useEffect(() => {
     const focusSearch = () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
@@ -331,7 +321,7 @@ function RootChrome() {
   // Bootstrap + keep sync flowing: an initial pull on mount (fresh sign-in or a restored session), a
   // realtime WebSocket push (the primary trigger — the Rust client emits `server-content-changed`), a
   // 5-min safety-net poll, and a reconnect trigger. Writes schedule their own (debounced) sync. All of it
-  // runs through the quiet single-flight scheduler that drives the status dot — no manual Sync button.
+  // runs through the quiet single-flight scheduler — no manual Sync button.
   useEffect(() => {
     scheduleSync(0)
     // WS push is the primary trigger now, so the interval drops to a 5-min net for missed pushes / WS gaps.
@@ -347,42 +337,14 @@ function RootChrome() {
     }
   }, [])
 
-  // Subscribe the footer indicator to sync-state + online/offline changes.
-  useEffect(() => {
-    const update = () =>
-      setSyncView({ state: getSyncState(), online: typeof navigator === 'undefined' ? true : navigator.onLine })
-    syncStateListeners.add(update)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      syncStateListeners.delete(update)
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
-  }, [])
-
-  const offline = !syncView.online
-  const syncLabel = offline ? 'Offline' : syncView.state === 'syncing' ? 'Syncing…' : 'Synced'
-  const syncDot = offline ? 'bg-white/30' : syncView.state === 'syncing' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-  const footer = (
-    <div className="space-y-1 border-t border-white/15 px-3 pt-4">
-      <p className="flex items-center gap-2 text-xs text-white/55">
-        <span className={`h-1.5 w-1.5 rounded-full ${syncDot}`} aria-hidden />
-        {syncLabel}
-      </p>
-      <p className="text-xs text-white/35">syncs automatically · offline-ready</p>
-    </div>
-  )
-
   return (
     <AppShell
       currentPath={pathname}
       LinkComponent={LinkComponent}
-      footer={footer}
       ingredientsNav
       searchValue={search}
       onSearchChange={setSearch}
-      user={auth ? { name: auth.user.name, email: auth.user.email } : undefined}
+      user={auth ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
       onSignOut={auth?.onSignOut}
     >
       {auth && !auth.user.emailVerified ? (
@@ -447,6 +409,17 @@ const recipeDetailRoute = createRoute({
     const { data: vm } = useSuspenseQuery(recipeDetailQuery(recipeId))
     if (!vm) return <NotFound what="recipe" />
     return <RecipeDetailView recipe={vm} LinkComponent={LinkComponent} />
+  },
+})
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/$username',
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(profileQuery(params.username)),
+  component: function Profile() {
+    const { username } = useParams({ from: '/$username' })
+    const { data: profile } = useSuspenseQuery(profileQuery(username))
+    return <ProfileView username={username} profile={profile} LinkComponent={LinkComponent} />
   },
 })
 
@@ -607,6 +580,7 @@ const routeTree = rootRoute.addChildren([
   ingredientDetailRoute,
   ingredientEditRoute,
   settingsRoute,
+  profileRoute,
 ])
 
 // The desktop loads the SPA from a fixed entry (tauri://localhost/index.html), so a hard webview

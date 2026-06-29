@@ -76,6 +76,28 @@ pub fn validate_username(input: &str) -> Result<String, HandleError> {
     Ok(lower)
 }
 
+/// Best-effort slug of arbitrary text (a display name, an email local-part) into a CANDIDATE handle:
+/// lowercased, every run of disallowed characters collapsed to a single hyphen, edges trimmed, length
+/// capped to `MAX_LEN`. The result can still be empty, too short, all-digits, or reserved — callers
+/// run it through [`validate_username`] and fall back on rejection.
+pub fn slugify(input: &str) -> String {
+    let mut out = String::new();
+    for c in input.trim().chars() {
+        let lc = c.to_ascii_lowercase();
+        if lc.is_ascii_lowercase() || lc.is_ascii_digit() {
+            out.push(lc);
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    // `out` is pure ASCII ([a-z0-9-]), so truncating at a byte index can't split a char.
+    out.truncate(MAX_LEN);
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
 /// Whether a normalized (already lowercased) handle is reserved.
 pub fn is_reserved(normalized: &str) -> bool {
     reserved().contains(normalized)
@@ -394,6 +416,16 @@ mod tests {
                 "{h} should be valid"
             );
         }
+    }
+
+    #[test]
+    fn slugify_makes_candidate_handles() {
+        assert_eq!(slugify("John Carmack"), "john-carmack");
+        assert_eq!(slugify("a.b_c!"), "a-b-c");
+        assert_eq!(slugify("  Élodie  "), "lodie");
+        assert_eq!(slugify("123"), "123"); // a valid slug; validate_username then rejects all-digits
+        assert_eq!(slugify(""), "");
+        assert_eq!(validate_username(&slugify("Best Cook")), Ok("best-cook".to_string()));
     }
 
     #[test]

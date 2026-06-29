@@ -15,6 +15,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
+import { Route as UsernameRouteImport } from './routes/$username'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
 import { Route as IngredientsIndexRouteImport } from './routes/ingredients.index'
@@ -53,6 +54,11 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotRoute = ForgotRouteImport.update({
   id: '/forgot',
   path: '/forgot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsernameRoute = UsernameRouteImport.update({
+  id: '/$username',
+  path: '/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -105,6 +111,7 @@ const IngredientsIngredientIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
@@ -140,6 +148,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  UsernameRoute: typeof UsernameRoute
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
   ResetRoute: typeof ResetRoute
@@ -269,6 +282,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot'
       fullPath: '/forgot'
       preLoaderRoute: typeof ForgotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$username': {
+      id: '/$username'
+      path: '/$username'
+      fullPath: '/$username'
+      preLoaderRoute: typeof UsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -339,6 +359,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  UsernameRoute: UsernameRoute,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
   ResetRoute: ResetRoute,

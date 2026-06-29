@@ -155,6 +155,16 @@ pub struct RecipeCard {
     pub subtitle: Option<String>,
 }
 
+/// A public profile: the handle, the display name, and the user's visible recipes. Shared by the
+/// server's `/api/content/profile` endpoint and the desktop DAL so both render the identical screen.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    pub username: String,
+    pub name: String,
+    pub recipes: Vec<RecipeCard>,
+}
+
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct IngredientSearchResult {
@@ -672,6 +682,38 @@ pub fn list_recipes(conn: &Connection, viewer: Option<&str>) -> Result<Vec<Recip
     Ok(rows)
 }
 
+/// A user's public profile by handle: the user (if the handle exists) + the recipes visible to this
+/// viewer — their public recipes, plus the viewer's own non-public ones when viewing themselves. The
+/// recipe scope mirrors `list_recipes`, narrowed to this user. None when no such handle exists.
+pub fn get_profile(
+    conn: &Connection,
+    username: &str,
+    viewer: Option<&str>,
+) -> Result<Option<Profile>, Error> {
+    let user: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT id, name, username FROM users WHERE username = ?1",
+            [username],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((uid, name, username)) = user else {
+        return Ok(None);
+    };
+    let mut stmt = conn.prepare(
+        "SELECT r.id, i.name, r.subtitle
+         FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+         WHERE i.user_id = ?1 AND (i.visibility = 'public' OR i.user_id = ?2)
+         ORDER BY i.name",
+    )?;
+    let recipes = stmt
+        .query_map(params![uid, viewer], |row| {
+            Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(Some(Profile { username, name, recipes }))
+}
+
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
 pub fn search_ingredients(
     conn: &Connection,
@@ -824,7 +866,7 @@ pub fn ingredient_for_edit(
 pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Option<RecipeView>, Error> {
     let meta = conn
         .query_row(
-            "SELECT i.id, i.name, r.subtitle, r.directions, u.name,
+            "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
                     sa.amount, sa.unit, sa.grams, ba.grams
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id

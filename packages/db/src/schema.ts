@@ -35,6 +35,9 @@ const timestamps = {
 export const users = sqliteTable("users", {
   id: pk(),
   name: text("name").notNull(),
+  // Public handle for /<username> profiles. Assigned at signup (a slug of the name, deduped); existing
+  // rows are backfilled in vegify-server's ensure_schema. Lower-cased, unique.
+  username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash"),
   // Null until the user confirms their address via the verification link (A5). The reset/verify flows

@@ -144,7 +144,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             ingredientsNav
             searchValue={search}
             onSearchChange={setSearch}
-            user={user ? { name: user.name, email: user.email } : null}
+            user={user ? { name: user.name, email: user.email, username: user.username } : null}
             onSignOut={async () => {
               await logoutFn()
               queryClient.clear() // drop the prior session's cached content before the gate flips

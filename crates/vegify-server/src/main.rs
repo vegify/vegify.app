@@ -280,6 +280,34 @@ async fn list_recipes(
     Ok(Json(out))
 }
 
+#[derive(Deserialize)]
+struct UsernameQuery {
+    username: Option<String>,
+}
+
+/// Public profile by handle. No bearer required; an optional one identifies the viewer so they also
+/// see their own non-public recipes when viewing themselves. 404 when the handle has no account.
+async fn profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<UsernameQuery>,
+) -> Result<Json<Option<vegify_core::Profile>>, AppError> {
+    let username = q.username.unwrap_or_default();
+    if username.is_empty() {
+        return Err(AppError::BadRequest("A username is required.".into()));
+    }
+    let token = bearer_token(&headers);
+    // Null (not 404) for an unknown handle — mirrors recipe_detail; the web route renders not-found.
+    let out = db(&state, move |conn| {
+        let viewer = token
+            .and_then(|t| auth::validate_session(conn, &t).ok().flatten())
+            .map(|u| u.id);
+        vegify_core::get_profile(conn, &username, viewer.as_deref()).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
 async fn save_recipe(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -535,6 +563,33 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     if has_col == 0 {
         conn.execute("ALTER TABLE users ADD COLUMN email_verified_at INTEGER", [])?;
     }
+    // Public handles (`users.username`). SQLite can't ADD a UNIQUE NOT NULL column to a populated
+    // table, so add it nullable, backfill every existing row with a derived unique handle, then
+    // enforce uniqueness with an index. New signups always set it (auth::create_user).
+    let has_username: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'username'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_username == 0 {
+        conn.execute("ALTER TABLE users ADD COLUMN username TEXT", [])?;
+        let rows: Vec<(String, String, String)> = {
+            let mut stmt = conn.prepare("SELECT id, name, email FROM users")?;
+            let v = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            v
+        };
+        for (id, name, email) in rows {
+            // Sequential so each derive sees handles assigned earlier this pass (dedup holds).
+            let handle = auth::derive_unique_username(conn, &name, &email, &id)?;
+            conn.execute("UPDATE users SET username = ?1 WHERE id = ?2", [&handle, &id])?;
+        }
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users(username)",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -629,6 +684,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))
+        // Public profile by handle — optionally-authed (a signed-in viewer also sees their own
+        // non-public recipes on their own profile). Unlike the rest of /api/content, no auth required.
+        .route("/api/content/profile", get(profile))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.
