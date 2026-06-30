@@ -350,10 +350,15 @@ mod content_client {
         }
     }
 
-    /// GET /api/content/pull → the viewer's listed world (public + own) in mutation shape.
-    pub fn pull(token: &str) -> Result<PullPayload, DataError> {
+    /// GET /api/content/pull → the viewer's listed world in mutation shape. With a token: public + own.
+    /// Without one (anonymous): public only — this is how a logged-out desktop fills its local cache.
+    pub fn pull(token: Option<&str>) -> Result<PullPayload, DataError> {
         tracing::debug!("GET /api/content/pull");
-        let payload = bearer(ureq::get(&url("pull")), token)
+        let mut req = ureq::get(&url("pull"));
+        if let Some(token) = token {
+            req = bearer(req, token);
+        }
+        let payload = req
             .call()
             .map_err(err)?
             .into_json::<PullPayload>()
@@ -540,6 +545,13 @@ impl Db {
         self.auth.lock().unwrap().as_ref().map(|s| s.token.clone())
     }
 
+    /// The signed-in user id, or an auth error. WRITES require a session — you may only create or edit
+    /// your OWN content; reads use `current_uid` (an anonymous viewer simply sees public content).
+    fn require_uid(&self) -> Result<String, DataError> {
+        self.current_uid()
+            .ok_or_else(|| DataError::Auth("Sign in to add or edit recipes and ingredients.".into()))
+    }
+
     /// Push: drain the outbox to the content API in FIFO (`seq`) order, deleting each row on success.
     /// Stops at the first failure — the unpushed tail stays queued, so order holds and a re-push is
     /// idempotent (every payload carries its client id → the server upserts). The connection mutex is
@@ -578,8 +590,10 @@ impl Db {
     /// prune in one FK-off transaction — see apply_pull). MUST run after a full push, so a local create
     /// sitting in the outbox is already on the server (hence in the pull) before the rebuild.
     fn pull(&self) -> Result<(), DataError> {
-        let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
-        let payload = content_client::pull(&token)?;
+        // Anonymous-capable: signed in → public + own; logged out → public only. A logged-out desktop
+        // still fills and rebuilds its local cache from the server's public content this way.
+        let token = self.current_token();
+        let payload = content_client::pull(token.as_deref())?;
         tracing::info!(
             recipes = payload.recipes.len(),
             ingredients = payload.ingredients.len(),
@@ -712,26 +726,26 @@ impl VegifyData for Db {
     }
 
     fn save_ingredient(&self, mut input: SaveIngredientInput) -> Result<String, DataError> {
-        let uid = self.current_uid();
+        let uid = self.require_uid()?;
         // Mint the client id up front for a create so the local row, the outbox entry, and (after
         // push) the server row all share ONE id — the local-first model (client ULIDs authoritative).
         if input.id.is_none() {
             input.id = Some(new_id());
         }
-        let id = self.with_conn(|conn| do_save_ingredient(conn, &input, uid.as_deref()).map_err(Into::into))?;
+        let id = self.with_conn(|conn| do_save_ingredient(conn, &input, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("saveIngredient", to_json(&input)?)?;
         Ok(id)
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
-        let uid = self.current_uid();
-        self.with_conn(|conn| do_delete_ingredient(conn, &id, uid.as_deref()).map_err(Into::into))?;
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| do_delete_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("deleteIngredient", serde_json::json!({ "id": id }))?;
         Ok(())
     }
 
     fn save_recipe(&self, mut input: SaveRecipeInput) -> Result<String, DataError> {
-        let uid = self.current_uid();
+        let uid = self.require_uid()?;
         // Mint client ids up front for a create (see save_ingredient). A nested recipe also needs its
         // as-ingredient id stable cross-replica, so mint that alongside — else the push would let the
         // server mint a different one and the consuming item's FK would diverge.
@@ -739,14 +753,14 @@ impl VegifyData for Db {
             input.id = Some(new_id());
             input.as_ingredient_id = Some(new_id());
         }
-        let id = self.with_conn(|conn| do_save_recipe(conn, &input, uid.as_deref()).map_err(Into::into))?;
+        let id = self.with_conn(|conn| do_save_recipe(conn, &input, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("saveRecipe", to_json(&input)?)?;
         Ok(id)
     }
 
     fn delete_recipe(&self, id: String) -> Result<(), DataError> {
-        let uid = self.current_uid();
-        self.with_conn(|conn| do_delete_recipe(conn, &id, uid.as_deref()).map_err(Into::into))?;
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| do_delete_recipe(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("deleteRecipe", serde_json::json!({ "id": id }))?;
         Ok(())
     }
@@ -1199,6 +1213,53 @@ mod tests {
         eprintln!("visibility: public shared, private hidden from non-owner, edit/delete owner-gated");
     }
 
+    #[test]
+    fn writes_require_sign_in() {
+        let db_path = std::env::temp_dir().join("vegify-anon-write.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        let _ = VegifyData::sign_out(&db); // ensure logged-out regardless of any stored session
+
+        // Reads work anonymously (public content from the local cache)…
+        assert!(VegifyData::list_recipes(&db).is_ok(), "anonymous reads work");
+        // …but writes are refused up front, so nothing is stamped NULL-owner or queued to the outbox.
+        let r = VegifyData::save_recipe(
+            &db,
+            SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: "Anon Loaf".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![],
+            },
+        );
+        assert!(matches!(r, Err(DataError::Auth(_))), "anonymous recipe create is refused");
+        let i = VegifyData::save_ingredient(
+            &db,
+            SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Public),
+                name: "Anon Salt".into(),
+                description: None,
+                price: None,
+                calories_per_100g: None,
+                serving_grams: None,
+                package_grams: None,
+                nutrients: vec![],
+            },
+        );
+        assert!(matches!(i, Err(DataError::Auth(_))), "anonymous ingredient create is refused");
+        assert!(
+            matches!(VegifyData::delete_recipe(&db, new_id()), Err(DataError::Auth(_))),
+            "anonymous delete is refused"
+        );
+    }
+
     // Upsert-by-id + as-ingredient-id threading (step 1 of the sync engine). A supplied-but-absent id
     // must CREATE the row WITH that id (not silently no-op an UPDATE), and the recipe's as-ingredient
     // id must be honorable so a nested recipe consumed by another (a Biga inside a Dough) keeps a
@@ -1427,7 +1488,7 @@ mod tests {
         let token = db.current_token().expect("token after sign in");
 
         // pull: the seed world comes back in mutation shape (recipes carry their as-ingredient id).
-        let p = content_client::pull(&token).expect("pull");
+        let p = content_client::pull(Some(&token)).expect("pull");
         eprintln!("pull: {} recipes, {} ingredients", p.recipes.len(), p.ingredients.len());
         assert!(!p.recipes.is_empty() && !p.ingredients.is_empty(), "seed content pulled");
         assert!(p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()), "recipes carry as-ingredient id");
@@ -1439,7 +1500,7 @@ mod tests {
             "servingGrams": 100.0, "batchGrams": 200.0, "items": []
         });
         content_client::post(&token, "recipes", &body).expect("post recipe");
-        let p2 = content_client::pull(&token).expect("pull2");
+        let p2 = content_client::pull(Some(&token)).expect("pull2");
         assert!(
             p2.recipes.iter().any(|r| r.id == rid && r.name == "Client Posted Loaf"),
             "posted recipe appears in the pull"
@@ -1447,7 +1508,7 @@ mod tests {
 
         // delete via the client → gone from the next pull.
         content_client::delete(&token, "recipes", &rid).expect("delete recipe");
-        let p3 = content_client::pull(&token).expect("pull3");
+        let p3 = content_client::pull(Some(&token)).expect("pull3");
         assert!(!p3.recipes.iter().any(|r| r.id == rid), "deleted recipe is gone");
         VegifyData::sign_out(&db).ok();
         eprintln!("content client round-trip OK: pull → post → pull → delete → pull");

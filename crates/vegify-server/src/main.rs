@@ -266,9 +266,9 @@ async fn confirm_email_verification(
 }
 
 // ---- content routes ----
-// READS are optionally-authed: a bearer identifies the viewer (who also sees their own non-public rows);
-// without one the read is anonymous and vegify-core scopes it to public-only. WRITES, edit-loads, and the
-// bulk pull require a bearer and stamp/guard userId server-side from the session.
+// READS and the bulk PULL are optionally-authed: a bearer identifies the viewer (who also sees their own
+// non-public rows); without one the request is anonymous and vegify-core scopes it to public-only. WRITES
+// and edit-loads require a bearer and stamp/guard userId server-side from the session.
 
 async fn list_recipes(
     State(state): State<AppState>,
@@ -473,10 +473,10 @@ async fn pull(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<content::PullPayload>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
-        content::pull(conn, Some(&me.id))
+        let viewer = auth::optional_viewer(conn, token);
+        content::pull(conn, viewer.as_deref())
     })
     .await?;
     Ok(Json(out))
