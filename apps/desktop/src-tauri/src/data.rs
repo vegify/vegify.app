@@ -1123,8 +1123,9 @@ mod tests {
         assert!(found.contains(&"John Public Sauce".to_string()), "search returns public");
         assert!(!found.contains(&"John Secret Sauce".to_string()), "search hides private");
 
-        // Detail (canView): public viewable; private 404s (None).
-        assert!(VegifyData::ingredient(&db, public.clone()).expect("ok").is_some(), "public viewable");
+        // Detail (canView): public viewable; private 404s (None). can_edit is false for the non-owner.
+        let bob_view = VegifyData::ingredient(&db, public.clone()).expect("ok").expect("public viewable");
+        assert!(!bob_view.can_edit, "non-owner sees no edit affordance on public content");
         assert!(VegifyData::ingredient(&db, secret.clone()).expect("ok").is_none(), "private hidden");
 
         // Edit-load (isOwner): Bob can't load John's public ingredient for editing.
@@ -1165,6 +1166,8 @@ mod tests {
 
         // --- Back as John (the owner) ---
         set_auth(&db, &john, "John");
+        let own_recipe = VegifyData::recipe(&db, secret_recipe.clone()).expect("ok").expect("owner views recipe");
+        assert!(own_recipe.can_edit, "owner sees the recipe edit affordance");
         assert!(
             VegifyData::recipe_for_edit(&db, secret_recipe).expect("ok").is_some(),
             "owner can edit-load their recipe"
@@ -1173,6 +1176,7 @@ mod tests {
             .expect("ok")
             .expect("owner edit-load");
         assert_eq!(e.visibility, Visibility::Private, "edit defaults carry the stored visibility");
+        assert!(e.can_edit, "owner edit-load is editable");
         // Owner can edit (change visibility) then delete own content.
         VegifyData::save_ingredient(
             &db,
@@ -1189,6 +1193,8 @@ mod tests {
             },
         )
         .expect("owner edits own");
+        let own_ing = VegifyData::ingredient(&db, public.clone()).expect("ok").expect("owner views own");
+        assert!(own_ing.can_edit, "owner sees the edit affordance on their own ingredient");
         VegifyData::delete_ingredient(&db, public).expect("owner deletes own");
         eprintln!("visibility: public shared, private hidden from non-owner, edit/delete owner-gated");
     }
