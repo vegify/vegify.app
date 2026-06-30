@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/vegify/vegify.app/compare/v0.5.2...v0.6.0) (2026-06-30)
+
+
+### Features
+
+* public browsing without sign-in (desktop + web) ([#16](https://github.com/vegify/vegify.app/issues/16)) ([4b0aefb](https://github.com/vegify/vegify.app/commit/4b0aefb4ad2b1b2a426c652a06f11053d360dad7))
+
 ## [0.5.2](https://github.com/vegify/vegify.app/compare/v0.5.1...v0.5.2) (2026-06-29)
 
 
