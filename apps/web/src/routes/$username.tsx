@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
-import { ProfileView, type ProfileVM } from '@vegify/ui'
+import { ProfileView, type ProfileVM } from '@vegify/ui/screens'
 import { LinkAdapter } from '../link'
 
 // Root-level dynamic handle: /<username>. Static routes (/recipes, /settings, …) outrank this, and

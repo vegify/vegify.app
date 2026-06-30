@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { infiniteQueryOptions, useSuspenseInfiniteQuery } from '@tanstack/react-query'
-import { IngredientListView, PAGE_SIZE, parseSort, type IngredientListItem, type Sort } from '@vegify/ui'
+import { IngredientListView, type IngredientListItem } from '@vegify/ui/screens'
+import { PAGE_SIZE, parseSort, type Sort } from '@vegify/ui/catalog'
 import { LinkAdapter } from '../link'
 
 type Cursor = { id: string; name: string }

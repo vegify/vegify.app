@@ -5,7 +5,7 @@ import {
   type IngredientListItem,
   type NavLink,
   type RecipeListItem,
-} from '@vegify/ui'
+} from '@vegify/ui/screens'
 
 // Database-wide search: recipe names + standalone-ingredient names. Small dataset, so it filters in
 // JS; swap for a LIKE query if the catalog grows. Mirrors the desktop's chrome search.

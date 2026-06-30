@@ -1,7 +1,8 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
-import { RecipeDetailView, type NutritionFactsData, type RecipeDetailVM } from '@vegify/ui'
+import { RecipeDetailView, type RecipeDetailVM } from '@vegify/ui/screens'
+import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import { LinkAdapter } from '../link'
 
 const getRecipe = createServerFn({ method: 'GET' })

@@ -1,7 +1,7 @@
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegify/ui'
+import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegify/ui/recipe-form'
 import type { RecipeEditData } from '../content'
 
 const getRecipeFn = createServerFn({ method: 'GET' })

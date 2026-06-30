@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useQueryClient } from '@tanstack/react-query'
-import { RecipeForm, type RecipeFormInput } from '@vegify/ui'
+import { RecipeForm, type RecipeFormInput } from '@vegify/ui/recipe-form'
 
 const searchFn = createServerFn({ method: 'GET' })
   .validator((query: string) => query)
