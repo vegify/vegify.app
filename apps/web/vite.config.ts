@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs'
+
 import { defineConfig } from 'vite'
 import { devtools } from '@tanstack/devtools-vite'
 
@@ -6,8 +8,16 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// Route filenames, read once at config time and baked into the bundle as __VEGIFY_ROUTE_FILES__. The auth
+// gate (src/auth-gate.ts) derives which top-level paths are STATIC routes from this list — everything else
+// single-segment is a "/<username>" profile — so adding a route file auto-gates it. We read the directory
+// here rather than import.meta.glob in the gate: globbing the route modules (which the route tree already
+// imports) emits noisy INEFFECTIVE_DYNAMIC_IMPORT warnings, and importing the route tree would be circular.
+const routeFiles = readdirSync(new URL('./src/routes', import.meta.url))
+
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
+  define: { __VEGIFY_ROUTE_FILES__: JSON.stringify(routeFiles) },
   // Bundle every dep INTO the SSR build (incl. react + the @vegify/* workspace packages) so the
   // deployed server.js is self-contained. The web holds no database — it calls the Axum backend over
   // HTTP (VEGIFY_API_URL) — so there's no native @libsql binding left to keep external.
