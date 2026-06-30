@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export const vegifyData = {
   /** @throws {DataError} */
-  listRecipes(): Promise<RecipeCard[]> {
-    return invoke("list_recipes");
+  listRecipes(cursor: string | null, limit: number | null): Promise<RecipeCard[]> {
+    return invoke("list_recipes", { cursor, limit });
   },
 
   /** @throws {DataError} */
@@ -51,8 +51,8 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  listIngredients(): Promise<IngredientCard[]> {
-    return invoke("list_ingredients");
+  listIngredients(cursor: string | null, limit: number | null): Promise<IngredientCard[]> {
+    return invoke("list_ingredients", { cursor, limit });
   },
 
   /** @throws {DataError} */

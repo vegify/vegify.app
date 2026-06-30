@@ -644,11 +644,11 @@ impl Db {
 
 #[procedures]
 pub trait VegifyData {
-    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError>;
+    fn list_recipes(&self, cursor: Option<String>, limit: Option<u32>) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
     fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
-    fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError>;
+    fn list_ingredients(&self, cursor: Option<String>, limit: Option<u32>) -> Result<Vec<IngredientCard>, DataError>;
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
@@ -675,10 +675,10 @@ pub trait VegifyData {
 // connection, and delegate reads/mutations to vegify-core (one impl shared with the server). Writes
 // additionally mint client ids up front and enqueue a semantic mutation for the sync engine.
 impl VegifyData for Db {
-    fn list_recipes(&self) -> Result<Vec<RecipeCard>, DataError> {
+    fn list_recipes(&self, cursor: Option<String>, limit: Option<u32>) -> Result<Vec<RecipeCard>, DataError> {
         let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
-        vegify_core::list_recipes(&conn, me.as_deref()).map_err(Into::into)
+        vegify_core::list_recipes(&conn, me.as_deref(), cursor.as_deref(), limit).map_err(Into::into)
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
@@ -701,10 +701,10 @@ impl VegifyData for Db {
         vegify_core::recipe_for_edit(&conn, id, me.as_deref()).map_err(Into::into)
     }
 
-    fn list_ingredients(&self) -> Result<Vec<IngredientCard>, DataError> {
+    fn list_ingredients(&self, cursor: Option<String>, limit: Option<u32>) -> Result<Vec<IngredientCard>, DataError> {
         let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
-        vegify_core::list_ingredients(&conn, me.as_deref()).map_err(Into::into)
+        vegify_core::list_ingredients(&conn, me.as_deref(), cursor.as_deref(), limit).map_err(Into::into)
     }
 
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
@@ -845,7 +845,7 @@ mod tests {
     use std::fs;
 
     fn recipe_id_by_name(db: &Db, needle: &str) -> String {
-        VegifyData::list_recipes(db)
+        VegifyData::list_recipes(db, None, None)
             .expect("list")
             .into_iter()
             .find(|c| c.name.contains(needle))
@@ -965,7 +965,7 @@ mod tests {
         )
         .expect("save ingredient");
 
-        let cards = VegifyData::list_ingredients(&db).expect("list");
+        let cards = VegifyData::list_ingredients(&db, None, None).expect("list");
         assert!(cards.iter().any(|c| c.name == "Test Tofu"), "browser shows the new ingredient");
         assert!(
             !cards.iter().any(|c| c.name.contains("Complete Shake")),
@@ -1126,7 +1126,7 @@ mod tests {
 
         // Lists + search (isListed): Bob sees John's PUBLIC, not John's private.
         let listed: Vec<String> =
-            VegifyData::list_ingredients(&db).expect("bob list").into_iter().map(|c| c.name).collect();
+            VegifyData::list_ingredients(&db, None, None).expect("bob list").into_iter().map(|c| c.name).collect();
         assert!(listed.contains(&"John Public Sauce".to_string()), "bob sees john's public");
         assert!(!listed.contains(&"John Secret Sauce".to_string()), "bob must NOT see john's private");
         let found: Vec<String> = VegifyData::search_ingredients(&db, "John".into())
@@ -1169,7 +1169,7 @@ mod tests {
         // Recipe gates (separate SQL from the ingredient path): John's private recipe is hidden,
         // unviewable, un-editable, and un-deletable by Bob.
         let recipe_names: Vec<String> =
-            VegifyData::list_recipes(&db).expect("bob recipes").into_iter().map(|c| c.name).collect();
+            VegifyData::list_recipes(&db, None, None).expect("bob recipes").into_iter().map(|c| c.name).collect();
         assert!(!recipe_names.contains(&"John Secret Recipe".to_string()), "private recipe not listed");
         assert!(VegifyData::recipe(&db, secret_recipe.clone()).expect("ok").is_none(), "private recipe 404s");
         assert!(
@@ -1222,7 +1222,7 @@ mod tests {
         let _ = VegifyData::sign_out(&db); // ensure logged-out regardless of any stored session
 
         // Reads work anonymously (public content from the local cache)…
-        assert!(VegifyData::list_recipes(&db).is_ok(), "anonymous reads work");
+        assert!(VegifyData::list_recipes(&db, None, None).is_ok(), "anonymous reads work");
         // …but writes are refused up front, so nothing is stamped NULL-owner or queued to the outbox.
         let r = VegifyData::save_recipe(
             &db,
@@ -1258,6 +1258,34 @@ mod tests {
             matches!(VegifyData::delete_recipe(&db, new_id()), Err(DataError::Auth(_))),
             "anonymous delete is refused"
         );
+    }
+
+    #[test]
+    fn list_recipes_keyset_paginates_newest_first() {
+        let db_path = std::env::temp_dir().join("vegify-keyset-page.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        let _ = VegifyData::sign_out(&db); // public catalog, logged out
+
+        // The full list is newest-first: ids (ULIDs) strictly descending.
+        let all = VegifyData::list_recipes(&db, None, None).expect("all");
+        assert!(all.len() >= 3, "seed has several public recipes (got {})", all.len());
+        assert!(all.windows(2).all(|w| w[0].id > w[1].id), "ordered newest-first by id");
+
+        // Page 1 (no cursor) is the newest `limit` of that list.
+        let p1 = VegifyData::list_recipes(&db, None, Some(2)).expect("page 1");
+        assert_eq!(p1.len(), 2, "limit caps the page");
+        assert_eq!(
+            p1.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            all[..2].iter().map(|c| &c.id).collect::<Vec<_>>(),
+            "page 1 = the newest two"
+        );
+
+        // Page 2 (cursor = page 1's last id) continues with NO overlap and NO skip.
+        let p2 = VegifyData::list_recipes(&db, Some(p1[1].id.clone()), Some(2)).expect("page 2");
+        assert_eq!(p2.first().map(|c| &c.id), all.get(2).map(|c| &c.id), "page 2 starts right after page 1");
+        assert!(p2.iter().all(|c| p1.iter().all(|x| x.id != c.id)), "pages do not overlap");
     }
 
     // Upsert-by-id + as-ingredient-id threading (step 1 of the sync engine). A supplied-but-absent id
@@ -1311,7 +1339,7 @@ mod tests {
             },
         )
         .expect("re-apply updates");
-        let pulled: Vec<String> = VegifyData::list_ingredients(&db)
+        let pulled: Vec<String> = VegifyData::list_ingredients(&db, None, None)
             .expect("list")
             .into_iter()
             .filter(|c| c.name.starts_with("Pulled Ingredient"))
@@ -1365,7 +1393,7 @@ mod tests {
 
         // re-apply the SAME dough (an idempotent pull) → still ONE dough with that id, ONE item
         VegifyData::save_recipe(&db, build_dough()).expect("re-apply dough");
-        let doughs: Vec<String> = VegifyData::list_recipes(&db)
+        let doughs: Vec<String> = VegifyData::list_recipes(&db, None, None)
             .expect("list")
             .into_iter()
             .filter(|c| c.name == "Pulled Dough")
@@ -1588,12 +1616,12 @@ mod tests {
         b.sync_now().expect("B sync (push-empty + pull)");
 
         let names: Vec<String> =
-            VegifyData::list_recipes(&b).expect("B list").into_iter().map(|c| c.name).collect();
+            VegifyData::list_recipes(&b, None, None).expect("B list").into_iter().map(|c| c.name).collect();
         assert!(names.contains(&biga_name), "B converged on A's Biga");
         assert!(names.contains(&dough_name), "B converged on A's Dough");
 
         // the nested FK survived the cross-replica round-trip: B's Dough item resolves to A's Biga.
-        let dough = VegifyData::list_recipes(&b)
+        let dough = VegifyData::list_recipes(&b, None, None)
             .expect("list")
             .into_iter()
             .find(|c| c.name == dough_name)

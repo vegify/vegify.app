@@ -58,12 +58,24 @@ export type IngredientEditData = {
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`
 
+// Keyset page query for the catalog reads: `cursor` (the last card's id) + a page `limit`. Empty when
+// neither is set, so an un-paginated call still fetches the full (server-capped) list.
+const pageParams = (cursor?: string, limit?: number) => {
+  const p = new URLSearchParams()
+  if (cursor) p.set('cursor', cursor)
+  if (limit != null) p.set('limit', String(limit))
+  const s = p.toString()
+  return s ? `?${s}` : ''
+}
+
 // --- reads (the backend scopes each to the session user, from the forwarded Bearer token) ---
 
-export const listRecipeCards = () => api<RecipeCard[]>('/api/content/recipes')
+export const listRecipeCards = (cursor?: string, limit?: number) =>
+  api<RecipeCard[]>(`/api/content/recipes${pageParams(cursor, limit)}`)
 export const getRecipeView = (id: string) => api<RecipeView | null>(`/api/content/recipe-detail${byId(id)}`)
 export const getRecipeEdit = (id: string) => api<RecipeEditData | null>(`/api/content/recipe-edit${byId(id)}`)
-export const listIngredientCards = () => api<IngredientCard[]>('/api/content/ingredients')
+export const listIngredientCards = (cursor?: string, limit?: number) =>
+  api<IngredientCard[]>(`/api/content/ingredients${pageParams(cursor, limit)}`)
 export const getIngredientView = (id: string) =>
   api<IngredientEditData | null>(`/api/content/ingredient-detail${byId(id)}`)
 export const getIngredientEdit = (id: string) =>

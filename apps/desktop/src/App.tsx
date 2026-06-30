@@ -197,7 +197,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
 // + the view-model transform, so the cache holds ready-to-render data (same as web's server fns).
 const recipesQuery = queryOptions({
   queryKey: ['recipes'],
-  queryFn: async () => (await vegifyData.listRecipes()).map(toRecipeListItem),
+  queryFn: async () => (await vegifyData.listRecipes(null, null)).map(toRecipeListItem),
 })
 const recipeDetailQuery = (id: string) =>
   queryOptions({
@@ -220,7 +220,7 @@ const profileQuery = (username: string) =>
 const ingredientsQuery = queryOptions({
   queryKey: ['ingredients'],
   queryFn: async (): Promise<IngredientListItem[]> =>
-    (await vegifyData.listIngredients()).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+    (await vegifyData.listIngredients(null, null)).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
 })
 const ingredientDetailQuery = (id: string) =>
   queryOptions({
@@ -274,7 +274,7 @@ function SearchOverlay({ query }: { query: string }) {
   const { data } = useQuery({
     queryKey: ['search', query],
     queryFn: async () => {
-      const [recipes, ings] = await Promise.all([vegifyData.listRecipes(), vegifyData.searchIngredients(query)])
+      const [recipes, ings] = await Promise.all([vegifyData.listRecipes(null, null), vegifyData.searchIngredients(query)])
       const q = query.toLowerCase()
       return {
         recipes: recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem),

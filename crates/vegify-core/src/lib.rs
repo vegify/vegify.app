@@ -675,15 +675,25 @@ fn load_ingredient_edit(
 
 /// Recipe browser cards. isListed: public catalog + your own (any visibility). `user_id = NULL` never
 /// matches, so a signed-out viewer (viewer = None) sees only public.
-pub fn list_recipes(conn: &Connection, viewer: Option<&str>) -> Result<Vec<RecipeCard>, Error> {
+/// Public recipe catalog for `viewer` (public rows + the viewer's own), NEWEST FIRST by id — ids are
+/// ULIDs, so id order is creation order. Keyset-paginated for infinite scroll: pass the last card's `id`
+/// as `cursor` to get the page after it; `limit` caps the page (None = no limit, i.e. the full list).
+pub fn list_recipes(
+    conn: &Connection,
+    viewer: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> Result<Vec<RecipeCard>, Error> {
     let mut stmt = conn.prepare(
         "SELECT r.id, i.name, r.subtitle
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
-         WHERE i.visibility = 'public' OR i.user_id = ?1
-         ORDER BY i.name",
+         WHERE (i.visibility = 'public' OR i.user_id = ?1)
+           AND (?2 IS NULL OR r.id < ?2)
+         ORDER BY r.id DESC
+         LIMIT ?3",
     )?;
     let rows = stmt
-        .query_map(params![viewer], |row| {
+        .query_map(params![viewer, cursor, limit.map_or(-1, |n| n as i64)], |row| {
             Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -830,16 +840,26 @@ pub fn recipe_for_edit(
 }
 
 /// Ingredient browser cards — standalone ingredients (not a recipe's as-ingredient), isListed-scoped.
-pub fn list_ingredients(conn: &Connection, viewer: Option<&str>) -> Result<Vec<IngredientCard>, Error> {
+/// Standalone-ingredient catalog for `viewer` (recipe as-ingredients excluded), NEWEST FIRST by id.
+/// Keyset-paginated like [`list_recipes`]: `cursor` = the last card's `id`, `limit` caps the page
+/// (None = the full list).
+pub fn list_ingredients(
+    conn: &Connection,
+    viewer: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> Result<Vec<IngredientCard>, Error> {
     let mut stmt = conn.prepare(
         "SELECT i.id, i.name, i.calories_per_100g
          FROM ingredients i
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
            AND (i.visibility = 'public' OR i.user_id = ?1)
-         ORDER BY i.name",
+           AND (?2 IS NULL OR i.id < ?2)
+         ORDER BY i.id DESC
+         LIMIT ?3",
     )?;
     let rows = stmt
-        .query_map(params![viewer], |row| {
+        .query_map(params![viewer, cursor, limit.map_or(-1, |n| n as i64)], |row| {
             Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
