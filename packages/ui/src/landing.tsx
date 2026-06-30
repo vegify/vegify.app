@@ -1,7 +1,6 @@
 import { ArrowRight, Layers, Laptop, Search } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { buttonClasses } from "./button";
-import { cn } from "./cn";
 import { SIGNUPS_ENABLED } from "./auth-form";
 import type { NavLink } from "./screens";
 import { VegifyLogo } from "./vegify-logo";

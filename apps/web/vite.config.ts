@@ -17,6 +17,9 @@ const config = defineConfig({
     devtools(),
     tailwindcss(),
     tanstackStart(),
+    // @vitejs/plugin-react v6's Options type omits `babel`, but it's the canonical React Compiler setup
+    // and the build applies it. Drop this directive once the plugin's types expose `babel` again.
+    // @ts-expect-error -- babel option missing from plugin-react v6 Options type
     viteReact({ babel: { plugins: [['babel-plugin-react-compiler', { target: '19' }]] } }),
   ],
 })
