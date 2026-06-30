@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/vegify/vegify.app/compare/v0.6.0...v0.7.0) (2026-06-30)
+
+
+### Features
+
+* crisp app icons, vector brand mark, and a macOS menu-bar tray ([#22](https://github.com/vegify/vegify.app/issues/22)) ([a10812f](https://github.com/vegify/vegify.app/commit/a10812f72c07ccd5a35e603c0c2b39d7617c8a58))
+
 ## [0.6.0](https://github.com/vegify/vegify.app/compare/v0.5.2...v0.6.0) (2026-06-30)
 
 
