@@ -1,0 +1,5 @@
+# Pin the Rust toolchain for the whole workspace (local dev and CI). The crates
+# and apps/desktop/src-tauri all resolve this via rustup's directory walk.
+# Bump deliberately.
+[toolchain]
+channel = "1.96.1"
