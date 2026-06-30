@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useQueryClient } from '@tanstack/react-query'
-import { IngredientForm, type IngredientFormInput } from '@vegify/ui'
+import { IngredientForm, type IngredientFormInput } from '@vegify/ui/ingredient-form'
 
 const saveIngredientFn = createServerFn({ method: 'POST' })
   .validator((input: IngredientFormInput) => input)

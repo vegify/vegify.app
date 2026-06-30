@@ -10,12 +10,10 @@ import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import {
-  AppShell,
-  EmailVerificationBanner,
-  themeScript,
-  useChromeSearch,
-} from '@vegify/ui'
+import { AppShell } from '@vegify/ui/app-shell'
+import { EmailVerificationBanner } from '@vegify/ui/auth-form'
+import { themeScript } from '@vegify/ui/use-theme'
+import { useChromeSearch } from '@vegify/ui/use-chrome-search'
 
 import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'

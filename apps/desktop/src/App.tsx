@@ -23,38 +23,33 @@ import {
   useSuspenseInfiniteQuery,
   useSuspenseQuery,
 } from '@tanstack/react-query'
+import { AppShell, type AppShellLinkProps } from '@vegify/ui/app-shell'
+import { PAGE_SIZE, parseSort, type Sort } from '@vegify/ui/catalog'
 import {
-  AppShell,
-  PAGE_SIZE,
-  parseSort,
   EmailVerificationBanner,
+  ForgotPasswordView,
+  LoginView,
+  SignupView,
+} from '@vegify/ui/auth-form'
+import {
   HomeView,
   IngredientDetailView,
-  ForgotPasswordView,
-  IngredientForm,
   IngredientListView,
-  LoginView,
   ProfileView,
   RecipeDetailView,
-  RecipeForm,
   RecipeListView,
   SearchResultsView,
   SettingsView,
-  SignupView,
-  useChromeSearch,
-  type AppShellLinkProps,
   type IngredientDetailVM,
-  type IngredientFormDefaults,
-  type IngredientFormInput,
   type IngredientListItem,
-  type NutritionFactsData,
   type ProfileVM,
   type RecipeDetailVM,
-  type RecipeFormDefaults,
-  type RecipeFormInput,
   type RecipeListItem,
-  type Sort,
-} from '@vegify/ui'
+} from '@vegify/ui/screens'
+import { IngredientForm, type IngredientFormDefaults, type IngredientFormInput } from '@vegify/ui/ingredient-form'
+import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegify/ui/recipe-form'
+import { useChromeSearch } from '@vegify/ui/use-chrome-search'
+import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import {
   vegifyData,
   type AuthUser,

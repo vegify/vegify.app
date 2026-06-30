@@ -4,7 +4,31 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./app-shell": "./src/app-shell.tsx",
+    "./auth-form": "./src/auth-form.tsx",
+    "./breadcrumb": "./src/breadcrumb.tsx",
+    "./button": "./src/button.tsx",
+    "./card": "./src/card.tsx",
+    "./catalog": "./src/catalog.ts",
+    "./checkbox": "./src/checkbox.tsx",
+    "./cn": "./src/cn.ts",
+    "./detail-hero": "./src/detail-hero.tsx",
+    "./dialog": "./src/dialog.tsx",
+    "./dropdown-menu": "./src/dropdown-menu.tsx",
+    "./ingredient-form": "./src/ingredient-form.tsx",
+    "./input": "./src/input.tsx",
+    "./label": "./src/label.tsx",
+    "./landing": "./src/landing.tsx",
+    "./nutrition-facts": "./src/nutrition-facts.tsx",
+    "./nutrition-facts-fab": "./src/nutrition-facts-fab.tsx",
+    "./recipe-form": "./src/recipe-form.tsx",
+    "./screens": "./src/screens.tsx",
+    "./select": "./src/select.tsx",
+    "./theme-setting": "./src/theme-setting.tsx",
+    "./use-chrome-search": "./src/use-chrome-search.ts",
+    "./use-theme": "./src/use-theme.ts",
+    "./vegify-logo": "./src/vegify-logo.tsx",
+    "./visibility-field": "./src/visibility-field.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

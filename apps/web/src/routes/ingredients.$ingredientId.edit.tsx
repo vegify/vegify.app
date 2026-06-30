@@ -5,7 +5,7 @@ import {
   IngredientForm,
   type IngredientFormDefaults,
   type IngredientFormInput,
-} from '@vegify/ui'
+} from '@vegify/ui/ingredient-form'
 import type { IngredientEditData } from '../content'
 
 const getIngredientFn = createServerFn({ method: 'GET' })

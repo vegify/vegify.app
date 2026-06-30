@@ -4,7 +4,8 @@
 // mutation server-fns call these — the web holds NO database of its own. See [[server-source-of-truth]].
 
 import { api } from './api'
-import type { RecipeFormInput, IngredientFormInput, IngredientSearchItem } from '@vegify/ui'
+import type { RecipeFormInput, IngredientSearchItem } from '@vegify/ui/recipe-form'
+import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
 
 type Visibility = 'public' | 'private' | 'unlisted'
 type Reading = { name: string; amountPer100g: number; unit: string }
