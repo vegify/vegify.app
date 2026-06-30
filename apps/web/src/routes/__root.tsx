@@ -21,34 +21,12 @@ import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
 import { fetchUser, logoutFn, requestEmailVerificationFn } from '../auth'
 import { initClientLogging } from '../client-log'
+import { BARE_PATHS, BOUNCE_WHEN_AUTHED, isPublicPath } from '../auth-gate'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
-// Auth and token pages render bare (no app shell): the auth forms plus the email-link actions.
-const BARE_PATHS = new Set([
-  '/login',
-  '/signup',
-  '/forgot',
-  '/reset',
-  '/verify',
-])
-// Pages reachable without a session. "/" is the public marketing landing for logged-out
-// visitors (and crawlers) AND the app home for signed-in users — the index route branches on
-// `user` — so it is public but never redirected in either direction. Everything else is gated.
-const PUBLIC_PATHS = new Set(['/', ...BARE_PATHS])
-// Auth FORMS a signed-in user has no use for → bounce them to "/". Deliberately NOT /verify or
-// /reset: those consume a one-time token from an email link and must work even while signed in. (A
-// signed-in user who clicks a verification link would otherwise be redirected to "/" before the
-// token is consumed, so the email never gets marked verified and the banner never clears.)
-const BOUNCE_WHEN_AUTHED = new Set(['/login', '/signup', '/forgot'])
-// Public, shareable profile links: "/<username>". A username is one [a-z0-9-] segment that can never
-// shadow a real route — the backend reserves every top-level route segment as a handle (handles.rs
-// `is_reserved`, guarded by the `every_current_route_segment_is_reserved` test). So a single segment
-// that is NOT a PUBLIC_PATH and NOT one of these gated sections is a profile, reachable logged-out.
-const GATED_SECTIONS = new Set(['/settings', '/recipes', '/ingredients'])
-const isPublicPath = (pathname: string) =>
-  PUBLIC_PATHS.has(pathname) ||
-  (/^\/[a-z0-9][a-z0-9-]*$/.test(pathname) && !GATED_SECTIONS.has(pathname))
+// Path policy (which paths are reachable logged-out, which bounce a signed-in user) lives in ../auth-gate,
+// where it is derived fail-closed from the route files and unit-tested.
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -128,9 +106,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { search, setSearch, query } = useChromeSearch(pathname)
-  // The app chrome is for signed-in users only. Logged-out "/" (the marketing landing) and the
-  // auth forms render bare — they bring their own layout.
-  const showShell = !!user && !BARE_PATHS.has(pathname)
+  // The app chrome wraps every page EXCEPT the bare auth/token forms and the logged-out "/" marketing
+  // landing. A logged-out visitor browsing the public catalog (/recipes, /<username>, …) still gets the
+  // shell — with a "Sign in" affordance and no New/Edit controls (the shared screens gate those on session).
+  const showShell = !BARE_PATHS.has(pathname) && (pathname !== '/' || !!user)
 
   // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
   useEffect(() => {

@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`email` text NOT NULL,
 	`created_at` integer,
 	`updated_at` integer
-, `password_hash` text);
+, `password_hash` text, `email_verified_at` integer);
 CREATE UNIQUE INDEX IF NOT EXISTS `users_email_unique` ON `users` (`email`);
 CREATE TABLE IF NOT EXISTS `videos` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -167,3 +167,15 @@ CREATE TABLE IF NOT EXISTS `sessions` (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS `sessions_hashed_token_unique` ON `sessions` (`hashed_token`);
 CREATE INDEX IF NOT EXISTS `sessions_user_idx` ON `sessions` (`user_id`);
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`hashed_token` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	`used_at` integer,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE UNIQUE INDEX IF NOT EXISTS `password_reset_tokens_hashed_token_unique` ON `password_reset_tokens` (`hashed_token`);
+CREATE INDEX IF NOT EXISTS `password_reset_tokens_user_idx` ON `password_reset_tokens` (`user_id`);

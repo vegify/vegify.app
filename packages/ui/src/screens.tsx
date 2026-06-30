@@ -37,6 +37,8 @@ export type RecipeDetailVM = {
   name: string;
   subtitle?: string | null;
   creator?: string | null;
+  /** Whether the viewer owns this recipe — shows the edit affordance. Omitted/false ⇒ read-only. */
+  canEdit?: boolean;
   directions?: string | null;
   items: RecipeDetailItem[];
   nutrition: NutritionFactsData;
@@ -45,6 +47,8 @@ export type IngredientDetailVM = {
   id: string;
   name: string;
   description?: string | null;
+  /** Whether the viewer owns this ingredient — shows the edit affordance. Omitted/false ⇒ read-only. */
+  canEdit?: boolean;
   nutrition: NutritionFactsData;
 };
 /** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
@@ -73,9 +77,12 @@ export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
 
 export function RecipeListView({
   recipes,
+  canCreate = false,
   LinkComponent,
 }: {
   recipes: RecipeListItem[];
+  /** Whether the viewer can add recipes (signed in). Omitted/false hides the "New recipe" action. */
+  canCreate?: boolean;
   LinkComponent: NavLink;
 }) {
   return (
@@ -85,9 +92,11 @@ export function RecipeListView({
           <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Recipes</h1>
           <p className="text-gray-500">{recipes.length} recipes</p>
         </div>
-        <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
-          + New recipe
-        </LinkComponent>
+        {canCreate ? (
+          <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
+            + New recipe
+          </LinkComponent>
+        ) : null}
       </div>
       {recipes.length === 0 ? (
         <p className="text-muted-foreground">No recipes yet — add one.</p>
@@ -183,9 +192,12 @@ export function ProfileView({
 
 export function IngredientListView({
   ingredients,
+  canCreate = false,
   LinkComponent,
 }: {
   ingredients: IngredientListItem[];
+  /** Whether the viewer can add ingredients (signed in). Omitted/false hides the "New ingredient" action. */
+  canCreate?: boolean;
   LinkComponent: NavLink;
 }) {
   return (
@@ -195,9 +207,11 @@ export function IngredientListView({
           <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Ingredients</h1>
           <p className="text-gray-500">{ingredients.length} ingredients</p>
         </div>
-        <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
-          + New ingredient
-        </LinkComponent>
+        {canCreate ? (
+          <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
+            + New ingredient
+          </LinkComponent>
+        ) : null}
       </div>
       {ingredients.length === 0 ? (
         <p className="text-muted-foreground">No ingredients yet — add one.</p>
@@ -249,7 +263,7 @@ export function RecipeDetailView({
 
           <DetailHero
             label="Recipe Image"
-            editHref={`/recipes/${recipe.id}/edit`}
+            editHref={recipe.canEdit ? `/recipes/${recipe.id}/edit` : undefined}
             LinkComponent={LinkComponent}
             className="mt-4"
           />
@@ -314,7 +328,7 @@ export function IngredientDetailView({
 
           <DetailHero
             label="Ingredient Image"
-            editHref={`/ingredients/${ingredient.id}/edit`}
+            editHref={ingredient.canEdit ? `/ingredients/${ingredient.id}/edit` : undefined}
             LinkComponent={LinkComponent}
             className="mt-4"
           />

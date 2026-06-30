@@ -8,9 +8,7 @@ import {
   SaveIcon,
   SearchIcon,
   Trash2Icon,
-  XIcon,
 } from "lucide-react";
-import { cn } from "./cn";
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData, type NutritionReading } from "./nutrition-facts";
 import { VisibilityField, type Visibility } from "./visibility-field";
@@ -59,7 +57,6 @@ type Row = {
   readings: NutritionReading[];
 };
 
-const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
 const clean = (n: number) => String(Math.round(n * 1e6) / 1e6);
 
 export function RecipeForm({

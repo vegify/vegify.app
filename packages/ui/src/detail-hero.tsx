@@ -4,10 +4,10 @@ import type { AppShellLinkProps } from "./app-shell";
 import { cn } from "./cn";
 
 /**
- * The detail-page hero: a placeholder image box with save + edit FABs overhanging
- * the bottom-right (View Ingredient / View Recipe). FABs are presentational until
- * the Create/Edit flow lands. Keeps all lucide usage inside @vegify/ui so the app
- * pages stay framework-only (web-next has no direct lucide dep).
+ * The detail-page hero: a placeholder image box. When the viewer can edit — i.e. an editHref or onEdit
+ * is supplied — save + edit FABs overhang the bottom-right; otherwise no FABs render, so read-only and
+ * non-owner viewers see just the image. Keeps all lucide usage inside @vegify/ui so the app pages stay
+ * framework-only.
  */
 export function DetailHero({
   label,
@@ -35,32 +35,30 @@ export function DetailHero({
           <span className="text-sm">{label}</span>
         </div>
       </div>
-      <div className="absolute right-4 -bottom-5 flex gap-2">
-        <button
-          type="button"
-          aria-label="Save"
-          className="flex size-11 items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10"
-        >
-          <SaveIcon className="size-5" />
-        </button>
-        {LinkComponent && editHref ? (
-          <LinkComponent href={editHref} aria-label="Edit" className={editFabClass}>
-            <PencilIcon className="size-5" />
-          </LinkComponent>
-        ) : onEdit ? (
-          <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
-            <PencilIcon className="size-5" />
+      {editHref || onEdit ? (
+        <div className="absolute right-4 -bottom-5 flex gap-2">
+          <button
+            type="button"
+            aria-label="Save"
+            className="flex size-11 items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10"
+          >
+            <SaveIcon className="size-5" />
           </button>
-        ) : editHref ? (
-          <a href={editHref} aria-label="Edit" className={editFabClass}>
-            <PencilIcon className="size-5" />
-          </a>
-        ) : (
-          <button type="button" aria-label="Edit" className={editFabClass}>
-            <PencilIcon className="size-5" />
-          </button>
-        )}
-      </div>
+          {LinkComponent && editHref ? (
+            <LinkComponent href={editHref} aria-label="Edit" className={editFabClass}>
+              <PencilIcon className="size-5" />
+            </LinkComponent>
+          ) : onEdit ? (
+            <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
+              <PencilIcon className="size-5" />
+            </button>
+          ) : (
+            <a href={editHref} aria-label="Edit" className={editFabClass}>
+              <PencilIcon className="size-5" />
+            </a>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

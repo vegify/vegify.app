@@ -141,6 +141,9 @@ pub struct RecipeView {
     pub subtitle: Option<String>,
     pub directions: Option<String>,
     pub creator: Option<String>,
+    /// Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
+    /// guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
+    pub can_edit: bool,
     pub serving: Option<Amount>,
     pub batch_grams: Option<f64>,
     pub items: Vec<RecipeItem>,
@@ -219,6 +222,10 @@ pub struct IngredientEditData {
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
     pub visibility: Visibility,
+    /// Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
+    /// true on the owner-only edit-load path; on the detail path it reflects ownership (false for
+    /// anonymous + non-owner viewers). The real guard stays server-side.
+    pub can_edit: bool,
     pub nutrients: Vec<Reading>,
 }
 
@@ -657,6 +664,7 @@ fn load_ingredient_edit(
             serving_grams,
             package_grams,
             visibility: Visibility::from_db(&visibility),
+            can_edit: false,
             nutrients,
         },
         owner,
@@ -845,7 +853,10 @@ pub fn ingredient(
     viewer: Option<&str>,
 ) -> Result<Option<IngredientEditData>, Error> {
     match load_ingredient_edit(conn, &id)? {
-        Some((data, owner)) if can_view(data.visibility, owner.as_deref(), viewer) => Ok(Some(data)),
+        Some((mut data, owner)) if can_view(data.visibility, owner.as_deref(), viewer) => {
+            data.can_edit = is_owner(owner.as_deref(), viewer);
+            Ok(Some(data))
+        }
         _ => Ok(None),
     }
 }
@@ -857,7 +868,10 @@ pub fn ingredient_for_edit(
     viewer: Option<&str>,
 ) -> Result<Option<IngredientEditData>, Error> {
     match load_ingredient_edit(conn, &id)? {
-        Some((data, owner)) if is_owner(owner.as_deref(), viewer) => Ok(Some(data)),
+        Some((mut data, owner)) if is_owner(owner.as_deref(), viewer) => {
+            data.can_edit = true;
+            Ok(Some(data))
+        }
         _ => Ok(None),
     }
 }
@@ -867,7 +881,7 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
     let meta = conn
         .query_row(
             "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
-                    sa.amount, sa.unit, sa.grams, ba.grams
+                    sa.amount, sa.unit, sa.grams, ba.grams, i.user_id
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id
              LEFT JOIN users u ON u.id = i.user_id
@@ -886,14 +900,17 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, Option<f64>>(7)?,
                     row.get::<_, Option<f64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
                 ))
             },
         )
         .optional()?;
-    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams)) = meta
+    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner)) =
+        meta
     else {
         return Ok(None);
     };
+    let can_edit = is_owner(owner.as_deref(), viewer);
 
     let mut istmt = conn.prepare(
         "SELECT i.id, i.name, a.amount, a.unit, a.grams, r2.id AS recipe_id
@@ -927,6 +944,7 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
         subtitle,
         directions,
         creator,
+        can_edit,
         serving,
         batch_grams,
         items,

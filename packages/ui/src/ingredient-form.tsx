@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
-import { cn } from "./cn";
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
 import { VisibilityField, type Visibility } from "./visibility-field";

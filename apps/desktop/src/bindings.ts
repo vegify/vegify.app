@@ -15,6 +15,11 @@ export const vegifyData = {
 	subtitle: string | null,
 	directions: string | null,
 	creator: string | null,
+	/**
+	 *  Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
+	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
+	 */
+	canEdit: boolean,
 	serving: Amount | null,
 	batchGrams: number | null,
 	items: RecipeItem[],
@@ -60,6 +65,12 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**
+	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
+	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
+	 *  anonymous + non-owner viewers). The real guard stays server-side.
+	 */
+	canEdit: boolean,
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient", { id });
@@ -75,6 +86,12 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**
+	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
+	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
+	 *  anonymous + non-owner viewers). The real guard stays server-side.
+	 */
+	canEdit: boolean,
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient_for_edit", { id });
@@ -205,6 +222,12 @@ export type IngredientEditData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**
+	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
+	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
+	 *  anonymous + non-owner viewers). The real guard stays server-side.
+	 */
+	canEdit: boolean,
 	nutrients: Reading[],
 };
 
@@ -286,6 +309,11 @@ export type RecipeView = {
 	subtitle: string | null,
 	directions: string | null,
 	creator: string | null,
+	/**
+	 *  Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
+	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
+	 */
+	canEdit: boolean,
 	serving: Amount | null,
 	batchGrams: number | null,
 	items: RecipeItem[],

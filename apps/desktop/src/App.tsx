@@ -170,6 +170,7 @@ function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
     name: recipe.name,
     subtitle: recipe.subtitle,
     creator: recipe.creator,
+    canEdit: recipe.canEdit,
     directions: recipe.directions,
     items: recipe.items.map((item) => ({
       key: item.id,
@@ -188,7 +189,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
     servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
     readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
   }
-  return { id: data.id, name: data.name, description: data.description, nutrition }
+  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, nutrition }
 }
 
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
@@ -237,11 +238,33 @@ function LinkComponent({ href, ...props }: AppShellLinkProps) {
   return <Link to={href} {...props} />
 }
 
-// The signed-in user + sign-out, provided by the App gate below and consumed by the chrome.
-const AuthContext = createContext<{ user: AuthUser; onSignOut: () => void } | null>(null)
+// Auth state + actions, provided by App and consumed by the chrome and the /login route. Always present
+// once App has mounted; `user` is null when logged out (the app stays fully usable — public browsing).
+const AuthContext = createContext<{
+  user: AuthUser | null
+  onSignOut: () => void
+  onAuthed: (user: AuthUser) => void
+} | null>(null)
 
 function NotFound({ what }: { what: string }) {
   return <div className="p-8 text-muted-foreground">No {what} found.</div>
+}
+
+// Logged-out guard for the create/edit routes. The entry points (New buttons, edit FABs) are already
+// hidden when logged out and the DAL refuses anonymous writes — this just gives a direct-URL visitor a way
+// in instead of an empty form they can't save.
+function SignInRequired({ action }: { action: string }) {
+  return (
+    <div className="mx-auto max-w-3xl p-8 text-center">
+      <p className="mb-4 text-muted-foreground">Sign in to {action}.</p>
+      <Link
+        to="/login"
+        className="inline-flex items-center rounded-lg bg-green-dark px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+      >
+        Sign in
+      </Link>
+    </div>
+  )
 }
 
 // Chrome search overlay — queries the DAL and renders the SHARED SearchResultsView (same as web).
@@ -263,6 +286,19 @@ function SearchOverlay({ query }: { query: string }) {
   const res = data ?? { recipes: [] as RecipeListItem[], ingredients: [] as IngredientListItem[] }
   return (
     <SearchResultsView query={query} recipes={res.recipes} ingredients={res.ingredients} LinkComponent={LinkComponent} />
+  )
+}
+
+// The verify-email resend, lifted out of RootChrome so `email` crosses into the async onResend closure as
+// a plain string — the now-nullable auth.user can't keep its narrowing across that callback boundary.
+function EmailVerificationNotice({ email }: { email: string }) {
+  return (
+    <EmailVerificationBanner
+      email={email}
+      onResend={async () => {
+        await vegifyData.requestEmailVerification({ email })
+      }}
+    />
   )
 }
 
@@ -344,17 +380,10 @@ function RootChrome() {
       ingredientsNav
       searchValue={search}
       onSearchChange={setSearch}
-      user={auth ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
+      user={auth?.user ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
       onSignOut={auth?.onSignOut}
     >
-      {auth && !auth.user.emailVerified ? (
-        <EmailVerificationBanner
-          email={auth.user.email}
-          onResend={async () => {
-            await vegifyData.requestEmailVerification({ email: auth.user.email })
-          }}
-        />
-      ) : null}
+      {auth?.user && !auth.user.emailVerified ? <EmailVerificationNotice email={auth.user.email} /> : null}
       {query ? <SearchOverlay query={query} /> : <Outlet />}
     </AppShell>
   )
@@ -374,8 +403,9 @@ const recipesRoute = createRoute({
   path: '/recipes',
   loader: ({ context }) => context.queryClient.ensureQueryData(recipesQuery),
   component: function RecipesList() {
+    const auth = useContext(AuthContext)
     const { data } = useSuspenseQuery(recipesQuery)
-    return <RecipeListView recipes={data} LinkComponent={LinkComponent} />
+    return <RecipeListView recipes={data} canCreate={!!auth?.user} LinkComponent={LinkComponent} />
   },
 })
 
@@ -383,8 +413,10 @@ const recipeNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recipes/new',
   component: function NewRecipe() {
+    const auth = useContext(AuthContext)
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    if (!auth?.user) return <SignInRequired action="add a recipe" />
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
         <RecipeForm
@@ -428,10 +460,12 @@ const recipeEditRoute = createRoute({
   path: '/recipes/$recipeId/edit',
   loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeEditQuery(params.recipeId)),
   component: function EditRecipe() {
+    const auth = useContext(AuthContext)
     const { recipeId } = useParams({ from: '/recipes/$recipeId/edit' })
     const { data: d } = useSuspenseQuery(recipeEditQuery(recipeId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    if (!auth?.user) return <SignInRequired action="edit recipes" />
     if (!d) return <NotFound what="recipe" />
     const defaults: RecipeFormDefaults = {
       id: d.id,
@@ -479,8 +513,9 @@ const ingredientsRoute = createRoute({
   path: '/ingredients',
   loader: ({ context }) => context.queryClient.ensureQueryData(ingredientsQuery),
   component: function IngredientsList() {
+    const auth = useContext(AuthContext)
     const { data } = useSuspenseQuery(ingredientsQuery)
-    return <IngredientListView ingredients={data} LinkComponent={LinkComponent} />
+    return <IngredientListView ingredients={data} canCreate={!!auth?.user} LinkComponent={LinkComponent} />
   },
 })
 
@@ -488,8 +523,10 @@ const ingredientNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients/new',
   component: function NewIngredient() {
+    const auth = useContext(AuthContext)
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    if (!auth?.user) return <SignInRequired action="add an ingredient" />
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
         <IngredientForm
@@ -521,10 +558,12 @@ const ingredientEditRoute = createRoute({
   path: '/ingredients/$ingredientId/edit',
   loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientEditQuery(params.ingredientId)),
   component: function EditIngredient() {
+    const auth = useContext(AuthContext)
     const { ingredientId } = useParams({ from: '/ingredients/$ingredientId/edit' })
     const { data: d } = useSuspenseQuery(ingredientEditQuery(ingredientId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    if (!auth?.user) return <SignInRequired action="edit ingredients" />
     if (!d) return <NotFound what="ingredient" />
     const scale = d.servingGrams ? d.servingGrams / 100 : 1
     const defaults: IngredientFormDefaults = {
@@ -569,6 +608,28 @@ const settingsRoute = createRoute({
   component: () => <SettingsView />,
 })
 
+// /login mounts the shared auth views INSIDE the now-always-present router (the app is usable logged-out,
+// so signing in is a destination, not a gate). On success: adopt the session and return home.
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login',
+  component: function LoginPage() {
+    const auth = useContext(AuthContext)
+    const navigate = useNavigate()
+    useEffect(() => {
+      if (auth?.user) navigate({ to: '/' }) // already signed in — nothing to do here
+    }, [auth?.user, navigate])
+    return (
+      <AuthGate
+        onAuthed={(u) => {
+          auth?.onAuthed(u)
+          navigate({ to: '/' })
+        }}
+      />
+    )
+  },
+})
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   recipesRoute,
@@ -580,6 +641,7 @@ const routeTree = rootRoute.addChildren([
   ingredientDetailRoute,
   ingredientEditRoute,
   settingsRoute,
+  loginRoute,
   profileRoute,
 ])
 
@@ -614,17 +676,17 @@ export function App() {
       .catch(() => setUser(null))
   }, [])
 
-  if (user === undefined) return null
-  if (!user) return <AuthGate onAuthed={setUser} />
+  if (user === undefined) return null // still checking the keychain
   return (
     <AuthContext.Provider
       value={{
         user,
         onSignOut: async () => {
           await vegifyData.signOut().catch(() => {})
-          queryClient.clear() // drop the signed-out user's cached content before the next sign-in
+          queryClient.clear() // drop the signed-out user's cached content; the next pull refills public content
           setUser(null)
         },
+        onAuthed: setUser,
       }}
     >
       <QueryClientProvider client={queryClient}>

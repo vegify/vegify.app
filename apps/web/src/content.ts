@@ -20,6 +20,7 @@ export type RecipeView = {
   subtitle: string | null
   directions: string | null
   creator: string | null
+  canEdit: boolean
   serving: Amount | null
   batchGrams: number | null
   items: RecipeItem[]
@@ -51,6 +52,7 @@ export type IngredientEditData = {
   servingGrams: number | null
   packageGrams: number | null
   visibility: Visibility
+  canEdit: boolean
   nutrients: Reading[]
 }
 

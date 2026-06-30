@@ -203,6 +203,15 @@ pub fn validate_session(conn: &Connection, token: &str) -> Result<Option<User>, 
     Ok(user)
 }
 
+/// The viewer id for an OPTIONALLY-authed read: a valid bearer identifies the viewer (so they also see
+/// their own non-public rows); an absent or invalid token yields `None`, and the caller (vegify-core)
+/// then scopes the read to public-only. Never errors — anonymous reads are allowed.
+pub fn optional_viewer(conn: &Connection, token: Option<String>) -> Option<String> {
+    token
+        .and_then(|t| validate_session(conn, &t).ok().flatten())
+        .map(|u| u.id)
+}
+
 pub fn invalidate_session(conn: &Connection, token: &str) -> Result<(), AppError> {
     conn.execute("DELETE FROM sessions WHERE hashed_token = ?1", [token_hash(token)])?;
     Ok(())
@@ -399,6 +408,17 @@ mod reset_tests {
         // wrong password and unknown identifier both fail
         assert!(authenticate(&conn, "test-user", "wrong").unwrap().is_none());
         assert!(authenticate(&conn, "ghost", "pw-123456").unwrap().is_none());
+    }
+
+    #[test]
+    fn optional_viewer_resolves_only_a_valid_session() {
+        let conn = test_conn();
+        let user = create_user(&conn, "Test User", "user@example.com", "pw-123456").unwrap();
+        let token = create_session(&conn, &user.id).unwrap();
+        // A valid bearer identifies the viewer; an absent or garbage token is anonymous (None), never an error.
+        assert_eq!(optional_viewer(&conn, Some(token)), Some(user.id));
+        assert_eq!(optional_viewer(&conn, None), None);
+        assert_eq!(optional_viewer(&conn, Some("not-a-real-token".into())), None);
     }
 
     #[test]

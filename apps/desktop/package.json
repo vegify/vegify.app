@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
     "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --example gen_bindings"
