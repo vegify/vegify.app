@@ -16,13 +16,17 @@ import {
 import {
   QueryClient,
   QueryClientProvider,
+  infiniteQueryOptions,
   queryOptions,
   useQuery,
   useQueryClient,
+  useSuspenseInfiniteQuery,
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import {
   AppShell,
+  PAGE_SIZE,
+  parseSort,
   EmailVerificationBanner,
   HomeView,
   IngredientDetailView,
@@ -49,6 +53,7 @@ import {
   type RecipeFormDefaults,
   type RecipeFormInput,
   type RecipeListItem,
+  type Sort,
 } from '@vegify/ui'
 import {
   vegifyData,
@@ -195,10 +200,20 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
 // Keys mirror web's exactly so the two shells stay legible side by side. The queryFn does the IPC call
 // + the view-model transform, so the cache holds ready-to-render data (same as web's server fns).
-const recipesQuery = queryOptions({
-  queryKey: ['recipes'],
-  queryFn: async () => (await vegifyData.listRecipes()).map(toRecipeListItem),
-})
+type Cursor = { id: string; name: string }
+const recipesQuery = (sort: Sort) =>
+  infiniteQueryOptions({
+    queryKey: ['recipes', sort],
+    queryFn: async ({ pageParam }) =>
+      (
+        await vegifyData.listRecipes({ sort, cursor: pageParam?.id ?? null, cursorName: pageParam?.name ?? null, limit: PAGE_SIZE })
+      ).map(toRecipeListItem),
+    initialPageParam: undefined as Cursor | undefined,
+    getNextPageParam: (last): Cursor | undefined => {
+      const tail = last.at(-1)
+      return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
+    },
+  })
 const recipeDetailQuery = (id: string) =>
   queryOptions({
     queryKey: ['recipe', id],
@@ -217,11 +232,19 @@ const profileQuery = (username: string) =>
       return p ? { username: p.username, name: p.name, recipes: p.recipes.map(toRecipeListItem) } : null
     },
   })
-const ingredientsQuery = queryOptions({
-  queryKey: ['ingredients'],
-  queryFn: async (): Promise<IngredientListItem[]> =>
-    (await vegifyData.listIngredients()).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
-})
+const ingredientsQuery = (sort: Sort) =>
+  infiniteQueryOptions({
+    queryKey: ['ingredients', sort],
+    queryFn: async ({ pageParam }): Promise<IngredientListItem[]> =>
+      (
+        await vegifyData.listIngredients({ sort, cursor: pageParam?.id ?? null, cursorName: pageParam?.name ?? null, limit: PAGE_SIZE })
+      ).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+    initialPageParam: undefined as Cursor | undefined,
+    getNextPageParam: (last): Cursor | undefined => {
+      const tail = last.at(-1)
+      return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
+    },
+  })
 const ingredientDetailQuery = (id: string) =>
   queryOptions({
     queryKey: ['ingredient', id],
@@ -274,7 +297,7 @@ function SearchOverlay({ query }: { query: string }) {
   const { data } = useQuery({
     queryKey: ['search', query],
     queryFn: async () => {
-      const [recipes, ings] = await Promise.all([vegifyData.listRecipes(), vegifyData.searchIngredients(query)])
+      const [recipes, ings] = await Promise.all([vegifyData.listRecipes({}), vegifyData.searchIngredients(query)])
       const q = query.toLowerCase()
       return {
         recipes: recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem),
@@ -325,11 +348,11 @@ function RootChrome() {
       } else if (meta && e.key === '2') {
         e.preventDefault()
         setSearch('')
-        navigate({ to: '/recipes' })
+        navigate({ to: '/recipes', search: { sort: 'newest' } })
       } else if (meta && e.key === '3') {
         e.preventDefault()
         setSearch('')
-        navigate({ to: '/ingredients' })
+        navigate({ to: '/ingredients', search: { sort: 'newest' } })
       } else if (meta && e.key === ',') {
         e.preventDefault()
         setSearch('')
@@ -401,11 +424,26 @@ const homeRoute = createRoute({
 const recipesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recipes',
-  loader: ({ context }) => context.queryClient.ensureQueryData(recipesQuery),
+  validateSearch: (s: { sort?: string }): { sort: Sort } => ({ sort: parseSort(s.sort) }),
+  loaderDeps: ({ search }) => ({ sort: search.sort }),
+  loader: ({ context, deps }) => context.queryClient.ensureInfiniteQueryData(recipesQuery(deps.sort)),
   component: function RecipesList() {
     const auth = useContext(AuthContext)
-    const { data } = useSuspenseQuery(recipesQuery)
-    return <RecipeListView recipes={data} canCreate={!!auth?.user} LinkComponent={LinkComponent} />
+    const { sort } = recipesRoute.useSearch()
+    const navigate = useNavigate()
+    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery(recipesQuery(sort))
+    return (
+      <RecipeListView
+        recipes={data.pages.flat()}
+        canCreate={!!auth?.user}
+        LinkComponent={LinkComponent}
+        sort={sort}
+        onSortChange={(s) => navigate({ to: '/recipes', search: { sort: s } })}
+        onLoadMore={fetchNextPage}
+        hasMore={hasNextPage}
+        isLoadingMore={isFetchingNextPage}
+      />
+    )
   },
 })
 
@@ -424,7 +462,7 @@ const recipeNewRoute = createRoute({
           onSave={async (input) => {
             await saveRecipeFromForm(input)
             await queryClient.invalidateQueries({ queryKey: ['recipes'] }) // the list gains the new recipe
-            navigate({ to: '/recipes' })
+            navigate({ to: '/recipes', search: { sort: 'newest' } })
           }}
         />
       </div>
@@ -500,7 +538,7 @@ const recipeEditRoute = createRoute({
             queryClient.removeQueries({ queryKey: ['recipe', recipeId] })
             queryClient.removeQueries({ queryKey: ['recipe-edit', recipeId] })
             await queryClient.invalidateQueries({ queryKey: ['recipes'] })
-            navigate({ to: '/recipes' })
+            navigate({ to: '/recipes', search: { sort: 'newest' } })
           }}
         />
       </div>
@@ -511,11 +549,26 @@ const recipeEditRoute = createRoute({
 const ingredientsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingredients',
-  loader: ({ context }) => context.queryClient.ensureQueryData(ingredientsQuery),
+  validateSearch: (s: { sort?: string }): { sort: Sort } => ({ sort: parseSort(s.sort) }),
+  loaderDeps: ({ search }) => ({ sort: search.sort }),
+  loader: ({ context, deps }) => context.queryClient.ensureInfiniteQueryData(ingredientsQuery(deps.sort)),
   component: function IngredientsList() {
     const auth = useContext(AuthContext)
-    const { data } = useSuspenseQuery(ingredientsQuery)
-    return <IngredientListView ingredients={data} canCreate={!!auth?.user} LinkComponent={LinkComponent} />
+    const { sort } = ingredientsRoute.useSearch()
+    const navigate = useNavigate()
+    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery(ingredientsQuery(sort))
+    return (
+      <IngredientListView
+        ingredients={data.pages.flat()}
+        canCreate={!!auth?.user}
+        LinkComponent={LinkComponent}
+        sort={sort}
+        onSortChange={(s) => navigate({ to: '/ingredients', search: { sort: s } })}
+        onLoadMore={fetchNextPage}
+        hasMore={hasNextPage}
+        isLoadingMore={isFetchingNextPage}
+      />
+    )
   },
 })
 
@@ -533,7 +586,7 @@ const ingredientNewRoute = createRoute({
           onSave={async (input) => {
             await saveIngredientFromForm(input)
             await queryClient.invalidateQueries({ queryKey: ['ingredients'] }) // list gains the new item
-            navigate({ to: '/ingredients' })
+            navigate({ to: '/ingredients', search: { sort: 'newest' } })
           }}
         />
       </div>
@@ -594,7 +647,7 @@ const ingredientEditRoute = createRoute({
             queryClient.removeQueries({ queryKey: ['ingredient', ingredientId] })
             queryClient.removeQueries({ queryKey: ['ingredient-edit', ingredientId] })
             await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-            navigate({ to: '/ingredients' })
+            navigate({ to: '/ingredients', search: { sort: 'newest' } })
           }}
         />
       </div>
