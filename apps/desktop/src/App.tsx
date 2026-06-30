@@ -170,6 +170,7 @@ function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
     name: recipe.name,
     subtitle: recipe.subtitle,
     creator: recipe.creator,
+    canEdit: recipe.canEdit,
     directions: recipe.directions,
     items: recipe.items.map((item) => ({
       key: item.id,
@@ -188,7 +189,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
     servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
     readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
   }
-  return { id: data.id, name: data.name, description: data.description, nutrition }
+  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, nutrition }
 }
 
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
@@ -374,8 +375,9 @@ const recipesRoute = createRoute({
   path: '/recipes',
   loader: ({ context }) => context.queryClient.ensureQueryData(recipesQuery),
   component: function RecipesList() {
+    const auth = useContext(AuthContext)
     const { data } = useSuspenseQuery(recipesQuery)
-    return <RecipeListView recipes={data} LinkComponent={LinkComponent} />
+    return <RecipeListView recipes={data} canCreate={!!auth} LinkComponent={LinkComponent} />
   },
 })
 
@@ -479,8 +481,9 @@ const ingredientsRoute = createRoute({
   path: '/ingredients',
   loader: ({ context }) => context.queryClient.ensureQueryData(ingredientsQuery),
   component: function IngredientsList() {
+    const auth = useContext(AuthContext)
     const { data } = useSuspenseQuery(ingredientsQuery)
-    return <IngredientListView ingredients={data} LinkComponent={LinkComponent} />
+    return <IngredientListView ingredients={data} canCreate={!!auth} LinkComponent={LinkComponent} />
   },
 })
 

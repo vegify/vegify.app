@@ -17,6 +17,7 @@ export const Route = createFileRoute('/recipes/')({
 })
 
 function RecipesPage() {
+  const { user } = Route.useRouteContext()
   const { data } = useSuspenseQuery(recipesQuery)
-  return <RecipeListView recipes={data} LinkComponent={LinkAdapter} />
+  return <RecipeListView recipes={data} canCreate={!!user} LinkComponent={LinkAdapter} />
 }

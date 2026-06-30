@@ -29,6 +29,7 @@ const getRecipe = createServerFn({ method: 'GET' })
       name: recipe.name,
       subtitle: recipe.subtitle,
       creator: recipe.creator ?? undefined,
+      canEdit: recipe.canEdit,
       directions: recipe.directions,
       // An item that is itself a recipe links to the recipe page (the backend resolves recipeId); a
       // leaf ingredient links to its ingredient page. item.id is the ingredient id (vegify-core shape).

@@ -27,6 +27,7 @@ const getIngredient = createServerFn({ method: 'GET' })
       id: ing.id,
       name: ing.name,
       description: ing.description,
+      canEdit: ing.canEdit,
       nutrition,
     }
   })
