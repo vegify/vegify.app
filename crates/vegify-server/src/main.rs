@@ -270,30 +270,23 @@ async fn confirm_email_verification(
 // non-public rows); without one the request is anonymous and vegify-core scopes it to public-only. WRITES
 // and edit-loads require a bearer and stamp/guard userId server-side from the session.
 
-/// Query for the keyset-paginated catalog reads: `cursor` is the last card's id, `limit` the page size.
-#[derive(Deserialize)]
-struct ListQuery {
-    cursor: Option<String>,
-    limit: Option<u32>,
-}
-
 /// Clamp the client-supplied page size so an (anonymous) catalog read is never unbounded; absent or
-/// oversized → 100. The desktop reads its local cache directly and isn't subject to this.
-fn page_limit(requested: Option<u32>) -> Option<u32> {
-    Some(requested.unwrap_or(100).clamp(1, 100))
+/// oversized → 100. The desktop reads its local cache directly and isn't subject to this. The rest of
+/// the page (sort + keyset cursor) deserializes straight into `vegify_core::Page` from the query string.
+fn page_limit(requested: Option<u32>) -> u32 {
+    requested.unwrap_or(100).clamp(1, 100)
 }
 
 async fn list_recipes(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<ListQuery>,
+    Query(mut page): Query<vegify_core::Page>,
 ) -> Result<Json<Vec<vegify_core::RecipeCard>>, AppError> {
     let token = bearer_token(&headers);
-    let limit = page_limit(q.limit);
-    let cursor = q.cursor;
+    page.limit = Some(page_limit(page.limit));
     let out = db(&state, move |conn| {
         let viewer = auth::optional_viewer(conn, token);
-        vegify_core::list_recipes(conn, viewer.as_deref(), cursor.as_deref(), limit).map_err(AppError::from)
+        vegify_core::list_recipes(conn, viewer.as_deref(), &page).map_err(AppError::from)
     })
     .await?;
     Ok(Json(out))
@@ -360,14 +353,13 @@ async fn delete_recipe(
 async fn list_ingredients(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<ListQuery>,
+    Query(mut page): Query<vegify_core::Page>,
 ) -> Result<Json<Vec<vegify_core::IngredientCard>>, AppError> {
     let token = bearer_token(&headers);
-    let limit = page_limit(q.limit);
-    let cursor = q.cursor;
+    page.limit = Some(page_limit(page.limit));
     let out = db(&state, move |conn| {
         let viewer = auth::optional_viewer(conn, token);
-        vegify_core::list_ingredients(conn, viewer.as_deref(), cursor.as_deref(), limit).map_err(AppError::from)
+        vegify_core::list_ingredients(conn, viewer.as_deref(), &page).map_err(AppError::from)
     })
     .await?;
     Ok(Json(out))

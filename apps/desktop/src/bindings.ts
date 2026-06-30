@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export const vegifyData = {
   /** @throws {DataError} */
-  listRecipes(cursor: string | null, limit: number | null): Promise<RecipeCard[]> {
-    return invoke("list_recipes", { cursor, limit });
+  listRecipes(page: Page): Promise<RecipeCard[]> {
+    return invoke("list_recipes", { page });
   },
 
   /** @throws {DataError} */
@@ -51,8 +51,8 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  listIngredients(cursor: string | null, limit: number | null): Promise<IngredientCard[]> {
-    return invoke("list_ingredients", { cursor, limit });
+  listIngredients(page: Page): Promise<IngredientCard[]> {
+    return invoke("list_ingredients", { page });
   },
 
   /** @throws {DataError} */
@@ -246,6 +246,17 @@ export type IngredientSearchResult = {
 };
 
 /**
+ *  One page of a catalog list: the sort, a keyset cursor (the last card's id, plus its name for the
+ *  name sorts), and a page size. `Default` = newest-first, no cursor, no limit (the whole list).
+ */
+export type Page = {
+	sort?: Sort,
+	cursor?: string | null,
+	cursorName?: string | null,
+	limit?: number | null,
+};
+
+/**
  *  A public profile: the handle, the display name, and the user's visible recipes. Shared by the
  *  server's `/api/content/profile` endpoint and the desktop DAL so both render the identical screen.
  */
@@ -363,6 +374,18 @@ export type SignUpInput = {
 	email: string,
 	password: string,
 };
+
+/**
+ *  Recipe browser cards. isListed: public catalog + your own (any visibility). `user_id = NULL` never
+ *  matches, so a signed-out viewer (viewer = None) sees only public.
+ *  Public recipe catalog for `viewer` (public rows + the viewer's own), NEWEST FIRST by id — ids are
+ *  ULIDs, so id order is creation order. Keyset-paginated for infinite scroll: pass the last card's `id`
+ *  as `cursor` to get the page after it; `limit` caps the page (None = no limit, i.e. the full list).
+ *  Sort order for the catalog list reads. Recency sorts key on the id (ids are ULIDs, so id order is
+ *  creation order); name sorts use a composite (name, id) keyset since names are not unique. Default
+ *  = Newest (the catalog's first impression).
+ */
+export type Sort = "newest" | "oldest" | "name_asc" | "name_desc";
 
 /**
  *  The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by

@@ -678,24 +678,74 @@ fn load_ingredient_edit(
 /// Public recipe catalog for `viewer` (public rows + the viewer's own), NEWEST FIRST by id — ids are
 /// ULIDs, so id order is creation order. Keyset-paginated for infinite scroll: pass the last card's `id`
 /// as `cursor` to get the page after it; `limit` caps the page (None = no limit, i.e. the full list).
+/// Sort order for the catalog list reads. Recency sorts key on the id (ids are ULIDs, so id order is
+/// creation order); name sorts use a composite (name, id) keyset since names are not unique. Default
+/// = Newest (the catalog's first impression).
+#[derive(Serialize, Deserialize, Type, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Sort {
+    #[default]
+    Newest,
+    Oldest,
+    NameAsc,
+    NameDesc,
+}
+
+impl Sort {
+    /// The `(keyset predicate, ORDER BY)` SQL for this sort over the given id and name column
+    /// expressions. `?2` binds the cursor id and `?3` the cursor name — both NULL on the first page,
+    /// so the predicate is vacuously true. The keyset selects the rows AFTER the cursor in sort order.
+    fn clauses(self, id: &str, name: &str) -> (String, String) {
+        match self {
+            Sort::Newest => (format!("(?2 IS NULL OR {id} < ?2)"), format!("{id} DESC")),
+            Sort::Oldest => (format!("(?2 IS NULL OR {id} > ?2)"), format!("{id} ASC")),
+            Sort::NameAsc => (
+                format!("(?2 IS NULL OR {name} > ?3 OR ({name} = ?3 AND {id} > ?2))"),
+                format!("{name} ASC, {id} ASC"),
+            ),
+            Sort::NameDesc => (
+                format!("(?2 IS NULL OR {name} < ?3 OR ({name} = ?3 AND {id} < ?2))"),
+                format!("{name} DESC, {id} DESC"),
+            ),
+        }
+    }
+}
+
+/// One page of a catalog list: the sort, a keyset cursor (the last card's id, plus its name for the
+/// name sorts), and a page size. `Default` = newest-first, no cursor, no limit (the whole list).
+#[derive(Serialize, Deserialize, Type, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Page {
+    pub sort: Sort,
+    pub cursor: Option<String>,
+    pub cursor_name: Option<String>,
+    pub limit: Option<u32>,
+}
+
 pub fn list_recipes(
     conn: &Connection,
     viewer: Option<&str>,
-    cursor: Option<&str>,
-    limit: Option<u32>,
+    page: &Page,
 ) -> Result<Vec<RecipeCard>, Error> {
-    let mut stmt = conn.prepare(
+    let (keyset, order) = page.sort.clauses("r.id", "i.name");
+    let sql = format!(
         "SELECT r.id, i.name, r.subtitle
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
-         WHERE (i.visibility = 'public' OR i.user_id = ?1)
-           AND (?2 IS NULL OR r.id < ?2)
-         ORDER BY r.id DESC
-         LIMIT ?3",
-    )?;
+         WHERE (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
+         ORDER BY {order}
+         LIMIT ?4"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(params![viewer, cursor, limit.map_or(-1, |n| n as i64)], |row| {
-            Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
-        })?
+        .query_map(
+            params![
+                viewer,
+                page.cursor.as_deref(),
+                page.cursor_name.as_deref(),
+                page.limit.map_or(-1, |n| n as i64)
+            ],
+            |row| Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? }),
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
@@ -846,22 +896,28 @@ pub fn recipe_for_edit(
 pub fn list_ingredients(
     conn: &Connection,
     viewer: Option<&str>,
-    cursor: Option<&str>,
-    limit: Option<u32>,
+    page: &Page,
 ) -> Result<Vec<IngredientCard>, Error> {
-    let mut stmt = conn.prepare(
+    let (keyset, order) = page.sort.clauses("i.id", "i.name");
+    let sql = format!(
         "SELECT i.id, i.name, i.calories_per_100g
          FROM ingredients i
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
-           AND (i.visibility = 'public' OR i.user_id = ?1)
-           AND (?2 IS NULL OR i.id < ?2)
-         ORDER BY i.id DESC
-         LIMIT ?3",
-    )?;
+           AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
+         ORDER BY {order}
+         LIMIT ?4"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(params![viewer, cursor, limit.map_or(-1, |n| n as i64)], |row| {
-            Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? })
-        })?
+        .query_map(
+            params![
+                viewer,
+                page.cursor.as_deref(),
+                page.cursor_name.as_deref(),
+                page.limit.map_or(-1, |n| n as i64)
+            ],
+            |row| Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? }),
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
