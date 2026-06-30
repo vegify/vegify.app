@@ -84,7 +84,7 @@ function EditIngredient() {
         queryClient.removeQueries({ queryKey: ['ingredient', ingredient.id] })
         queryClient.removeQueries({ queryKey: ['ingredient-edit', ingredient.id] })
         await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-        router.navigate({ to: '/recipes' })
+        router.navigate({ to: '/recipes', search: { sort: 'newest' } })
       }}
     />
   )

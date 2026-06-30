@@ -39,6 +39,7 @@ export {
   type AuthSubmitResult,
 } from "./auth-form";
 export { VisibilityField, type Visibility } from "./visibility-field";
+export { SORT_OPTIONS, parseSort, PAGE_SIZE, type Sort } from "./catalog";
 export { LandingView } from "./landing";
 export {
   HomeView,

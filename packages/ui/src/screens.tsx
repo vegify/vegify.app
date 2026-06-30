@@ -1,6 +1,8 @@
-import type { ComponentType } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
+import { SORT_OPTIONS, type Sort } from "./catalog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -75,15 +77,81 @@ export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
   );
 }
 
+/** Sort dropdown for the catalog lists. The selected value is owned by the shell (URL-backed). */
+function SortControl({ value, onChange }: { value: Sort; onChange: (s: Sort) => void }) {
+  return (
+    <Select items={SORT_OPTIONS} value={value} onValueChange={(v) => v && onChange(v as Sort)}>
+      <SelectTrigger size="sm" aria-label="Sort order">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SORT_OPTIONS.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * Bottom-of-list marker for infinite scroll. The shell wires `onLoadMore` to its infinite query's
+ * fetchNextPage and `hasMore`/`isLoading` to its state; this asks for the next page when scrolled
+ * near. The intersecting state is its own effect so a load that leaves the sentinel still in view
+ * (short pages) re-fires once `isLoading` clears.
+ */
+function InfiniteSentinel({
+  hasMore,
+  isLoading,
+  onLoadMore,
+}: {
+  hasMore?: boolean;
+  isLoading?: boolean;
+  onLoadMore: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [intersecting, setIntersecting] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => setIntersecting(entries[0]?.isIntersecting ?? false), {
+      rootMargin: "400px",
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  useEffect(() => {
+    if (intersecting && hasMore && !isLoading) onLoadMore();
+  }, [intersecting, hasMore, isLoading, onLoadMore]);
+  return (
+    <div ref={ref} className="flex justify-center py-6 text-sm text-muted-foreground">
+      {isLoading ? "Loading…" : null}
+    </div>
+  );
+}
+
 export function RecipeListView({
   recipes,
   canCreate = false,
   LinkComponent,
+  sort,
+  onSortChange,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: {
   recipes: RecipeListItem[];
   /** Whether the viewer can add recipes (signed in). Omitted/false hides the "New recipe" action. */
   canCreate?: boolean;
   LinkComponent: NavLink;
+  /** Current sort + change handler. Omitted (e.g. a profile's recipe list) hides the sort control. */
+  sort?: Sort;
+  onSortChange?: (s: Sort) => void;
+  /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -92,11 +160,14 @@ export function RecipeListView({
           <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Recipes</h1>
           <p className="text-gray-500">{recipes.length} recipes</p>
         </div>
-        {canCreate ? (
-          <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
-            + New recipe
-          </LinkComponent>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {canCreate ? (
+            <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
+              + New recipe
+            </LinkComponent>
+          ) : null}
+        </div>
       </div>
       {recipes.length === 0 ? (
         <p className="text-muted-foreground">No recipes yet — add one.</p>
@@ -113,6 +184,9 @@ export function RecipeListView({
               </div>
             </LinkComponent>
           ))}
+          {onLoadMore ? (
+            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+          ) : null}
         </div>
       )}
     </div>
@@ -194,11 +268,23 @@ export function IngredientListView({
   ingredients,
   canCreate = false,
   LinkComponent,
+  sort,
+  onSortChange,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: {
   ingredients: IngredientListItem[];
   /** Whether the viewer can add ingredients (signed in). Omitted/false hides the "New ingredient" action. */
   canCreate?: boolean;
   LinkComponent: NavLink;
+  /** Current sort + change handler. Omitted hides the sort control. */
+  sort?: Sort;
+  onSortChange?: (s: Sort) => void;
+  /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -207,11 +293,14 @@ export function IngredientListView({
           <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Ingredients</h1>
           <p className="text-gray-500">{ingredients.length} ingredients</p>
         </div>
-        {canCreate ? (
-          <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
-            + New ingredient
-          </LinkComponent>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {canCreate ? (
+            <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
+              + New ingredient
+            </LinkComponent>
+          ) : null}
+        </div>
       </div>
       {ingredients.length === 0 ? (
         <p className="text-muted-foreground">No ingredients yet — add one.</p>
@@ -232,6 +321,9 @@ export function IngredientListView({
               </div>
             </LinkComponent>
           ))}
+          {onLoadMore ? (
+            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+          ) : null}
         </div>
       )}
     </div>
