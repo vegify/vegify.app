@@ -1,5 +1,5 @@
-# Pin the Rust toolchain for the whole workspace (local dev and CI). The crates
-# and apps/desktop/src-tauri all resolve this via rustup's directory walk.
-# Bump deliberately.
+# Track the current stable Rust toolchain for the whole workspace (local dev and
+# CI). The crates and apps/desktop/src-tauri all resolve it via rustup's
+# directory walk.
 [toolchain]
-channel = "1.96.1"
+channel = "stable"
