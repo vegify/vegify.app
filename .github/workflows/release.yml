@@ -217,14 +217,14 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: aarch64-musl
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@v0.0.10
       - uses: taiki-e/install-action@v2
         with:
           tool: cross
@@ -269,7 +269,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
@@ -318,13 +318,13 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
         run: |
           pnpm --filter desktop gen:bindings
@@ -353,7 +353,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # cdk synth is whole-app, so every stack's asset must exist even though we deploy only the
@@ -411,7 +411,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
@@ -459,7 +459,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 'lts/*'
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -467,7 +467,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@v0.0.10
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       - uses: aws-actions/configure-aws-credentials@v6
