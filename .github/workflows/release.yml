@@ -224,10 +224,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: aarch64-musl
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: taiki-e/install-action@v2
         with:
           tool: cross
+      # sccache wraps the native cargo test below. The `cross build` step is NOT wrapped: cross compiles
+      # inside a container that has neither the sccache binary nor the GHA cache creds, and feeding both
+      # in is fragile + only testable in a live release — that step stays on rust-cache.
       - name: Test the server + shared core
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
+          CARGO_INCREMENTAL: "0"
         run: cargo test -p vegify-server -p vegify-core
       - name: Cross-build the aarch64-musl binary + stage the seed
         run: |
@@ -294,6 +302,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -312,6 +324,7 @@ jobs:
       - run: pnpm --filter @vegify/tokens build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
         run: |
           pnpm --filter desktop gen:bindings
@@ -435,6 +448,10 @@ jobs:
     permissions:
       contents: write # attach the signed .dmg to the GitHub Release
       id-token: write # AWS OIDC, to read the shared Apple signing secret
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -450,6 +467,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       - uses: aws-actions/configure-aws-credentials@v6
