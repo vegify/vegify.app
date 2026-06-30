@@ -265,16 +265,19 @@ async fn confirm_email_verification(
     Ok(Json(json!({ "ok": true })))
 }
 
-// ---- content routes (Bearer-authed; userId always stamped server-side from the session) ----
+// ---- content routes ----
+// READS are optionally-authed: a bearer identifies the viewer (who also sees their own non-public rows);
+// without one the read is anonymous and vegify-core scopes it to public-only. WRITES, edit-loads, and the
+// bulk pull require a bearer and stamp/guard userId server-side from the session.
 
 async fn list_recipes(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<vegify_core::RecipeCard>>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
-        vegify_core::list_recipes(conn, Some(&me.id)).map_err(AppError::from)
+        let viewer = auth::optional_viewer(conn, token);
+        vegify_core::list_recipes(conn, viewer.as_deref()).map_err(AppError::from)
     })
     .await?;
     Ok(Json(out))
@@ -299,9 +302,7 @@ async fn profile(
     let token = bearer_token(&headers);
     // Null (not 404) for an unknown handle — mirrors recipe_detail; the web route renders not-found.
     let out = db(&state, move |conn| {
-        let viewer = token
-            .and_then(|t| auth::validate_session(conn, &t).ok().flatten())
-            .map(|u| u.id);
+        let viewer = auth::optional_viewer(conn, token);
         vegify_core::get_profile(conn, &username, viewer.as_deref()).map_err(AppError::from)
     })
     .await?;
@@ -344,10 +345,10 @@ async fn list_ingredients(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<vegify_core::IngredientCard>>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
-        vegify_core::list_ingredients(conn, Some(&me.id)).map_err(AppError::from)
+        let viewer = auth::optional_viewer(conn, token);
+        vegify_core::list_ingredients(conn, viewer.as_deref()).map_err(AppError::from)
     })
     .await?;
     Ok(Json(out))
@@ -390,11 +391,11 @@ async fn recipe_detail(
     headers: HeaderMap,
     Query(q): Query<IdQuery>,
 ) -> Result<Json<Option<vegify_core::RecipeView>>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
+        let viewer = auth::optional_viewer(conn, token);
         match q.id {
-            Some(id) => vegify_core::recipe(conn, id, Some(&me.id)).map_err(AppError::from),
+            Some(id) => vegify_core::recipe(conn, id, viewer.as_deref()).map_err(AppError::from),
             None => Ok(None),
         }
     })
@@ -424,11 +425,11 @@ async fn ingredient_detail(
     headers: HeaderMap,
     Query(q): Query<IdQuery>,
 ) -> Result<Json<Option<vegify_core::IngredientEditData>>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
+        let viewer = auth::optional_viewer(conn, token);
         match q.id {
-            Some(id) => vegify_core::ingredient(conn, id, Some(&me.id)).map_err(AppError::from),
+            Some(id) => vegify_core::ingredient(conn, id, viewer.as_deref()).map_err(AppError::from),
             None => Ok(None),
         }
     })
@@ -458,11 +459,11 @@ async fn search(
     headers: HeaderMap,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<Vec<vegify_core::IngredientSearchResult>>, AppError> {
-    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers);
     let q = query.q.unwrap_or_default();
     let out = db(&state, move |conn| {
-        let me = require_user(conn, &token)?;
-        vegify_core::search_ingredients(conn, q, Some(&me.id)).map_err(AppError::from)
+        let viewer = auth::optional_viewer(conn, token);
+        vegify_core::search_ingredients(conn, q, viewer.as_deref()).map_err(AppError::from)
     })
     .await?;
     Ok(Json(out))
