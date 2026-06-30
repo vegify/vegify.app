@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { PUBLIC_PATHS, STATIC_TOP_LEVEL, isPublicPath } from './auth-gate'
+import { PUBLIC_PATHS, PUBLIC_SECTIONS, STATIC_TOP_LEVEL, isPublicPath } from './auth-gate'
 
 describe('isPublicPath', () => {
   it('serves the landing and the auth/token pages to logged-out visitors', () => {
@@ -18,14 +18,20 @@ describe('isPublicPath', () => {
     }
   })
 
-  it('gates the authed top-level sections', () => {
-    for (const p of ['/settings', '/recipes', '/ingredients']) {
-      expect(isPublicPath(p), `${p} should be gated`).toBe(false)
+  it('serves the public catalog sections and their detail pages logged-out', () => {
+    for (const p of ['/recipes', '/ingredients', '/recipes/abc123', '/ingredients/abc123']) {
+      expect(isPublicPath(p), `${p} should be public`).toBe(true)
     }
   })
 
-  it('gates nested authed paths (only a single-segment handle is a profile)', () => {
-    for (const p of ['/recipes/new', '/recipes/abc123', '/recipes/abc123/edit', '/ingredients/new']) {
+  it('gates settings and the create/edit leaves even under a public section', () => {
+    for (const p of [
+      '/settings',
+      '/recipes/new',
+      '/recipes/abc123/edit',
+      '/ingredients/new',
+      '/ingredients/abc123/edit',
+    ]) {
       expect(isPublicPath(p), `${p} should be gated`).toBe(false)
     }
   })
@@ -46,7 +52,10 @@ describe('isPublicPath', () => {
     for (const seg of segments) {
       const path = `/${seg}`
       expect(STATIC_TOP_LEVEL.has(path), `${path} should be a known static route`).toBe(true)
-      if (!PUBLIC_PATHS.has(path)) {
+      // Gated unless explicitly opted into public (PUBLIC_PATHS) or a public catalog section. THIS test's
+      // narrower job — a static route must never be reachable as a "/<username>" profile — is already
+      // guaranteed by its STATIC_TOP_LEVEL membership asserted just above.
+      if (!PUBLIC_PATHS.has(path) && !PUBLIC_SECTIONS.includes(path)) {
         expect(isPublicPath(path), `${path} is a static route and must be gated`).toBe(false)
       }
     }

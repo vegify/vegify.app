@@ -39,10 +39,26 @@ export const STATIC_TOP_LEVEL: ReadonlySet<string> = new Set(
     .map((seg) => `/${seg}`),
 )
 
+// App sections a logged-out visitor may browse READ-ONLY: the recipe + ingredient catalog and the detail
+// pages under them. Their create/edit children (/…/new, /…/<id>/edit) and every other gated section (e.g.
+// /settings) still require a session — signing in is what unlocks writing. Mirrors the desktop, which hides
+// the same New/Edit affordances logged-out; the shared screens gate those on the session in both shells.
+export const PUBLIC_SECTIONS: readonly string[] = ['/recipes', '/ingredients']
+
+// A create/edit leaf under a public section — gated even though its section is public.
+const isWritePath = (pathname: string): boolean => /\/(new|edit)$/.test(pathname)
+
+// True for a public section's list ("/recipes") or a detail page ("/recipes/<id>"), but never its write leaves.
+const inPublicSection = (pathname: string): boolean =>
+  PUBLIC_SECTIONS.some((s) => pathname === s || pathname.startsWith(`${s}/`)) && !isWritePath(pathname)
+
 // A handle is one [a-z0-9-] segment leading with an alphanumeric — a superset of the backend's username
 // rules (handles.rs), which is fine: a non-handle single segment that isn't a static route just renders
-// "profile not found". A path is reachable logged-out iff it is an explicit public page, OR it looks like a
-// handle AND is not one of our static routes (i.e. it is a "/<username>" profile).
+// "profile not found".
 const HANDLE_RE = /^\/[a-z0-9][a-z0-9-]*$/
+// Reachable logged-out iff: an explicit public page, OR inside a public catalog section (read-only), OR a
+// "/<username>" profile (a handle that is not one of our static routes).
 export const isPublicPath = (pathname: string): boolean =>
-  PUBLIC_PATHS.has(pathname) || (HANDLE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(pathname))
+  PUBLIC_PATHS.has(pathname) ||
+  inPublicSection(pathname) ||
+  (HANDLE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(pathname))

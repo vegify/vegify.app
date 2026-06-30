@@ -106,9 +106,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { search, setSearch, query } = useChromeSearch(pathname)
-  // The app chrome is for signed-in users only. Logged-out "/" (the marketing landing) and the
-  // auth forms render bare — they bring their own layout.
-  const showShell = !!user && !BARE_PATHS.has(pathname)
+  // The app chrome wraps every page EXCEPT the bare auth/token forms and the logged-out "/" marketing
+  // landing. A logged-out visitor browsing the public catalog (/recipes, /<username>, …) still gets the
+  // shell — with a "Sign in" affordance and no New/Edit controls (the shared screens gate those on session).
+  const showShell = !BARE_PATHS.has(pathname) && (pathname !== '/' || !!user)
 
   // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
   useEffect(() => {
