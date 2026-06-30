@@ -3,6 +3,9 @@
 
 use vegify_lib::data::*;
 use tauri_plugin_tracing::{Builder as TracingBuilder, LevelFilter};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::Manager;
 
 fn main() {
     let db = vegify_lib::open_db().expect("open vegify db");
@@ -28,6 +31,31 @@ fn main() {
                     Err(e) => tracing::error!(error = %e, "ws push runtime failed to start"),
                 }
             });
+
+            // Menu-bar tray icon: a persistent presence with quick access to the window. The menu is
+            // handled here in Rust (no JS capability needed); on macOS the glyph is a template image,
+            // so it adapts to the light/dark menu bar automatically.
+            let show = MenuItem::with_id(app, "show", "Show Vegify", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Vegify", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+            TrayIconBuilder::with_id("main-tray")
+                .icon(tray_icon)
+                .icon_as_template(true)
+                .tooltip("Vegify")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+
             Ok(())
         })
         .invoke_handler(ttipc::handler(db.into_procedures()))
