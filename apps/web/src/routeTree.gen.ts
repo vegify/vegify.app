@@ -19,8 +19,10 @@ import { Route as UsernameRouteImport } from './routes/$username'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
 import { Route as IngredientsIndexRouteImport } from './routes/ingredients.index'
+import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as RecipesNewRouteImport } from './routes/recipes.new'
 import { Route as IngredientsNewRouteImport } from './routes/ingredients.new'
+import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
 import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$recipeId.index'
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
 import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
@@ -76,6 +78,11 @@ const IngredientsIndexRoute = IngredientsIndexRouteImport.update({
   path: '/ingredients/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BlogIndexRoute = BlogIndexRouteImport.update({
+  id: '/blog/',
+  path: '/blog/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecipesNewRoute = RecipesNewRouteImport.update({
   id: '/recipes/new',
   path: '/recipes/new',
@@ -84,6 +91,11 @@ const RecipesNewRoute = RecipesNewRouteImport.update({
 const IngredientsNewRoute = IngredientsNewRouteImport.update({
   id: '/ingredients/new',
   path: '/ingredients/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlogSlugRoute = BlogSlugRouteImport.update({
+  id: '/blog/$slug',
+  path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecipesRecipeIdIndexRoute = RecipesRecipeIdIndexRouteImport.update({
@@ -118,8 +130,10 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
@@ -136,8 +150,10 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/blog': typeof BlogIndexRoute
   '/ingredients': typeof IngredientsIndexRoute
   '/recipes': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
@@ -155,8 +171,10 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
@@ -175,8 +193,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/blog/'
     | '/ingredients/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
@@ -193,8 +213,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/blog'
     | '/ingredients'
     | '/recipes'
     | '/ingredients/$ingredientId/edit'
@@ -211,8 +233,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/blog/'
     | '/ingredients/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
@@ -230,8 +254,10 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   VerifyRoute: typeof VerifyRoute
+  BlogSlugRoute: typeof BlogSlugRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
   RecipesNewRoute: typeof RecipesNewRoute
+  BlogIndexRoute: typeof BlogIndexRoute
   IngredientsIndexRoute: typeof IngredientsIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
@@ -312,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IngredientsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/blog/': {
+      id: '/blog/'
+      path: '/blog'
+      fullPath: '/blog/'
+      preLoaderRoute: typeof BlogIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recipes/new': {
       id: '/recipes/new'
       path: '/recipes/new'
@@ -324,6 +357,13 @@ declare module '@tanstack/react-router' {
       path: '/ingredients/new'
       fullPath: '/ingredients/new'
       preLoaderRoute: typeof IngredientsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blog/$slug': {
+      id: '/blog/$slug'
+      path: '/blog/$slug'
+      fullPath: '/blog/$slug'
+      preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recipes/$recipeId/': {
@@ -366,8 +406,10 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   VerifyRoute: VerifyRoute,
+  BlogSlugRoute: BlogSlugRoute,
   IngredientsNewRoute: IngredientsNewRoute,
   RecipesNewRoute: RecipesNewRoute,
+  BlogIndexRoute: BlogIndexRoute,
   IngredientsIndexRoute: IngredientsIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,

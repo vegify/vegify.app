@@ -24,6 +24,12 @@ describe('isPublicPath', () => {
     }
   })
 
+  it('serves the blog (index + posts) logged-out — pure public content', () => {
+    for (const p of ['/blog', '/blog/vegan-honestly']) {
+      expect(isPublicPath(p), `${p} should be public`).toBe(true)
+    }
+  })
+
   it('gates settings and the create/edit leaves even under a public section', () => {
     for (const p of [
       '/settings',
