@@ -3,17 +3,21 @@
 <plist version="1.0">
 <dict>
   <!--
-    Associated Domains → macOS Password AutoFill in the WKWebView. With `webcredentials:vegify.app`
-    declared here AND the app listed in https://vegify.app/.well-known/apple-app-site-association, the
-    OS associates the app with vegify.app's saved logins, so the system Keychain and 1Password offer
-    to fill the shared auth forms (which already carry autocomplete="email"/"current-password"/
-    "new-password"). Validated at runtime against the AASA. This restricted entitlement requires an
-    embedded Developer ID provisioning profile (Contents/embedded.provisionprofile, injected by CI and
-    copied in via bundle.macOS.files) to authorize it — without it amfid refuses to launch the app.
+    Associated Domains, validated at runtime against https://vegify.app/.well-known/apple-app-site-association:
+    - `webcredentials:vegify.app` → macOS Password AutoFill in the WKWebView: the OS associates the app
+      with vegify.app's saved logins, so the system Keychain and 1Password offer to fill the shared auth
+      forms (which already carry autocomplete="email"/"current-password"/"new-password").
+    - `applinks:vegify.app` → universal links: https://vegify.app/recipes/* and /ingredients/* (the paths
+      the AASA claims) open the installed app instead of the browser, landing on the matching route via
+      the deep-link plugin. Like webcredentials, it only binds in a SIGNED build.
+    This restricted entitlement requires an embedded Developer ID provisioning profile
+    (Contents/embedded.provisionprofile, injected by CI and copied in via bundle.macOS.files) to
+    authorize it — without it amfid refuses to launch the app.
   -->
   <key>com.apple.developer.associated-domains</key>
   <array>
     <string>webcredentials:vegify.app</string>
+    <string>applinks:vegify.app</string>
   </array>
 </dict>
 </plist>

@@ -1,4 +1,17 @@
 {
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["__APPLE_TEAM_ID__.app.vegify.desktop"],
+        "components": [
+          { "/": "/recipes", "comment": "content routes only — /reset, /verify, /login and the top-level /<handle> profiles stay in the browser" },
+          { "/": "/recipes/*" },
+          { "/": "/ingredients" },
+          { "/": "/ingredients/*" }
+        ]
+      }
+    ]
+  },
   "webcredentials": {
     "apps": ["__APPLE_TEAM_ID__.app.vegify.desktop"]
   }

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrent as getCurrentDeepLinks, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import {
   Link,
   Outlet,
@@ -713,6 +714,31 @@ declare module '@tanstack/react-router' {
     router: typeof router
   }
 }
+
+// OS deep links: vegify://recipes/<id> (custom scheme) and https://vegify.app/recipes/<id>
+// (universal links) both land here. A scheme URL parses its first segment as the URL *host*
+// (vegify://recipes/x → host "recipes"), an https URL keeps the whole path in pathname — normalize
+// both to a router path. getCurrent() covers a cold start (the URL is delivered before this bundle
+// runs), onOpenUrl the already-running app; in 2.4.9 onOpenUrl does NOT replay the cold-start URL,
+// so both are needed. Registered at module scope: history.push only moves the hash, which works
+// before RouterProvider mounts (the router reads the location when it does). The OS only delivers
+// deep links to a built .app bundle (universal links additionally need a signed build) — under
+// `tauri dev` these never fire, and the catches keep a non-Tauri webview quiet.
+function deepLinkToPath(url: string): string | null {
+  try {
+    const u = new URL(url)
+    const path = u.protocol === 'vegify:' ? `/${u.host}${u.pathname}` : u.pathname
+    return `${path.replace(/\/+$/, '') || '/'}${u.search}`
+  } catch {
+    return null
+  }
+}
+function openDeepLinks(urls: string[] | null) {
+  const path = urls?.map(deepLinkToPath).find(Boolean)
+  if (path) router.history.push(path)
+}
+getCurrentDeepLinks().then(openDeepLinks).catch(() => {})
+void onOpenUrl(openDeepLinks).catch(() => {})
 
 export function App() {
   // undefined = checking the keychain; null = signed out; AuthUser = signed in.
