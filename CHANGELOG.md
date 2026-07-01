@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/vegify/vegify.app/compare/v0.8.0...v0.9.0) (2026-07-01)
+
+
+### Features
+
+* **ios:** scaffold the iOS app on the shared Tauri crate ([#27](https://github.com/vegify/vegify.app/issues/27)) ([fab7965](https://github.com/vegify/vegify.app/commit/fab7965d6d6241b294029476c46fbb5d47effd48))
+
 ## [0.8.0](https://github.com/vegify/vegify.app/compare/v0.7.0...v0.8.0) (2026-07-01)
 
 
