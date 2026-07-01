@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/vegify/vegify.app/compare/v0.9.0...v0.10.0) (2026-07-01)
+
+
+### Features
+
+* **web:** stand up the blog with the first post ([#32](https://github.com/vegify/vegify.app/issues/32)) ([8c9762a](https://github.com/vegify/vegify.app/commit/8c9762a536dd6e2c1ece0b5d013e8af54c0ca190))
+
 ## [0.9.0](https://github.com/vegify/vegify.app/compare/v0.8.0...v0.9.0) (2026-07-01)
 
 
