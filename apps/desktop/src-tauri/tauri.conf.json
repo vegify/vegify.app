@@ -31,7 +31,14 @@
         "schemes": [
           "vegify"
         ]
-      }
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "vegify"
+          ]
+        }
+      ]
     }
   },
   "bundle": {
