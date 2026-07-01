@@ -19,6 +19,10 @@ fn main() {
                 .with_default_subscriber()
                 .build(),
         )
+        // OS deep links: vegify:// (scheme from tauri.conf.json → CFBundleURLTypes at bundle time) and
+        // vegify.app universal links (applinks entitlement + AASA). The frontend consumes opened URLs
+        // via onOpenUrl/getCurrent (App.tsx). Needs a built .app bundle — inert under `tauri dev`.
+        .plugin(tauri_plugin_deep_link::init())
         // Realtime push: a background WebSocket to the server's /ws emits `server-content-changed` on
         // every server-side content change so the frontend pulls immediately (replacing the 60s poll).
         // Runs on its own current-thread tokio runtime so it never depends on Tauri's runtime having the

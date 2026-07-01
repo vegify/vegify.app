@@ -40,6 +40,10 @@ ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] 
 # JSON auth + content routes, and the OS keychain for the session token.
 ureq = { version = "2", features = ["json"] }
 keyring = { version = "3", features = ["apple-native"] }
+# OS deep links: vegify:// custom scheme (CFBundleURLTypes injected at bundle time from
+# tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs
+# to the frontend (onOpenUrl/getCurrent). Runtime needs a built .app bundle — inert under `tauri dev`.
+tauri-plugin-deep-link = "2.4"
 # Resolve the per-user OS app-data dir for the on-device DB in shipped (release) builds — see db_path().
 dirs = "6"
 # Realtime push (replaces the 60s poll): a background task connects to the server's /ws and emits a Tauri
