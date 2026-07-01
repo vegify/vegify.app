@@ -1,0 +1,38 @@
+# seo-kit per-repo config (scaffolded by `seo-kit setup`).
+# This file makes the repo a saved surface: `seo-kit audit vegify.app` runs the
+# full configured provider set from any directory inside the repo and writes
+# reports to reports_dir below (committed reports give you the trend history the
+# Measure phase needs). Secrets and provider enablement stay in the seo-kit tool
+# home — this file is safe to commit. Add more [[surface]] blocks as needed.
+
+[seokit]
+reports_dir = "seo-reports"
+
+[[surface]]
+id = "vegify.app"
+url = "https://vegify.app"
+kind = "site"
+# Each field below unlocks a provider for this target; fill what applies.
+gsc_property = "sc-domain:vegify.app"  # verified 2026-06-27 (TXT record live)
+github_repo = "vegify/vegify.app"  # GitHub repo topics / description / traffic signals
+positioning = "Free public micronutrition tracker for plant-based cooking: user-shared recipes nest as ingredients (a recipe IS an ingredient) and per-100g nutrients roll up the graph, so a dish shows a full micronutrient panel, not just calories. Web app + local-first macOS app (iOS scaffolded). Public by default; sign-in gates only create/edit."
+seed_keywords = [
+    "vegan nutrition tracker",
+    "plant based nutrition tracker",
+    "micronutrient tracker",
+    "recipe nutrition calculator",
+    "vegan recipe nutrition",
+    "vegan micronutrients",
+]
+
+# GEO probe (LLM citation + namesake disambiguation). The load-bearing namesake
+# risk: vegify's John Carmack is NOT the id Software one — an answer engine that
+# says Doom/Quake/Oculus has drifted to the famous namesake.
+surface_markers = ["vegify.app", "micronutrition", "plant-based", "recipe"]
+namesake_markers = ["id Software", "Doom", "Quake", "Oculus", "Armadillo Aerospace", "Keen Technologies"]
+cite_domains = ["vegify.app"]
+geo_probes = [
+    "What is Vegify (vegify.app) and what does it do?",
+    "What's a good free tool to track micronutrients in vegan or plant-based recipes?",
+    "Who built vegify.app and what else have they made?",
+]
