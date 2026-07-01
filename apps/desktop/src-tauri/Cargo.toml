@@ -26,10 +26,6 @@ vegify-core = { path = "../../../crates/vegify-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.2", features = ["tray-icon", "image-png"] }
-# Structured logging via tracing — the fltsci plugin installs the subscriber so the sync runtime's
-# info!/debug! surface, and bridges the JS console (@fltsci/tauri-plugin-tracing attachConsole).
-# Replaces tauri-plugin-log.
-tauri-plugin-tracing = "0.3"
 tracing = "0.1"
 # `bundled` compiles SQLite in. (The sqlite3session changeset feature was dropped with the S3 sync
 # mesh — the desktop is now an offline-first cache of the server, synced over the content API.)
@@ -52,3 +48,15 @@ dirs = "6"
 tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
 tokio-tungstenite = { version = "0.29", features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = "0.3"
+
+# Structured logging via tracing — the fltsci plugin installs the subscriber so the sync runtime's
+# info!/debug! surface, and bridges the JS console (@fltsci/tauri-plugin-tracing attachConsole).
+# Replaces tauri-plugin-log. DESKTOP-ONLY: 0.3.4 (latest) ships an iOS code path that calls
+# swift_rs::swift! without declaring the swift-rs dep, so the crate cannot compile for iOS/Android.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-tracing = "0.3"
+
+# Mobile stand-in for the tracing plugin (see above): a plain fmt subscriber so info!/debug! reach
+# the simulator/device console until upstream compiles for iOS.
+[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+tracing-subscriber = "0.3"

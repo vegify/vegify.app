@@ -5555,6 +5555,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "tracing-subscriber",
  "ureq",
  "vegify-core",
 ]

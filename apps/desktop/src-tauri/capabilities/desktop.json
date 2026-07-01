@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "desktop-only permissions — the fltsci tracing plugin (JS console bridge) doesn't compile for mobile, so its permission only exists on desktop targets",
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "tracing:default"
+  ]
+}
