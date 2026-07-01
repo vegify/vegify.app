@@ -70,11 +70,13 @@ export function AppShell({
   user?: { name: string; email: string; username?: string } | null;
   onSignOut?: () => void;
 }) {
-  // The Profile destination is per-user (/<username>); fill its href in from the signed-in user (the
-  // item stays a disabled "soon" until a username is known). Applied to the sidebar + the mobile bar.
-  const profileHref = user?.username ? `/${user.username}` : undefined;
+  // The Profile destination is per-user (/<username>): filled in from the signed-in user. Logged
+  // out it points at /login instead of sitting disabled — every tap on the person icon has a
+  // destination, and both shells route /login as a plain screen ("a destination, not a gate").
+  // Applied to the sidebar + the mobile bar.
+  const profileHref = user?.username ? `/${user.username}` : "/login";
   const withProfile = (items: AppShellNavItem[]) =>
-    profileHref ? items.map((it) => (it.key === "profile" ? { ...it, href: profileHref } : it)) : items;
+    items.map((it) => (it.key === "profile" ? { ...it, href: profileHref } : it));
   const navItems = withProfile(
     ingredientsNav
       ? [
