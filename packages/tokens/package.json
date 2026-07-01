@@ -8,5 +8,8 @@
   },
   "scripts": {
     "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@fontsource/bitter": "^5.2.10"
   }
 }

@@ -225,7 +225,11 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/tokens: {}
+  packages/tokens:
+    dependencies:
+      '@fontsource/bitter':
+        specifier: ^5.2.10
+        version: 5.2.10
 
   packages/ui:
     dependencies:
@@ -842,6 +846,9 @@ packages:
   '@fltsci/tauri-plugin-tracing@0.3.4':
     resolution: {integrity: sha512-MLwqLBzlL6Np782W3eGQ+nbd8geUHLTyGV+xUVkYwj21LChU828JEWCOE2asXzRJjJGftM8ICKIFjsC8ftkJiA==}
     engines: {pnpm: ^10.0.0}
+
+  '@fontsource/bitter@5.2.10':
+    resolution: {integrity: sha512-oqQgWAp+lgoGX7iFbVSbTkKyz0k8EK8+bLdUKDTqGTjW0HqrCue70v4jwbZvyNV/3DZol/b/L/WpdXfuQXKBUg==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4344,6 +4351,8 @@ snapshots:
   '@fltsci/tauri-plugin-tracing@0.3.4':
     dependencies:
       '@tauri-apps/api': 2.11.0
+
+  '@fontsource/bitter@5.2.10': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

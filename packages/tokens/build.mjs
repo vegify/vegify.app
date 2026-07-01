@@ -19,6 +19,16 @@ const typography = JSON.parse(
 const lines = [
   "/* Generated from design/tokens — do not edit by hand. `pnpm --filter @vegify/tokens build` */",
   "",
+  "/* 0. Shipped brand faces. Bitter (OFL, @fontsource) is the brand serif EVERYWHERE — bundled",
+  "   into web, desktop, and iOS so headings render one real face instead of whatever the platform",
+  "   happens to have (Adelle only ever existed hand-installed on dev Macs; everyone else silently",
+  "   fell back to Georgia). @import must precede all other rules; each app's bundler resolves",
+  "   these from this package's dependencies and emits the woff2 files (unicode-range subsets keep",
+  "   runtime fetches lazy). */",
+  '@import "@fontsource/bitter/400.css";',
+  '@import "@fontsource/bitter/600.css";',
+  '@import "@fontsource/bitter/700.css";',
+  "",
   "/* 1. Brand ramp + type scale (the design source of truth). */",
   "@theme {",
 ];
@@ -30,11 +40,14 @@ for (const [name, t] of Object.entries(color)) {
 lines.push("  --color-primary-dark: var(--color-green-dark);");
 lines.push("  --color-primary-light: var(--color-green-light);");
 
-// font stacks (Avenir Next is local/macOS; fallbacks for the web)
+// font stacks. Sans: Avenir Next ships on macOS AND iOS, so both apps + Apple-web render it
+// natively (non-Apple web falls to system-ui — acceptable for now). Serif: Bitter is the shipped
+// brand face (see the @fontsource imports above); Adelle stays as a local preference for machines
+// that have it installed ahead of the bundle loading, Georgia/serif as the last resort.
 lines.push(
   '  --font-sans: "Avenir Next", Avenir, "Nunito Sans", system-ui, sans-serif;'
 );
-lines.push('  --font-serif: Adelle, Georgia, serif;');
+lines.push('  --font-serif: Bitter, Adelle, Georgia, serif;');
 
 // heading scale from the Sketch text styles (reference vars, not Tailwind text-* sizes)
 const wanted = {
