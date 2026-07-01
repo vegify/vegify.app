@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/vegify/vegify.app/compare/v0.7.0...v0.8.0) (2026-07-01)
+
+
+### Features
+
+* **desktop:** open vegify:// and vegify.app links as OS deep links ([#25](https://github.com/vegify/vegify.app/issues/25)) ([0035a7a](https://github.com/vegify/vegify.app/commit/0035a7a60cb19100de678424eec932e9023c1d02))
+
 ## [0.7.0](https://github.com/vegify/vegify.app/compare/v0.6.0...v0.7.0) (2026-06-30)
 
 
