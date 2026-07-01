@@ -19,7 +19,7 @@ import { LinkAdapter } from '../link'
 import { SearchOverlay } from '../search'
 import { fetchUser, logoutFn, requestEmailVerificationFn } from '../auth'
 import { initClientLogging } from '../client-log'
-import { BARE_PATHS, BOUNCE_WHEN_AUTHED, isPublicPath } from '../auth-gate'
+import { BOUNCE_WHEN_AUTHED, isBarePath, isPublicPath } from '../auth-gate'
 import appCss from '../styles.css?url'
 import faviconUrl from '../favicon.ico?url'
 
@@ -104,10 +104,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { search, setSearch, query } = useChromeSearch(pathname)
-  // The app chrome wraps every page EXCEPT the bare auth/token forms and the logged-out "/" marketing
-  // landing. A logged-out visitor browsing the public catalog (/recipes, /<username>, …) still gets the
-  // shell — with a "Sign in" affordance and no New/Edit controls (the shared screens gate those on session).
-  const showShell = !BARE_PATHS.has(pathname) && (pathname !== '/' || !!user)
+  // The app chrome wraps every page EXCEPT the bare surfaces (auth/token forms + the blog, which
+  // carries its own chrome) and the logged-out "/" marketing landing. A logged-out visitor browsing
+  // the public catalog (/recipes, /<username>, …) still gets the shell — with a "Sign in" affordance
+  // and no New/Edit controls (the shared screens gate those on session).
+  const showShell = !isBarePath(pathname) && (pathname !== '/' || !!user)
 
   // Client-only: install the non-blocking browser log shipper (global error capture + flush-on-hide).
   useEffect(() => {

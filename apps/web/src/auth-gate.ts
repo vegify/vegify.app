@@ -6,6 +6,15 @@
 // Auth and token pages render bare (no app shell): the auth forms plus the email-link actions.
 export const BARE_PATHS = new Set(['/login', '/signup', '/forgot', '/reset', '/verify'])
 
+// Editorial/marketing sections that render bare with their OWN chrome regardless of session — the
+// blog carries its own header/footer (like the landing at "/", which is special-cased on `user` in
+// __root). Without this, a signed-in visitor gets double chrome: the AppShell sidebar + search bar
+// wrapped around the blog's header — two logos on screen (caught on the live page, 2026-07-01).
+export const BARE_PREFIXES: readonly string[] = ['/blog']
+export const isBarePath = (pathname: string): boolean =>
+  BARE_PATHS.has(pathname) ||
+  BARE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+
 // Pages reachable without a session. "/" is the public marketing landing for logged-out visitors (and
 // crawlers) AND the app home for signed-in users — the index route branches on `user` — so it is public
 // but never redirected in either direction. Every other STATIC route is gated (see STATIC_TOP_LEVEL).
