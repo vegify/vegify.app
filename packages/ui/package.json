@@ -6,6 +6,7 @@
   "exports": {
     "./app-shell": "./src/app-shell.tsx",
     "./auth-form": "./src/auth-form.tsx",
+    "./blog": "./src/blog.tsx",
     "./breadcrumb": "./src/breadcrumb.tsx",
     "./button": "./src/button.tsx",
     "./card": "./src/card.tsx",

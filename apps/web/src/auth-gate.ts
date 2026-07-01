@@ -40,10 +40,11 @@ export const STATIC_TOP_LEVEL: ReadonlySet<string> = new Set(
 )
 
 // App sections a logged-out visitor may browse READ-ONLY: the recipe + ingredient catalog and the detail
-// pages under them. Their create/edit children (/…/new, /…/<id>/edit) and every other gated section (e.g.
-// /settings) still require a session — signing in is what unlocks writing. Mirrors the desktop, which hides
-// the same New/Edit affordances logged-out; the shared screens gate those on the session in both shells.
-export const PUBLIC_SECTIONS: readonly string[] = ['/recipes', '/ingredients']
+// pages under them, plus the blog (pure public content — the SEO/GEO writing surface). Create/edit children
+// (/…/new, /…/<id>/edit) and every other gated section (e.g. /settings) still require a session — signing
+// in is what unlocks writing. Mirrors the desktop, which hides the same New/Edit affordances logged-out;
+// the shared screens gate those on the session in both shells.
+export const PUBLIC_SECTIONS: readonly string[] = ['/recipes', '/ingredients', '/blog']
 
 // A create/edit leaf under a public section — gated even though its section is public.
 const isWritePath = (pathname: string): boolean => /\/(new|edit)$/.test(pathname)
