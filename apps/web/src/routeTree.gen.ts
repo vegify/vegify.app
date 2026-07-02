@@ -15,14 +15,15 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
-import { Route as UsernameRouteImport } from './routes/$username'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
 import { Route as IngredientsIndexRouteImport } from './routes/ingredients.index'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
+import { Route as UsernameIndexRouteImport } from './routes/$username.index'
 import { Route as RecipesNewRouteImport } from './routes/recipes.new'
 import { Route as IngredientsNewRouteImport } from './routes/ingredients.new'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
+import { Route as UsernameRecipeSlugRouteImport } from './routes/$username.$recipeSlug'
 import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$recipeId.index'
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
 import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
@@ -58,11 +59,6 @@ const ForgotRoute = ForgotRouteImport.update({
   path: '/forgot',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UsernameRoute = UsernameRouteImport.update({
-  id: '/$username',
-  path: '/$username',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -83,6 +79,11 @@ const BlogIndexRoute = BlogIndexRouteImport.update({
   path: '/blog/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsernameIndexRoute = UsernameIndexRouteImport.update({
+  id: '/$username/',
+  path: '/$username/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecipesNewRoute = RecipesNewRouteImport.update({
   id: '/recipes/new',
   path: '/recipes/new',
@@ -96,6 +97,11 @@ const IngredientsNewRoute = IngredientsNewRouteImport.update({
 const BlogSlugRoute = BlogSlugRouteImport.update({
   id: '/blog/$slug',
   path: '/blog/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsernameRecipeSlugRoute = UsernameRecipeSlugRouteImport.update({
+  id: '/$username/$recipeSlug',
+  path: '/$username/$recipeSlug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecipesRecipeIdIndexRoute = RecipesRecipeIdIndexRouteImport.update({
@@ -123,16 +129,17 @@ const IngredientsIngredientIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/$username/': typeof UsernameIndexRoute
   '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
@@ -143,16 +150,17 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/$username': typeof UsernameIndexRoute
   '/blog': typeof BlogIndexRoute
   '/ingredients': typeof IngredientsIndexRoute
   '/recipes': typeof RecipesIndexRoute
@@ -164,16 +172,17 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/$username': typeof UsernameRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/verify': typeof VerifyRoute
+  '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
   '/recipes/new': typeof RecipesNewRoute
+  '/$username/': typeof UsernameIndexRoute
   '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
   '/recipes/': typeof RecipesIndexRoute
@@ -186,16 +195,17 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/$username/'
     | '/blog/'
     | '/ingredients/'
     | '/recipes/'
@@ -206,16 +216,17 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/$username'
     | '/blog'
     | '/ingredients'
     | '/recipes'
@@ -226,16 +237,17 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/$username'
     | '/forgot'
     | '/login'
     | '/reset'
     | '/settings'
     | '/signup'
     | '/verify'
+    | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
     | '/recipes/new'
+    | '/$username/'
     | '/blog/'
     | '/ingredients/'
     | '/recipes/'
@@ -247,16 +259,17 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  UsernameRoute: typeof UsernameRoute
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
   ResetRoute: typeof ResetRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   VerifyRoute: typeof VerifyRoute
+  UsernameRecipeSlugRoute: typeof UsernameRecipeSlugRoute
   BlogSlugRoute: typeof BlogSlugRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
   RecipesNewRoute: typeof RecipesNewRoute
+  UsernameIndexRoute: typeof UsernameIndexRoute
   BlogIndexRoute: typeof BlogIndexRoute
   IngredientsIndexRoute: typeof IngredientsIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
@@ -310,13 +323,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$username': {
-      id: '/$username'
-      path: '/$username'
-      fullPath: '/$username'
-      preLoaderRoute: typeof UsernameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -345,6 +351,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$username/': {
+      id: '/$username/'
+      path: '/$username'
+      fullPath: '/$username/'
+      preLoaderRoute: typeof UsernameIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recipes/new': {
       id: '/recipes/new'
       path: '/recipes/new'
@@ -364,6 +377,13 @@ declare module '@tanstack/react-router' {
       path: '/blog/$slug'
       fullPath: '/blog/$slug'
       preLoaderRoute: typeof BlogSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$username/$recipeSlug': {
+      id: '/$username/$recipeSlug'
+      path: '/$username/$recipeSlug'
+      fullPath: '/$username/$recipeSlug'
+      preLoaderRoute: typeof UsernameRecipeSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recipes/$recipeId/': {
@@ -399,16 +419,17 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  UsernameRoute: UsernameRoute,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
   ResetRoute: ResetRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   VerifyRoute: VerifyRoute,
+  UsernameRecipeSlugRoute: UsernameRecipeSlugRoute,
   BlogSlugRoute: BlogSlugRoute,
   IngredientsNewRoute: IngredientsNewRoute,
   RecipesNewRoute: RecipesNewRoute,
+  UsernameIndexRoute: UsernameIndexRoute,
   BlogIndexRoute: BlogIndexRoute,
   IngredientsIndexRoute: IngredientsIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
