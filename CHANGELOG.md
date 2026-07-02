@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/vegify/vegify.app/compare/v0.11.0...v0.12.0) (2026-07-02)
+
+
+### Features
+
+* **slugs:** data foundation — slug column, history, generation, backfill ([#38](https://github.com/vegify/vegify.app/issues/38)) ([fe1f519](https://github.com/vegify/vegify.app/commit/fe1f519c95b3fe58635cc5b0854f981b9a79f8d6))
+
 ## [0.11.0](https://github.com/vegify/vegify.app/compare/v0.10.1...v0.11.0) (2026-07-02)
 
 
