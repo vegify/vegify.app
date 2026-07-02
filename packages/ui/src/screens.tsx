@@ -64,7 +64,19 @@ export type RecipeListItem = {
 export function recipeHref(r: { id: string; username?: string | null; slug?: string | null }): string {
   return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`;
 }
-export type IngredientListItem = { id: string; name: string; caloriesPer100g?: number | null };
+export type IngredientListItem = {
+  id: string;
+  name: string;
+  caloriesPer100g?: number | null;
+  /** Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`. */
+  slug?: string | null;
+};
+
+/** Canonical link for an ingredient: `/ingredients/<slug>` when known, else `/ingredients/<id>`
+ * (which 301s). Global namespace (ingredients are a communal catalog), so no username. */
+export function ingredientHref(i: { id: string; slug?: string | null }): string {
+  return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
+}
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
 export type RecipeDetailItem = { key: string; label: string; href: string };
 export type RecipeDetailVM = {
@@ -408,7 +420,7 @@ export function IngredientListView({
       ) : (
         <div className="flex flex-col gap-4">
           {ingredients.map((i) => (
-            <LinkComponent key={i.id} href={`/ingredients/${i.id}`} className="block">
+            <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
               <div className={cardClass}>
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
                 <div className="min-w-0">
@@ -1075,7 +1087,7 @@ export function SearchResultsView({
                     key={i.id}
                     name={i.name}
                     sub={i.caloriesPer100g != null ? `${Math.round(i.caloriesPer100g)} cal/100g` : "Ingredient"}
-                    href={`/ingredients/${i.id}`}
+                    href={ingredientHref(i)}
                     LinkComponent={LinkComponent}
                   />
                 ))}

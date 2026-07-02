@@ -51,7 +51,12 @@ export type RecipeEditData = {
   visibility: Visibility
   items: RecipeEditItem[]
 }
-export type IngredientCard = { id: string; name: string; caloriesPer100g: number | null }
+export type IngredientCard = {
+  id: string
+  name: string
+  caloriesPer100g: number | null
+  slug: string | null
+}
 export type IngredientEditData = {
   id: string
   name: string
@@ -61,9 +66,11 @@ export type IngredientEditData = {
   servingGrams: number | null
   packageGrams: number | null
   visibility: Visibility
+  slug: string | null
   canEdit: boolean
   nutrients: Reading[]
 }
+export type IngredientSlugHit = { ingredientId: string; canonicalSlug: string }
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`
 
@@ -105,6 +112,9 @@ export const resolveRecipeBySlug = (username: string, slug: string) =>
   api<RecipeSlugHit | null>(
     `/api/content/recipe-by-slug?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}`,
   )
+// Resolve /ingredients/<slug> → { ingredientId, canonicalSlug } (or null → 404).
+export const resolveIngredientBySlug = (slug: string) =>
+  api<IngredientSlugHit | null>(`/api/content/ingredient-by-slug?slug=${encodeURIComponent(slug)}`)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

@@ -215,6 +215,8 @@ pub struct IngredientCard {
     pub id: String,
     pub name: String,
     pub calories_per_100g: Option<f64>,
+    /// Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`.
+    pub slug: Option<String>,
 }
 
 /// IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving).
@@ -229,6 +231,8 @@ pub struct IngredientEditData {
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
     pub visibility: Visibility,
+    /// Canonical URL segment `/ingredients/<slug>`. None only pre-backfill.
+    pub slug: Option<String>,
     /// Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
     /// true on the owner-only edit-load path; on the detail path it reflects ownership (false for
     /// anonymous + non-owner viewers). The real guard stays server-side.
@@ -809,7 +813,7 @@ fn load_ingredient_edit(
     let meta = conn
         .query_row(
             "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
-                    i.visibility, i.user_id
+                    i.visibility, i.user_id, i.slug
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
@@ -825,11 +829,12 @@ fn load_ingredient_edit(
                     row.get::<_, Option<f64>>(5)?,
                     row.get::<_, String>(6)?,
                     row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
                 ))
             },
         )
         .optional()?;
-    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner)) =
+    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug)) =
         meta
     else {
         return Ok(None);
@@ -858,6 +863,7 @@ fn load_ingredient_edit(
             serving_grams,
             package_grams,
             visibility: Visibility::from_db(&visibility),
+            slug,
             can_edit: false,
             nutrients,
         },
@@ -1052,6 +1058,50 @@ pub fn resolve_recipe_by_slug(
     Ok(None)
 }
 
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IngredientSlugHit {
+    pub ingredient_id: String,
+    pub canonical_slug: String,
+}
+
+/// Resolve `/ingredients/<slug>` → an ingredient id + its current canonical slug. Live-slug match
+/// among LEAF ingredients (recipe as-ingredients live at `/<user>/<slug>`, not here), else a
+/// slug_history hit (scope = "" for the global ingredient namespace → 301), else None. Visibility is
+/// enforced by `ingredient()` at render time.
+pub fn resolve_ingredient_by_slug(
+    conn: &Connection,
+    slug: &str,
+) -> Result<Option<IngredientSlugHit>, Error> {
+    let live: Option<String> = conn
+        .query_row(
+            "SELECT i.id FROM ingredients i
+             WHERE i.slug = ?1 AND i.id NOT IN (SELECT as_ingredient_id FROM recipes)",
+            [slug],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(ingredient_id) = live {
+        return Ok(Some(IngredientSlugHit { ingredient_id, canonical_slug: slug.to_string() }));
+    }
+    let target: Option<String> = conn
+        .query_row(
+            "SELECT target_id FROM slug_history WHERE scope = '' AND slug = ?1",
+            [slug],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(target) = target {
+        let canonical: Option<Option<String>> = conn
+            .query_row("SELECT slug FROM ingredients WHERE id = ?1", [&target], |r| r.get(0))
+            .optional()?;
+        if let Some(Some(canonical_slug)) = canonical {
+            return Ok(Some(IngredientSlugHit { ingredient_id: target, canonical_slug }));
+        }
+    }
+    Ok(None)
+}
+
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
 pub fn search_ingredients(
     conn: &Connection,
@@ -1170,7 +1220,7 @@ pub fn list_ingredients(
 ) -> Result<Vec<IngredientCard>, Error> {
     let (keyset, order) = page.sort.clauses("i.id", "i.name");
     let sql = format!(
-        "SELECT i.id, i.name, i.calories_per_100g
+        "SELECT i.id, i.name, i.calories_per_100g, i.slug
          FROM ingredients i
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
            AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
@@ -1186,7 +1236,14 @@ pub fn list_ingredients(
                 page.cursor_name.as_deref(),
                 page.limit.map_or(-1, |n| n as i64)
             ],
-            |row| Ok(IngredientCard { id: row.get(0)?, name: row.get(1)?, calories_per_100g: row.get(2)? }),
+            |row| {
+                Ok(IngredientCard {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    calories_per_100g: row.get(2)?,
+                    slug: row.get(3)?,
+                })
+            },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)

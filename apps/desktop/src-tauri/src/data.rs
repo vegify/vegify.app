@@ -669,6 +669,7 @@ pub trait VegifyData {
         username: String,
         slug: String,
     ) -> Result<Option<RecipeSlugHit>, DataError>;
+    fn resolve_ingredient_by_slug(&self, slug: String) -> Result<Option<IngredientSlugHit>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn list_ingredients(&self, page: Page) -> Result<Vec<IngredientCard>, DataError>;
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
@@ -726,6 +727,11 @@ impl VegifyData for Db {
     ) -> Result<Option<RecipeSlugHit>, DataError> {
         let conn = self.conn.lock().unwrap();
         vegify_core::resolve_recipe_by_slug(&conn, &username, &slug).map_err(Into::into)
+    }
+
+    fn resolve_ingredient_by_slug(&self, slug: String) -> Result<Option<IngredientSlugHit>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        vegify_core::resolve_ingredient_by_slug(&conn, &slug).map_err(Into::into)
     }
 
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {

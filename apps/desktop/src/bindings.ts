@@ -53,6 +53,14 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  resolveIngredientBySlug(slug: string): Promise<{
+	ingredientId: string,
+	canonicalSlug: string,
+} | null> {
+    return invoke("resolve_ingredient_by_slug", { slug });
+  },
+
+  /** @throws {DataError} */
   recipeForEdit(id: string): Promise<{
 	id: string,
 	name: string,
@@ -80,6 +88,8 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -101,6 +111,8 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -225,6 +237,8 @@ export type IngredientCard = {
 	id: string,
 	name: string,
 	caloriesPer100g: number | null,
+	/**  Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`. */
+	slug: string | null,
 };
 
 /**  IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving). */
@@ -237,6 +251,8 @@ export type IngredientEditData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -258,6 +274,11 @@ export type IngredientSearchResult = {
 	servingGrams: number | null,
 	caloriesPer100g: number | null,
 	readings: Reading[],
+};
+
+export type IngredientSlugHit = {
+	ingredientId: string,
+	canonicalSlug: string,
 };
 
 /**
