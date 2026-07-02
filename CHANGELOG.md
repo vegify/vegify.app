@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/vegify/vegify.app/compare/v0.17.1...v0.17.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **web:** sitemap locs use the canonical origin, not the function-URL host ([#53](https://github.com/vegify/vegify.app/issues/53)) ([2c0ad57](https://github.com/vegify/vegify.app/commit/2c0ad570eefd782469d94936a2ba299e070ea6bb))
+
 ## [0.17.1](https://github.com/vegify/vegify.app/compare/v0.17.0...v0.17.1) (2026-07-02)
 
 
