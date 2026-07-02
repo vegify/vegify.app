@@ -6,6 +6,7 @@
 //! Run: DATABASE_PATH=<file> PORT=8787 cargo run -p vegify-server
 
 mod auth;
+mod blog;
 mod content;
 mod email;
 mod error;
@@ -350,6 +351,25 @@ async fn sitemap(State(state): State<AppState>) -> Result<Json<vegify_core::Site
     Ok(Json(out))
 }
 
+/// Blog index (published posts, newest first). Public — the blog is the unauthenticated writing surface.
+async fn blog_list(State(state): State<AppState>) -> Result<Json<Vec<blog::PostSummary>>, AppError> {
+    let out = db(&state, |conn| blog::list_posts(conn).map_err(AppError::from)).await?;
+    Ok(Json(out))
+}
+
+/// One published post by ?slug= (null → 404). Public.
+async fn blog_detail(
+    State(state): State<AppState>,
+    Query(q): Query<SlugQuery>,
+) -> Result<Json<Option<blog::PostFull>>, AppError> {
+    let slug = q.slug.unwrap_or_default();
+    if slug.is_empty() {
+        return Err(AppError::BadRequest("slug is required.".into()));
+    }
+    let out = db(&state, move |conn| blog::get_post(conn, &slug).map_err(AppError::from)).await?;
+    Ok(Json(out))
+}
+
 /// Public profile by handle. No bearer required; an optional one identifies the viewer so they also
 /// see their own non-public recipes when viewing themselves. 404 when the handle has no account.
 async fn profile(
@@ -626,7 +646,20 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER,
             updated_at INTEGER
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS slug_history_scope_slug_uq ON slug_history(scope, slug);",
+        CREATE UNIQUE INDEX IF NOT EXISTS slug_history_scope_slug_uq ON slug_history(scope, slug);
+        CREATE TABLE IF NOT EXISTS posts (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            published_at TEXT NOT NULL,
+            date_display TEXT NOT NULL,
+            body TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'published',
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS posts_status_published_idx ON posts(status, published_at);",
     )?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
@@ -749,6 +782,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Backfill SEO slugs for any rows created before the slug column (idempotent — skips rows that
     // already have one). Server is the sole slug authority; the next pull carries them to replicas.
     vegify_core::backfill_all_slugs(&setup_conn)?;
+    // Migrate the blog posts into the DB on first boot (no-op once any post exists). Posts are data
+    // now, not code — authoring one never bumps the app version.
+    blog::seed_if_empty(&setup_conn)?;
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
@@ -785,6 +821,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/recipe-by-slug", get(recipe_by_slug))
         .route("/api/content/ingredient-by-slug", get(ingredient_by_slug))
         .route("/api/content/sitemap", get(sitemap))
+        .route("/api/content/blog", get(blog_list))
+        .route("/api/content/blog-detail", get(blog_detail))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.

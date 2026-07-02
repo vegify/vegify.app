@@ -1,10 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { BlogIndexView } from '@vegify/ui/blog'
 import { LinkAdapter } from '../link'
 
-// Public blog index — part of the SEO/GEO surface alongside the landing. Static module content
-// (posts are authored in code in @vegify/ui/blog), so there is no loader; the auth gate lets
-// /blog through logged-out via PUBLIC_SECTIONS (../auth-gate).
+// Public blog index — part of the SEO/GEO surface alongside the landing. Posts are DB-backed now
+// (served by vegify-server), so this fetches the list; the auth gate lets /blog through logged-out
+// via PUBLIC_SECTIONS (../auth-gate).
+const getPosts = createServerFn({ method: 'GET' }).handler(async () => {
+  const { listBlogPosts } = await import('../content')
+  return listBlogPosts()
+})
+
+const postsQuery = queryOptions({ queryKey: ['blog'], queryFn: () => getPosts() })
 
 const TITLE = 'Blog | Vegify'
 const DESCRIPTION =
@@ -12,6 +20,7 @@ const DESCRIPTION =
 const URL = 'https://vegify.app/blog'
 
 export const Route = createFileRoute('/blog/')({
+  loader: ({ context }) => context.queryClient.ensureQueryData(postsQuery),
   head: () => ({
     meta: [
       { title: TITLE },
@@ -31,5 +40,6 @@ export const Route = createFileRoute('/blog/')({
 })
 
 function BlogIndexPage() {
-  return <BlogIndexView LinkComponent={LinkAdapter} />
+  const { data } = useSuspenseQuery(postsQuery)
+  return <BlogIndexView posts={data} LinkComponent={LinkAdapter} />
 }
