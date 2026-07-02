@@ -74,7 +74,14 @@ export class WebStartStack extends Stack {
       code: lambda.Code.fromAsset(path.join(webStart, ".aws-lambda")),
       memorySize: 1024,
       timeout: Duration.seconds(30),
-      environment: { VEGIFY_API_URL, NODE_ENV: "production", ORIGIN_SECRET: props.originSecret },
+      environment: {
+        VEGIFY_API_URL,
+        // Canonical public origin for generated URLs (the sitemap): behind CloudFront the Lambda
+        // sees only its function-URL host, so the request Host can never be the real site.
+        VEGIFY_PUBLIC_URL: `https://${DOMAIN_NAMES[0]}`,
+        NODE_ENV: "production",
+        ORIGIN_SECRET: props.originSecret,
+      },
     });
     const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 

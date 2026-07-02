@@ -45,7 +45,10 @@ export const handler = async (event) => {
   // Dynamic sitemap: return generated XML BEFORE the SSR handler + its auth gate (which would 307
   // /sitemap.xml → /login and hide it from crawlers). Enumerates public recipes + ingredients.
   if (rawPath === SITEMAP_PATH) {
-    return toLambda(await sitemapResponse(process.env.VEGIFY_API_URL, `${proto}://${host}`));
+    // Sitemap locs must use the canonical public origin, not the function-URL host CloudFront
+    // dials — VEGIFY_PUBLIC_URL is set by the CDK from the first custom domain.
+    const origin = process.env.VEGIFY_PUBLIC_URL || `${proto}://${host}`;
+    return toLambda(await sitemapResponse(process.env.VEGIFY_API_URL, origin));
   }
 
   const h = new Headers();

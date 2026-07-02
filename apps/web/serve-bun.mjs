@@ -31,7 +31,7 @@ Bun.serve({
     // Dynamic sitemap (enumerates public recipes + ingredients from the Axum API) — before the static
     // + SSR paths, since it's neither a built asset nor a TanStack route.
     if (pathname === SITEMAP_PATH) {
-      return sitemapResponse(process.env.VEGIFY_API_URL, url.origin);
+      return sitemapResponse(process.env.VEGIFY_API_URL, process.env.VEGIFY_PUBLIC_URL || url.origin);
     }
     if (pathname !== "/" && !pathname.endsWith("/")) {
       const file = Bun.file(join(clientDir, pathname));
