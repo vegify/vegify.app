@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/vegify/vegify.app/compare/v0.13.0...v0.14.0) (2026-07-02)
+
+
+### Features
+
+* **slugs:** Phase 4 — dynamic sitemap.xml enumerating public content ([#42](https://github.com/vegify/vegify.app/issues/42)) ([abb2678](https://github.com/vegify/vegify.app/commit/abb26782226b40dd840217e8974de36e3618350b))
+
 ## [0.13.0](https://github.com/vegify/vegify.app/compare/v0.12.0...v0.13.0) (2026-07-02)
 
 
