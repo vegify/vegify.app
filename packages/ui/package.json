@@ -17,6 +17,7 @@
     "./dialog": "./src/dialog.tsx",
     "./dropdown-menu": "./src/dropdown-menu.tsx",
     "./ingredient-form": "./src/ingredient-form.tsx",
+    "./inline": "./src/inline.tsx",
     "./input": "./src/input.tsx",
     "./label": "./src/label.tsx",
     "./landing": "./src/landing.tsx",
@@ -27,6 +28,8 @@
     "./select": "./src/select.tsx",
     "./theme-setting": "./src/theme-setting.tsx",
     "./use-chrome-search": "./src/use-chrome-search.ts",
+    "./use-detail-shortcuts": "./src/use-detail-shortcuts.ts",
+    "./use-edit-history": "./src/use-edit-history.ts",
     "./use-theme": "./src/use-theme.ts",
     "./vegify-logo": "./src/vegify-logo.tsx",
     "./visibility-field": "./src/visibility-field.tsx"

@@ -1,8 +1,28 @@
 import { type ComponentType, useEffect, useRef, useState } from "react";
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
 import { SORT_OPTIONS, type Sort } from "./catalog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./dialog";
+import { InlineNumber, InlinePillSelect, InlineText, InlineTextarea } from "./inline";
+import { DETAIL_SHORTCUTS, INGREDIENT_SHORTCUTS, useDetailShortcuts } from "./use-detail-shortcuts";
+import type { IngredientSearchItem } from "./recipe-form";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -45,6 +65,54 @@ export type RecipeDetailVM = {
   items: RecipeDetailItem[];
   nutrition: NutritionFactsData;
 };
+
+export type Visibility = "public" | "unlisted" | "private";
+const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string }[] = [
+  { value: "public", label: "Public" },
+  { value: "unlisted", label: "Unlisted" },
+  { value: "private", label: "Private" },
+];
+
+/**
+ * One editable ingredient row. Amounts edit in GRAMS — the app's internal model and exactly what the
+ * existing recipe form edits (the read view's "2 cups"-style labels are a display nicety layered on
+ * top). So owner edit mode shows grams; a reader still sees the composed labels.
+ */
+export type RecipeEditRow = {
+  ingredientId: string;
+  name: string;
+  href: string;
+  grams: number;
+};
+
+/**
+ * The inline-edit adapter (design/inline-edit.md). When present on RecipeDetailView, the detail page
+ * BECOMES the editor: each field edits in place and commits one change through these callbacks (the
+ * shell composes it into the existing whole-object save). Absent ⇒ today's read-only render, so a
+ * logged-out or non-owner view is byte-identical to before inline editing existed.
+ */
+export type RecipeEditAdapter = {
+  visibility: Visibility;
+  /** Structured items, parallel to recipe.items — the source for the inline amount chips. */
+  items: RecipeEditRow[];
+  rename: (next: string) => Promise<void>;
+  setSubtitle: (next: string) => Promise<void>;
+  setDirections: (next: string) => Promise<void>;
+  setVisibility: (next: Visibility) => Promise<void>;
+  setItemAmount: (ingredientId: string, amount: number) => Promise<void>;
+  addItem: (ingredient: IngredientSearchItem) => Promise<void>;
+  removeItem: (ingredientId: string) => Promise<void>;
+  remove: () => Promise<void>;
+  search: (q: string) => Promise<IngredientSearchItem[]>;
+  /** Create-blank draft: the name auto-opens and, while still untitled + empty, a Discard is offered. */
+  isDraft?: boolean;
+  discard?: () => Promise<void>;
+  /** Per-page undo/redo of committed edits (useEditHistory). Optional — absent ⇒ no undo UI. */
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+};
 export type IngredientDetailVM = {
   id: string;
   name: string;
@@ -52,6 +120,26 @@ export type IngredientDetailVM = {
   /** Whether the viewer owns this ingredient — shows the edit affordance. Omitted/false ⇒ read-only. */
   canEdit?: boolean;
   nutrition: NutritionFactsData;
+};
+
+/**
+ * Inline-edit adapter for the ingredient detail page (design/inline-edit.md P2). Same shape/contract
+ * as RecipeEditAdapter: present ⇒ the page edits in place, absent ⇒ read-only render unchanged. Name,
+ * description, and visibility edit inline; the numeric nutrient panel stays on the form for now (a
+ * dense per-serving grid — inline-editing it is future work), so this carries only the metadata
+ * callbacks plus delete. Each commit composes the WHOLE ingredient (via the shell's existing save),
+ * so it must preserve the nutrient rows a name edit doesn't touch.
+ */
+export type IngredientEditAdapter = {
+  visibility: Visibility;
+  rename: (next: string) => Promise<void>;
+  setDescription: (next: string) => Promise<void>;
+  setVisibility: (next: Visibility) => Promise<void>;
+  remove: () => Promise<void>;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 };
 /** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
 export type ProfileVM = {
@@ -333,54 +421,160 @@ export function IngredientListView({
 export function RecipeDetailView({
   recipe,
   LinkComponent,
+  edit,
 }: {
   recipe: RecipeDetailVM;
   LinkComponent: NavLink;
+  /** Present ⇒ the page edits in place (owner). Absent ⇒ read-only, unchanged from before. */
+  edit?: RecipeEditAdapter;
 }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Page-level shortcuts (owner only). `e`/`v` drive the inline fields via their DOM markers so the
+  // primitives stay the single source of their own edit state; `a`/`?`/⌘⌫ open local UI.
+  useDetailShortcuts(
+    {
+      onEditName: () => queryClick('[data-inline-field="name"]'),
+      onAddIngredient: () => setAddOpen(true),
+      onVisibility: () => queryFocus('[data-inline-field="visibility"]'),
+      onHelp: () => setHelpOpen((v) => !v),
+      onDelete: () => setDeleteOpen(true),
+      onUndo: edit?.undo,
+      onRedo: edit?.redo,
+    },
+    !!edit,
+  );
+
   return (
     <div className="flex">
       <div className="min-w-0 flex-1">
         <div className="mx-auto max-w-3xl p-6 lg:p-8">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink>@{recipe.creator ?? "user"}</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{recipe.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <div className="flex items-start justify-between gap-4">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink>@{recipe.creator ?? "user"}</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{recipe.name || "Untitled recipe"}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+            {edit ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <InlinePillSelect
+                  value={edit.visibility}
+                  options={VISIBILITY_OPTIONS}
+                  onCommit={edit.setVisibility}
+                  ariaLabel="visibility"
+                />
+                <RecipeOverflowMenu
+                  isDraft={edit.isDraft}
+                  onDelete={() => setDeleteOpen(true)}
+                  onDiscard={edit.discard}
+                  onHelp={() => setHelpOpen(true)}
+                  undo={edit.undo}
+                  redo={edit.redo}
+                  canUndo={edit.canUndo}
+                  canRedo={edit.canRedo}
+                />
+              </div>
+            ) : null}
+          </div>
 
           <DetailHero
             label="Recipe Image"
-            editHref={recipe.canEdit ? `/recipes/${recipe.id}/edit` : undefined}
+            // Inline mode is the editor now — the hero no longer links to the /edit form.
+            editHref={recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined}
             LinkComponent={LinkComponent}
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark">
-            {recipe.name}
+          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
+            <InlineText
+              as="span"
+              value={recipe.name}
+              onCommit={edit?.rename}
+              required
+              placeholder="Untitled recipe"
+              ariaLabel="name"
+              autoEdit={edit?.isDraft}
+              selectAllOnEdit={edit?.isDraft}
+              className="inline-block"
+              // The editing input goes w-full inside the centered h1 — keep the text centered so
+              // entering edit mode doesn't visually jump the title to the left edge.
+              inputClassName="text-center"
+            />
           </h1>
-          {recipe.subtitle ? (
-            <p className="mt-1 text-center text-muted-foreground">{recipe.subtitle}</p>
+          {edit || recipe.subtitle ? (
+            <p className="mt-1 text-center text-muted-foreground">
+              <InlineText
+                as="span"
+                value={recipe.subtitle ?? ""}
+                onCommit={edit?.setSubtitle}
+                placeholder={edit ? "Add a subtitle" : ""}
+                ariaLabel="subtitle"
+                className="inline-block"
+                inputClassName="text-center"
+              />
+            </p>
           ) : null}
 
           <h2 className="mt-8 text-center font-serif text-xl font-bold">Ingredients</h2>
           <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
-            {recipe.items.map((item) => (
-              <li key={item.key} className="flex items-start gap-2">
-                <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
-                <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
-                  {item.label}
-                </LinkComponent>
+            {edit
+              ? edit.items.map((row) => (
+                  <li key={row.ingredientId} className="group flex items-start gap-2">
+                    <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <InlineNumber
+                        value={row.grams}
+                        suffix="g"
+                        group="recipe-items"
+                        onCommit={(n) => edit.setItemAmount(row.ingredientId, n)}
+                        ariaLabel={`grams for ${row.name}`}
+                        className="font-medium"
+                      />{" "}
+                      <LinkComponent href={row.href} className="hover:text-primary hover:underline">
+                        {row.name}
+                      </LinkComponent>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${row.name}`}
+                      onClick={() => void edit.removeItem(row.ingredientId)}
+                      className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </li>
+                ))
+              : recipe.items.map((item) => (
+                  <li key={item.key} className="flex items-start gap-2">
+                    <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
+                    <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
+                      {item.label}
+                    </LinkComponent>
+                  </li>
+                ))}
+            {edit ? (
+              <li className="col-span-full">
+                <AddIngredientRow open={addOpen} onOpenChange={setAddOpen} edit={edit} />
               </li>
-            ))}
+            ) : null}
           </ul>
 
           <h2 className="mt-8 text-center font-serif text-xl font-bold">Directions</h2>
-          <p className="mt-3 text-muted-foreground">{recipe.directions ?? "No directions yet."}</p>
+          <InlineTextarea
+            value={recipe.directions ?? ""}
+            onCommit={edit?.setDirections}
+            placeholder={edit ? "Add directions" : "No directions yet."}
+            ariaLabel="directions"
+            className="mt-3 text-muted-foreground"
+          />
         </div>
       </div>
 
@@ -391,47 +585,358 @@ export function RecipeDetailView({
       </aside>
 
       <NutritionFactsFab data={recipe.nutrition} />
+
+      {edit ? (
+        <>
+          <DeleteRecipeDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            name={recipe.name || "this recipe"}
+            onConfirm={edit.remove}
+          />
+          <ShortcutSheet open={helpOpen} onOpenChange={setHelpOpen} />
+        </>
+      ) : null}
     </div>
+  );
+}
+
+function queryClick(selector: string) {
+  document.querySelector<HTMLElement>(selector)?.click();
+}
+function queryFocus(selector: string) {
+  document.querySelector<HTMLElement>(selector)?.focus();
+}
+
+/** The ghost "+ add ingredient" row → inline type-to-search → pick attaches with a default amount. */
+function AddIngredientRow({
+  open,
+  onOpenChange,
+  edit,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  edit: RecipeEditAdapter;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<IngredientSearchItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+    else {
+      setQuery("");
+      setResults([]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await edit.search(query);
+        if (alive) setResults(r);
+      } finally {
+        if (alive) setSearching(false);
+      }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [query, open, edit]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        className="flex w-full items-center gap-2 rounded-sm py-1 text-left text-muted-foreground transition hover:text-primary"
+      >
+        <Plus className="size-4" />
+        Add ingredient
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search ingredients…"
+        aria-label="Search ingredients to add"
+        className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onOpenChange(false);
+        }}
+      />
+      {query ? (
+        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
+          {searching ? (
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">Searching…</li>
+          ) : results.length === 0 ? (
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">No matches.</li>
+          ) : (
+            results.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  onClick={async () => {
+                    await edit.addItem(r);
+                    setQuery("");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {r.name}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Page ⋯ menu (owner): undo/redo, delete, discard (drafts only), shortcuts. */
+function RecipeOverflowMenu({
+  isDraft,
+  onDelete,
+  onDiscard,
+  onHelp,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: {
+  isDraft?: boolean;
+  onDelete: () => void;
+  onDiscard?: () => Promise<void>;
+  onHelp: () => void;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Recipe actions"
+        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      >
+        <MoreHorizontal className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        {isDraft && onDiscard ? (
+          <DropdownMenuItem onClick={() => void onDiscard()}>Discard draft</DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
+        >
+          Delete recipe…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Shared Undo/Redo menu rows (with their shortcut hints), disabled when nothing to undo/redo. */
+function UndoRedoItems({
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: {
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}) {
+  if (!undo && !redo) return null;
+  return (
+    <>
+      <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
+        Undo
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘Z</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!canRedo} onClick={() => redo?.()}>
+        Redo
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘⇧Z</span>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+    </>
+  );
+}
+
+function DeleteRecipeDialog({
+  open,
+  onOpenChange,
+  name,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  name: string;
+  onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {name}?</DialogTitle>
+          <DialogDescription>This can’t be undone.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose className={buttonClasses({ variant: "outline", size: "sm" })}>Cancel</DialogClose>
+          <button
+            type="button"
+            disabled={busy}
+            className={buttonClasses({ variant: "destructive", size: "sm" })}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ShortcutSheet({
+  open,
+  onOpenChange,
+  shortcuts = DETAIL_SHORTCUTS,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  shortcuts?: readonly { keys: string; label: string }[];
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+        </DialogHeader>
+        <ul className="divide-y divide-border">
+          {shortcuts.map((s) => (
+            <li key={s.keys} className="flex items-center justify-between py-2 text-sm">
+              <span className="text-muted-foreground">{s.label}</span>
+              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                {s.keys}
+              </kbd>
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function IngredientDetailView({
   ingredient,
   LinkComponent,
+  edit,
 }: {
   ingredient: IngredientDetailVM;
   LinkComponent: NavLink;
+  /** Present ⇒ inline editor (owner). Absent ⇒ read-only, unchanged from before. */
+  edit?: IngredientEditAdapter;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  useDetailShortcuts(
+    {
+      onEditName: () => queryClick('[data-inline-field="name"]'),
+      onVisibility: () => queryFocus('[data-inline-field="visibility"]'),
+      onHelp: () => setHelpOpen((v) => !v),
+      onDelete: () => setDeleteOpen(true),
+      onUndo: edit?.undo,
+      onRedo: edit?.redo,
+    },
+    !!edit,
+  );
+
   return (
     <div className="flex">
       <div className="min-w-0 flex-1">
         <div className="mx-auto max-w-2xl p-6 lg:p-8">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink>@user</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{ingredient.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <div className="flex items-start justify-between gap-4">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink>@user</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{ingredient.name || "Untitled"}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+            {edit ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <InlinePillSelect
+                  value={edit.visibility}
+                  options={VISIBILITY_OPTIONS}
+                  onCommit={edit.setVisibility}
+                  ariaLabel="visibility"
+                />
+                <IngredientOverflowMenu
+                  onDelete={() => setDeleteOpen(true)}
+                  onHelp={() => setHelpOpen(true)}
+                  undo={edit.undo}
+                  redo={edit.redo}
+                  canUndo={edit.canUndo}
+                  canRedo={edit.canRedo}
+                />
+              </div>
+            ) : null}
+          </div>
 
           <DetailHero
             label="Ingredient Image"
-            editHref={ingredient.canEdit ? `/ingredients/${ingredient.id}/edit` : undefined}
+            editHref={ingredient.canEdit && !edit ? `/ingredients/${ingredient.id}/edit` : undefined}
             LinkComponent={LinkComponent}
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark">
-            {ingredient.name}
+          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
+            <InlineText
+              as="span"
+              value={ingredient.name}
+              onCommit={edit?.rename}
+              required
+              placeholder="Untitled"
+              ariaLabel="name"
+              className="inline-block"
+              inputClassName="text-center"
+            />
           </h1>
           <h2 className="mt-6 text-center font-serif text-xl font-bold">Information</h2>
-          <p className="mt-3 text-muted-foreground">
-            {ingredient.description ?? "No description yet."}
-          </p>
+          <InlineTextarea
+            value={ingredient.description ?? ""}
+            onCommit={edit?.setDescription}
+            placeholder={edit ? "Add a description" : "No description yet."}
+            ariaLabel="description"
+            className="mt-3 text-muted-foreground"
+          />
         </div>
       </div>
 
@@ -442,7 +947,57 @@ export function IngredientDetailView({
       </aside>
 
       <NutritionFactsFab data={ingredient.nutrition} />
+
+      {edit ? (
+        <>
+          <DeleteRecipeDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            name={ingredient.name || "this ingredient"}
+            onConfirm={edit.remove}
+          />
+          <ShortcutSheet open={helpOpen} onOpenChange={setHelpOpen} shortcuts={INGREDIENT_SHORTCUTS} />
+        </>
+      ) : null}
     </div>
+  );
+}
+
+/** Page ⋯ menu for an ingredient (owner): undo/redo, shortcuts, delete. */
+function IngredientOverflowMenu({
+  onDelete,
+  onHelp,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: {
+  onDelete: () => void;
+  onHelp: () => void;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Ingredient actions"
+        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      >
+        <MoreHorizontal className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
+        >
+          Delete ingredient…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

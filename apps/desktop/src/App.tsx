@@ -42,14 +42,24 @@ import {
   SearchResultsView,
   SettingsView,
   type IngredientDetailVM,
+  type IngredientEditAdapter,
   type IngredientListItem,
   type ProfileVM,
   type RecipeDetailVM,
+  type RecipeEditAdapter,
+  type RecipeEditRow,
   type RecipeListItem,
 } from '@vegify/ui/screens'
 import { IngredientForm, type IngredientFormDefaults, type IngredientFormInput } from '@vegify/ui/ingredient-form'
-import { RecipeForm, type RecipeFormDefaults, type RecipeFormInput } from '@vegify/ui/recipe-form'
+import {
+  RecipeForm,
+  composeRecipeInput,
+  type RecipeEditState,
+  type RecipeFormDefaults,
+  type RecipeFormInput,
+} from '@vegify/ui/recipe-form'
 import { useChromeSearch } from '@vegify/ui/use-chrome-search'
+import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import {
   vegifyData,
@@ -210,12 +220,47 @@ const recipesQuery = (sort: Sort) =>
       return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
     },
   })
+// The detail payload mirrors web's: the read VM plus, for an owner, the editable state the inline
+// editor patches (visibility/servings/item-grams) and the display rows (href from recipeId). Same
+// shape both shells so they stay legible side by side.
+type RecipeDetailPayload = {
+  vm: RecipeDetailVM
+  edit: { state: RecipeEditState; rows: RecipeEditRow[] } | null
+}
 const recipeDetailQuery = (id: string) =>
   queryOptions({
     queryKey: ['recipe', id],
-    queryFn: async () => {
+    queryFn: async (): Promise<RecipeDetailPayload | null> => {
       const r = await vegifyData.recipe(id)
-      return r ? recipeViewToVM(id, r) : null
+      if (!r) return null
+      const vm = recipeViewToVM(id, r)
+      let edit: RecipeDetailPayload['edit'] = null
+      if (r.canEdit) {
+        const editData = await vegifyData.recipeForEdit(id)
+        if (editData) {
+          const hrefById = new Map(
+            r.items.map((it) => [it.id, it.recipeId ? `/recipes/${it.recipeId}` : `/ingredients/${it.id}`]),
+          )
+          edit = {
+            state: {
+              id: editData.id,
+              visibility: editData.visibility,
+              name: editData.name,
+              subtitle: editData.subtitle,
+              directions: editData.directions,
+              servings: editData.servings,
+              items: editData.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams ?? 0 })),
+            },
+            rows: editData.items.map((i) => ({
+              ingredientId: i.ingredientId,
+              name: i.name,
+              grams: i.grams ?? 0,
+              href: hrefById.get(i.ingredientId) ?? `/ingredients/${i.ingredientId}`,
+            })),
+          }
+        }
+      }
+      return { vm, edit }
     },
   })
 const recipeEditQuery = (id: string) =>
@@ -241,12 +286,16 @@ const ingredientsQuery = (sort: Sort) =>
       return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
     },
   })
+// Mirrors the recipe payload: the read VM plus, for an owner, the full editable data the inline
+// editor patches (a 1:1 save map — the ingredient stores everything per-100g, no derivation).
+type IngredientDetailPayload = { vm: IngredientDetailVM; edit: IngredientEditData | null }
 const ingredientDetailQuery = (id: string) =>
   queryOptions({
     queryKey: ['ingredient', id],
-    queryFn: async () => {
+    queryFn: async (): Promise<IngredientDetailPayload | null> => {
       const d = await vegifyData.ingredient(id)
-      return d ? ingredientEditToVM(d) : null
+      if (!d) return null
+      return { vm: ingredientEditToVM(d), edit: d.canEdit ? d : null }
     },
   })
 const ingredientEditQuery = (id: string) =>
@@ -472,9 +521,67 @@ const recipeDetailRoute = createRoute({
   loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeDetailQuery(params.recipeId)),
   component: function RecipeDetail() {
     const { recipeId } = useParams({ from: '/recipes/$recipeId' })
-    const { data: vm } = useSuspenseQuery(recipeDetailQuery(recipeId))
-    if (!vm) return <NotFound what="recipe" />
-    return <RecipeDetailView recipe={vm} LinkComponent={LinkComponent} />
+    const { data } = useSuspenseQuery(recipeDetailQuery(recipeId))
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    // Each inline commit patches one field, composes the whole-object save (shared helper — same
+    // math the form uses), persists over IPC (local-first, ~instant), and invalidates so the read
+    // view + list refetch. Optimistic in the primitives; a rejected save reverts the field.
+    // (commit + history before the early return to keep hook order stable.)
+    const commit = async (next: RecipeEditState) => {
+      const id = await saveRecipeFromForm(composeRecipeInput(next))
+      await queryClient.invalidateQueries({ queryKey: ['recipe', String(id)] })
+      await queryClient.invalidateQueries({ queryKey: ['recipes'] })
+    }
+    const history = useEditHistory(commit)
+    if (!data) return <NotFound what="recipe" />
+
+    const editState = data.edit?.state
+    const patch = (p: Partial<RecipeEditState>) => {
+      history.record(editState!)
+      return commit({ ...editState!, ...p })
+    }
+
+    const edit: RecipeEditAdapter | undefined =
+      data.edit && editState
+        ? {
+            visibility: editState.visibility,
+            items: data.edit.rows,
+            rename: (name) => patch({ name }),
+            setSubtitle: (subtitle) => patch({ subtitle: subtitle || null }),
+            setDirections: (directions) => patch({ directions: directions || null }),
+            setVisibility: (visibility) => patch({ visibility }),
+            setItemAmount: (ingredientId, grams) =>
+              patch({
+                items: editState.items.map((i) =>
+                  i.ingredientId === ingredientId ? { ...i, grams } : i,
+                ),
+              }),
+            addItem: (ingredient) =>
+              patch({
+                items: [
+                  ...editState.items,
+                  { ingredientId: ingredient.id, grams: ingredient.servingGrams ?? 100 },
+                ],
+              }),
+            removeItem: (ingredientId) =>
+              patch({ items: editState.items.filter((i) => i.ingredientId !== ingredientId) }),
+            remove: async () => {
+              await vegifyData.deleteRecipe(editState.id)
+              scheduleSync()
+              queryClient.removeQueries({ queryKey: ['recipe', editState.id] })
+              await queryClient.invalidateQueries({ queryKey: ['recipes'] })
+              navigate({ to: '/recipes', search: { sort: 'newest' } })
+            },
+            search: searchForForm,
+            undo: () => void history.undo(editState),
+            redo: () => void history.redo(editState),
+            canUndo: history.canUndo,
+            canRedo: history.canRedo,
+          }
+        : undefined
+
+    return <RecipeDetailView recipe={data.vm} LinkComponent={LinkComponent} edit={edit} />
   },
 })
 
@@ -596,9 +703,56 @@ const ingredientDetailRoute = createRoute({
   loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientDetailQuery(params.ingredientId)),
   component: function IngredientDetail() {
     const { ingredientId } = useParams({ from: '/ingredients/$ingredientId' })
-    const { data: vm } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
-    if (!vm) return <NotFound what="ingredient" />
-    return <IngredientDetailView ingredient={vm} LinkComponent={LinkComponent} />
+    const { data } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    // commit + history before the early return to keep hook order stable.
+    const commit = async (next: IngredientEditData) => {
+      const id = await saveIngredientFromForm({
+        id: next.id,
+        visibility: next.visibility,
+        name: next.name,
+        description: next.description,
+        price: next.price,
+        caloriesPer100g: next.caloriesPer100g,
+        servingGrams: next.servingGrams,
+        packageGrams: next.packageGrams,
+        nutrients: next.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
+      await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+      await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+    }
+    const history = useEditHistory(commit)
+    if (!data) return <NotFound what="ingredient" />
+
+    const state = data.edit
+    const patch = (p: Partial<IngredientEditData>) => {
+      history.record(state!)
+      return commit({ ...state!, ...p })
+    }
+
+    const edit: IngredientEditAdapter | undefined = state
+      ? {
+          visibility: state.visibility,
+          rename: (name) => patch({ name }),
+          setDescription: (description) => patch({ description: description || null }),
+          setVisibility: (visibility) => patch({ visibility }),
+          remove: async () => {
+            await vegifyData.deleteIngredient(state.id)
+            scheduleSync()
+            queryClient.removeQueries({ queryKey: ['ingredient', state.id] })
+            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+            navigate({ to: '/ingredients', search: { sort: 'newest' } })
+          },
+          undo: () => void history.undo(state),
+          redo: () => void history.redo(state),
+          canUndo: history.canUndo,
+          canRedo: history.canRedo,
+        }
+      : undefined
+
+    return <IngredientDetailView ingredient={data.vm} LinkComponent={LinkComponent} edit={edit} />
   },
 })
 

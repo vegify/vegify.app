@@ -1,13 +1,29 @@
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
-import { IngredientDetailView, type IngredientDetailVM } from '@vegify/ui/screens'
+import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import {
+  IngredientDetailView,
+  type IngredientDetailVM,
+  type IngredientEditAdapter,
+  type Visibility,
+} from '@vegify/ui/screens'
+import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
+import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import { LinkAdapter } from '../link'
+import type { IngredientEditData } from '../content'
+
+// The detail payload: the read VM plus, for an owner, the editable state the inline editor patches.
+// getIngredientView already returns the full editable shape (visibility, nutrients, all per-100g), so
+// the "state" is just that data — a save is a 1:1 field map, no derivation (unlike recipes' servings).
+type IngredientDetailPayload = {
+  vm: IngredientDetailVM
+  edit: IngredientEditData | null
+}
 
 const getIngredient = createServerFn({ method: 'GET' })
   .validator((ingredientId: string) => ingredientId)
-  .handler(async ({ data }): Promise<IngredientDetailVM | null> => {
+  .handler(async ({ data }): Promise<IngredientDetailPayload | null> => {
     const { getIngredientView } = await import('../content')
     const ing = await getIngredientView(data) // backend gates canView; null => forbidden/missing
     if (!ing) return null
@@ -24,13 +40,28 @@ const getIngredient = createServerFn({ method: 'GET' })
       readings: ing.nutrients,
     }
 
-    return {
+    const vm: IngredientDetailVM = {
       id: ing.id,
       name: ing.name,
       description: ing.description,
       canEdit: ing.canEdit,
       nutrition,
     }
+    return { vm, edit: ing.canEdit ? ing : null }
+  })
+
+const saveFn = createServerFn({ method: 'POST' })
+  .validator((input: IngredientFormInput) => input)
+  .handler(async ({ data }) => {
+    const { saveIngredient } = await import('../content')
+    return saveIngredient(data)
+  })
+
+const deleteFn = createServerFn({ method: 'POST' })
+  .validator((id: string) => id)
+  .handler(async ({ data }) => {
+    const { deleteIngredient } = await import('../content')
+    await deleteIngredient(data)
   })
 
 const ingredientQuery = (id: string) =>
@@ -44,9 +75,60 @@ export const Route = createFileRoute('/ingredients/$ingredientId/')({
   component: IngredientPage,
 })
 
+// Map the full editable state to the save shape (1:1 — the ingredient stores everything per-100g /
+// absolute, so no conversion). Preserving `nutrients` here is why a name edit doesn't wipe the panel.
+const toInput = (d: IngredientEditData): IngredientFormInput => ({
+  id: d.id,
+  visibility: d.visibility,
+  name: d.name,
+  description: d.description,
+  price: d.price,
+  caloriesPer100g: d.caloriesPer100g,
+  servingGrams: d.servingGrams,
+  packageGrams: d.packageGrams,
+  nutrients: d.nutrients.map((n) => ({ name: n.name, amountPer100g: n.amountPer100g, unit: n.unit })),
+})
+
 function IngredientPage() {
   const { ingredientId } = Route.useParams()
-  const { data: ingredient } = useSuspenseQuery(ingredientQuery(ingredientId))
-  if (!ingredient) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
-  return <IngredientDetailView ingredient={ingredient} LinkComponent={LinkAdapter} />
+  const { data } = useSuspenseQuery(ingredientQuery(ingredientId))
+  const queryClient = useQueryClient()
+  const router = useRouter()
+  // commit + history before the early return so hook order stays stable across renders.
+  const commit = async (next: IngredientEditData) => {
+    const id = await saveFn({ data: toInput(next) })
+    await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
+    await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+    // A recipe using this ingredient shows its name/nutrition — refetch recipe views too.
+    await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+  }
+  const history = useEditHistory(commit)
+  if (!data) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
+
+  const state = data.edit
+  const patch = (p: Partial<IngredientEditData>) => {
+    history.record(state!)
+    return commit({ ...state!, ...p })
+  }
+
+  const edit: IngredientEditAdapter | undefined = state
+    ? {
+        visibility: state.visibility,
+        rename: (name) => patch({ name }),
+        setDescription: (description) => patch({ description: description || null }),
+        setVisibility: (visibility) => patch({ visibility: visibility as Visibility }),
+        remove: async () => {
+          await deleteFn({ data: state.id })
+          queryClient.removeQueries({ queryKey: ['ingredient', state.id] })
+          await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+          await router.navigate({ to: '/ingredients', search: { sort: 'newest' } })
+        },
+        undo: () => void history.undo(state),
+        redo: () => void history.redo(state),
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
+      }
+    : undefined
+
+  return <IngredientDetailView ingredient={data.vm} LinkComponent={LinkAdapter} edit={edit} />
 }
