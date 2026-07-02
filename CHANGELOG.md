@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/vegify/vegify.app/compare/v0.10.1...v0.11.0) (2026-07-02)
+
+
+### Features
+
+* **ui:** inline (Linear-style) editing on recipe & ingredient detail ([#36](https://github.com/vegify/vegify.app/issues/36)) ([56d13db](https://github.com/vegify/vegify.app/commit/56d13db1584f5af5672034c1ee884a47c68a9322))
+
 ## [0.10.1](https://github.com/vegify/vegify.app/compare/v0.10.0...v0.10.1) (2026-07-02)
 
 
