@@ -145,16 +145,14 @@ export class WebStartStack extends Stack {
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           responseHeadersPolicy: wellKnownJson,
         },
-        // SEO statics — served from S3, NOT the SSR Lambda (whose auth gate 307s any unknown path to
-        // /login, which would hide robots.txt and sitemap.xml from crawlers). Uncached so an update ships
-        // immediately (the BucketDeployment does not invalidate CloudFront). S3 sets text/plain and
-        // application/xml from the file extensions, so no content-type override is needed.
+        // robots.txt is a true static — served from S3, NOT the SSR Lambda (whose auth gate 307s any
+        // unknown path to /login, which would hide it from crawlers). Uncached so an update ships
+        // immediately (the BucketDeployment does not invalidate CloudFront). S3 sets text/plain from the
+        // extension, so no content-type override is needed.
+        // (/sitemap.xml is NOT here: it's now DYNAMIC — the runtime wrapper, lambda-handler.mjs,
+        // intercepts it BEFORE the auth gate and returns generated XML, so it flows through the default
+        // Lambda behavior and enumerates every public recipe + ingredient. See apps/web/aws/sitemap.mjs.)
         "/robots.txt": {
-          origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-        },
-        "/sitemap.xml": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,

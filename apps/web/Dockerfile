@@ -7,6 +7,7 @@ WORKDIR /app
 # Built app + the Bun entrypoint (serve-bun.mjs runs the WinterCG build and serves dist/client).
 COPY dist ./dist
 COPY serve-bun.mjs ./
+COPY aws/sitemap.mjs ./aws/sitemap.mjs
 
 # @libsql/client is kept external from the SSR bundle (vite ssr.external); Bun installs the linux
 # binding. Everything else is already bundled into dist/server.

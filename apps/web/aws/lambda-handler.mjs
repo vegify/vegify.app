@@ -2,9 +2,29 @@
 // (P4: web-SSR-calls-Axum) — it holds no database; all auth + content is fetched from the standing
 // vegify-server over HTTP (VEGIFY_API_URL, set by the CDK). This adapter just bridges the Lambda
 // Function-URL event to the bundled, self-contained WinterCG handler.
+import { SITEMAP_PATH, sitemapResponse } from "./sitemap.mjs";
+
 const app = await import("./server/server.js");
 const target = app.default ?? app;
 const fetchHandler = typeof target === "function" ? target : target.fetch.bind(target);
+
+// A WinterCG Response → the Lambda Function-URL result shape (base64 body + split Set-Cookie).
+async function toLambda(response) {
+  const respHeaders = {};
+  const setCookie = [];
+  response.headers.forEach((val, key) => {
+    if (key.toLowerCase() === "set-cookie") setCookie.push(val);
+    else respHeaders[key] = val;
+  });
+  const buf = Buffer.from(await response.arrayBuffer());
+  return {
+    statusCode: response.status,
+    headers: respHeaders,
+    cookies: setCookie.length ? setCookie : undefined,
+    body: buf.toString("base64"),
+    isBase64Encoded: true,
+  };
+}
 
 // Origin-verify: CloudFront injects x-vegify-origin on every forwarded request (set by the CDK from
 // $ORIGIN_VERIFY_SECRET). Reject anything that doesn't carry it — i.e. a direct hit to the public
@@ -22,6 +42,12 @@ export const handler = async (event) => {
   const proto = headers["x-forwarded-proto"] || "https";
   const url = `${proto}://${host}${rawPath}${rawQueryString ? `?${rawQueryString}` : ""}`;
 
+  // Dynamic sitemap: return generated XML BEFORE the SSR handler + its auth gate (which would 307
+  // /sitemap.xml → /login and hide it from crawlers). Enumerates public recipes + ingredients.
+  if (rawPath === SITEMAP_PATH) {
+    return toLambda(await sitemapResponse(process.env.VEGIFY_API_URL, `${proto}://${host}`));
+  }
+
   const h = new Headers();
   for (const [k, v] of Object.entries(headers)) if (v != null) h.set(k, v);
   if (cookies?.length) h.set("cookie", cookies.join("; "));
@@ -34,19 +60,5 @@ export const handler = async (event) => {
   const response = await fetchHandler(
     new Request(url, { method, headers: h, body: reqBody, duplex: "half" }),
   );
-
-  const respHeaders = {};
-  const setCookie = [];
-  response.headers.forEach((val, key) => {
-    if (key.toLowerCase() === "set-cookie") setCookie.push(val);
-    else respHeaders[key] = val;
-  });
-  const buf = Buffer.from(await response.arrayBuffer());
-  return {
-    statusCode: response.status,
-    headers: respHeaders,
-    cookies: setCookie.length ? setCookie : undefined,
-    body: buf.toString("base64"),
-    isBase64Encoded: true,
-  };
+  return toLambda(response);
 };
