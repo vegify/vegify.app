@@ -86,13 +86,24 @@ CREATE TABLE IF NOT EXISTS `ingredients` (
 	`serving_size_id` text,
 	`batch_size_id` text,
 	`created_at` integer,
-	`updated_at` integer, visibility text NOT NULL DEFAULT 'public',
+	`updated_at` integer, visibility text NOT NULL DEFAULT 'public', slug text,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`serving_size_id`) REFERENCES `amounts`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`batch_size_id`) REFERENCES `amounts`(`id`) ON UPDATE no action ON DELETE cascade
 );
 CREATE INDEX IF NOT EXISTS `ingredients_user_idx` ON `ingredients` (`user_id`);
 CREATE INDEX IF NOT EXISTS `ingredients_name_idx` ON `ingredients` (`name`);
+CREATE INDEX IF NOT EXISTS `ingredients_slug_idx` ON `ingredients` (`slug`);
+CREATE TABLE IF NOT EXISTS `slug_history` (
+	`id` text PRIMARY KEY NOT NULL,
+	`slug` text NOT NULL,
+	`scope` text,
+	`target_id` text NOT NULL,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`target_id`) REFERENCES `ingredients`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE UNIQUE INDEX IF NOT EXISTS `slug_history_scope_slug_uq` ON `slug_history` (`scope`,`slug`);
 CREATE TABLE IF NOT EXISTS `nutrients` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

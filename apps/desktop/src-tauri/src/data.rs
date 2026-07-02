@@ -298,6 +298,8 @@ mod content_client {
         pub serving_grams: Option<f64>,
         pub batch_grams: Option<f64>,
         pub items: Vec<PullItem>,
+        #[serde(default)]
+        pub slug: Option<String>,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -319,6 +321,8 @@ mod content_client {
         pub serving_grams: Option<f64>,
         pub package_grams: Option<f64>,
         pub nutrients: Vec<PullReading>,
+        #[serde(default)]
+        pub slug: Option<String>,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -430,6 +434,7 @@ fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> R
                     unit: n.unit.clone(),
                 })
                 .collect(),
+            slug: ing.slug.clone(), // server-authoritative; store verbatim, don't regenerate
         };
         do_save_ingredient(&tx, &input, ing.user_id.as_deref())?;
     }
@@ -452,6 +457,7 @@ fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> R
                     unit: it.unit.clone(),
                 })
                 .collect(),
+            slug: r.slug.clone(), // server-authoritative
         };
         do_save_recipe(&tx, &input, r.user_id.as_deref())?;
     }
@@ -490,6 +496,17 @@ fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     )?;
     if has_username == 0 {
         conn.execute("ALTER TABLE users ADD COLUMN username TEXT", [])?;
+    }
+    // `ingredients.slug` (SEO URL segment) postdates the original cache schema too. schema.sql adds it
+    // to fresh caches + creates slug_history; for an existing cache add the column idempotently here.
+    // The desktop is a cache: the next pull refills slugs from the server (no local backfill needed).
+    let has_slug: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'slug'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_slug == 0 {
+        conn.execute("ALTER TABLE ingredients ADD COLUMN slug TEXT", [])?;
     }
     Ok(())
 }
@@ -917,6 +934,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(500.0),
                 items: vec![RecipeItemInput { ingredient_id: flour.id.clone(), grams: 500.0, unit: None }],
+            slug: None,
             },
         )
         .expect("save recipe with an item");
@@ -961,6 +979,7 @@ mod tests {
                     amount_per_100g: 17.3,
                     unit: "g".into(),
                 }],
+            slug: None,
             },
         )
         .expect("save ingredient");
@@ -1004,6 +1023,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
+            slug: None,
             },
         )
         .expect("save");
@@ -1097,6 +1117,7 @@ mod tests {
                     serving_grams: Some(100.0),
                     package_grams: None,
                     nutrients: vec![],
+            slug: None,
                 },
             )
             .expect("john saves")
@@ -1117,6 +1138,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
+            slug: None,
             },
         )
         .expect("john saves recipe");
@@ -1161,6 +1183,7 @@ mod tests {
                 serving_grams: None,
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         );
         assert!(hijack.is_err(), "bob can't edit john's ingredient");
@@ -1204,6 +1227,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         )
         .expect("owner edits own");
@@ -1236,6 +1260,7 @@ mod tests {
                 serving_grams: None,
                 batch_grams: None,
                 items: vec![],
+            slug: None,
             },
         );
         assert!(matches!(r, Err(DataError::Auth(_))), "anonymous recipe create is refused");
@@ -1251,6 +1276,7 @@ mod tests {
                 serving_grams: None,
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         );
         assert!(matches!(i, Err(DataError::Auth(_))), "anonymous ingredient create is refused");
@@ -1365,6 +1391,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         )
         .expect("save with a supplied id");
@@ -1387,6 +1414,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         )
         .expect("re-apply updates");
@@ -1413,6 +1441,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(300.0),
                 items: vec![],
+            slug: None,
             },
         )
         .expect("apply biga with supplied ids");
@@ -1433,6 +1462,7 @@ mod tests {
             serving_grams: Some(250.0),
             batch_grams: Some(500.0),
             items: vec![RecipeItemInput { ingredient_id: biga_aiid.clone(), grams: 300.0, unit: None }],
+            slug: None,
         };
         let returned_dough =
             VegifyData::save_recipe(&db, build_dough()).expect("apply dough consuming the biga");
@@ -1494,6 +1524,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
+            slug: None,
             },
         )
         .expect("save recipe");
@@ -1517,6 +1548,7 @@ mod tests {
                 serving_grams: Some(50.0),
                 package_grams: None,
                 nutrients: vec![],
+            slug: None,
             },
         )
         .expect("save ingredient");
@@ -1637,6 +1669,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(300.0),
                 items: vec![],
+            slug: None,
             },
         )
         .expect("A saves biga");
@@ -1658,6 +1691,7 @@ mod tests {
                 serving_grams: Some(250.0),
                 batch_grams: Some(500.0),
                 items: vec![RecipeItemInput { ingredient_id: biga_ai.clone(), grams: 300.0, unit: None }],
+            slug: None,
             },
         )
         .expect("A saves dough consuming the biga");
@@ -1810,6 +1844,7 @@ mod tests {
                 amount_per_100g: 16.9,
                 unit: "g".into(),
             }],
+            slug: None,
         };
         let id = do_save_ingredient(&conn, &input, None).expect("save into the freshly-created schema");
         let name: String =
@@ -1822,5 +1857,100 @@ mod tests {
         drop(conn);
         let _ = fs::remove_file(&path);
         eprintln!("fresh DB accepted a content write: ingredient {id}");
+    }
+
+    /// Slug generation: kebab from name, per-scope uniqueness (global for leaf ingredients, per-user
+    /// for recipes), rename regenerates + logs the old slug to slug_history, and a pull-provided slug
+    /// is stored verbatim (server-authoritative).
+    #[test]
+    fn slugs_generate_dedup_and_record_rename_history() {
+        let path = std::env::temp_dir().join(format!("vegify-slug-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = Db::open(path.to_str().unwrap()).expect("open");
+        let conn = db.conn.lock().unwrap();
+
+        let ing = |name: &str, slug: Option<&str>| SaveIngredientInput {
+            id: None,
+            visibility: Some(Visibility::Public),
+            name: name.into(),
+            description: None,
+            price: None,
+            calories_per_100g: None,
+            serving_grams: None,
+            package_grams: None,
+            nutrients: vec![],
+            slug: slug.map(str::to_string),
+        };
+        let slug_of = |conn: &Connection, id: &str| -> String {
+            conn.query_row("SELECT slug FROM ingredients WHERE id=?1", [id], |r| r.get::<_, Option<String>>(0))
+                .unwrap()
+                .unwrap_or_default()
+        };
+
+        // Leaf ingredients: kebab + global dedup.
+        let a = do_save_ingredient(&conn, &ing("Rolled Oats", None), None).unwrap();
+        let b = do_save_ingredient(&conn, &ing("Rolled Oats", None), None).unwrap();
+        assert_eq!(slug_of(&conn, &a), "rolled-oats");
+        assert_eq!(slug_of(&conn, &b), "rolled-oats-2", "global collision gets a numeric suffix");
+
+        // A pull-provided slug is stored verbatim (no generation).
+        let c = do_save_ingredient(&conn, &ing("Rolled Oats", Some("server-picked-slug")), None).unwrap();
+        assert_eq!(slug_of(&conn, &c), "server-picked-slug");
+
+        // Recipes: slug unique PER USER (same name under different users may coincide). Real user
+        // rows first — ingredients.user_id has an FK and foreign_keys is ON.
+        conn.execute(
+            "INSERT INTO users(id, name, email, password_hash, username) VALUES
+             ('user-1','U1','u1@example.com','h','u1'), ('user-2','U2','u2@example.com','h','u2')",
+            [],
+        )
+        .unwrap();
+        let mk_recipe = |name: &str| SaveRecipeInput {
+            id: None,
+            as_ingredient_id: None,
+            visibility: Some(Visibility::Public),
+            name: name.into(),
+            subtitle: None,
+            directions: None,
+            serving_grams: None,
+            batch_grams: None,
+            items: vec![],
+            slug: None,
+        };
+        let r_u1a = do_save_recipe(&conn, &mk_recipe("Biga"), Some("user-1")).unwrap();
+        let r_u1b = do_save_recipe(&conn, &mk_recipe("Biga"), Some("user-1")).unwrap();
+        let r_u2 = do_save_recipe(&conn, &mk_recipe("Biga"), Some("user-2")).unwrap();
+        let recipe_slug = |rid: &str| -> String {
+            let as_ing: String = conn
+                .query_row("SELECT as_ingredient_id FROM recipes WHERE id=?1", [rid], |r| r.get(0))
+                .unwrap();
+            slug_of(&conn, &as_ing)
+        };
+        assert_eq!(recipe_slug(&r_u1a), "biga");
+        assert_eq!(recipe_slug(&r_u1b), "biga-2", "same user, same name → suffix");
+        assert_eq!(recipe_slug(&r_u2), "biga", "different user reuses the slug (per-user scope)");
+
+        // Rename a recipe → new slug, old one logged to slug_history for a 301.
+        let as_ing_u1a: String = conn
+            .query_row("SELECT as_ingredient_id FROM recipes WHERE id=?1", [&r_u1a], |r| r.get(0))
+            .unwrap();
+        do_save_recipe(
+            &conn,
+            &SaveRecipeInput { id: Some(r_u1a.clone()), as_ingredient_id: Some(as_ing_u1a), name: "Poolish".into(), ..mk_recipe("Poolish") },
+            Some("user-1"),
+        )
+        .unwrap();
+        assert_eq!(recipe_slug(&r_u1a), "poolish", "rename regenerates the slug");
+        let history: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM slug_history WHERE scope='user-1' AND slug='biga'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(history, 1, "the old slug is recorded for redirects");
+
+        drop(conn);
+        let _ = fs::remove_file(&path);
     }
 }

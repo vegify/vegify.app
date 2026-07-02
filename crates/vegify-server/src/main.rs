@@ -564,7 +564,16 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER,
             updated_at INTEGER
         );
-        CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx ON email_verification_tokens(user_id);",
+        CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx ON email_verification_tokens(user_id);
+        CREATE TABLE IF NOT EXISTS slug_history (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL,
+            scope TEXT,
+            target_id TEXT NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS slug_history_scope_slug_uq ON slug_history(scope, slug);",
     )?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
@@ -601,6 +610,24 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             "CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users(username)",
             [],
         )?;
+    }
+    // `ingredients.slug` (SEO URL segment). Guard on the table existing (the migration test sets up
+    // only `users`) and on the column being absent. Backfill of existing rows runs after ensure_schema
+    // in main (it needs vegify_core's scoped slug generation, not just DDL).
+    let has_ingredients: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ingredients'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_ingredients > 0 {
+        let has_slug: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'slug'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_slug == 0 {
+            conn.execute("ALTER TABLE ingredients ADD COLUMN slug TEXT", [])?;
+        }
     }
     Ok(())
 }
@@ -666,6 +693,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Apply the idempotent additive auth-reset migration before serving (the live DB predates these).
     let setup_conn = pool.get()?;
     ensure_schema(&setup_conn)?;
+    // Backfill SEO slugs for any rows created before the slug column (idempotent — skips rows that
+    // already have one). Server is the sole slug authority; the next pull carries them to replicas.
+    vegify_core::backfill_all_slugs(&setup_conn)?;
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
