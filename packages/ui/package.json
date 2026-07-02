@@ -29,6 +29,7 @@
     "./theme-setting": "./src/theme-setting.tsx",
     "./use-chrome-search": "./src/use-chrome-search.ts",
     "./use-detail-shortcuts": "./src/use-detail-shortcuts.ts",
+    "./use-edit-history": "./src/use-edit-history.ts",
     "./use-theme": "./src/use-theme.ts",
     "./vegify-logo": "./src/vegify-logo.tsx",
     "./visibility-field": "./src/visibility-field.tsx"

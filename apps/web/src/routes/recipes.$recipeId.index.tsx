@@ -9,6 +9,7 @@ import {
   type Visibility,
 } from '@vegify/ui/screens'
 import { composeRecipeInput, type RecipeEditState } from '@vegify/ui/recipe-form'
+import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { IngredientSearchItem } from '@vegify/ui/recipe-form'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import { LinkAdapter } from '../link'
@@ -127,18 +128,24 @@ function RecipePage() {
   const { data } = useSuspenseQuery(recipeQuery(recipeId))
   const queryClient = useQueryClient()
   const router = useRouter()
-  if (!data) return <div className="p-8 text-muted-foreground">Recipe not found.</div>
-
-  const editState = data.edit?.state
   // Every inline commit patches ONE field of the current edit state, composes the whole-object save
   // (the same shape the form produces), persists, and invalidates so the read view + list refetch.
   // Optimistic UI in the primitives shows the change instantly; a rejected save reverts the field.
+  // (commit + history are declared before the early return to keep hook order stable.)
   const commit = async (next: RecipeEditState) => {
     const id = await saveFn({ data: composeRecipeInput(next) })
     await queryClient.invalidateQueries({ queryKey: ['recipe', String(id)] })
     await queryClient.invalidateQueries({ queryKey: ['recipes'] })
   }
-  const patch = (p: Partial<RecipeEditState>) => commit({ ...editState!, ...p })
+  const history = useEditHistory(commit)
+  if (!data) return <div className="p-8 text-muted-foreground">Recipe not found.</div>
+
+  const editState = data.edit?.state
+  // A user edit records the pre-edit state (for undo) then commits the patch.
+  const patch = (p: Partial<RecipeEditState>) => {
+    history.record(editState!)
+    return commit({ ...editState!, ...p })
+  }
 
   const edit: RecipeEditAdapter | undefined =
     data.edit && editState
@@ -169,6 +176,10 @@ function RecipePage() {
             await router.navigate({ to: '/recipes', search: { sort: 'newest' } })
           },
           search: (q) => searchFn({ data: q }),
+          undo: () => void history.undo(editState),
+          redo: () => void history.redo(editState),
+          canUndo: history.canUndo,
+          canRedo: history.canRedo,
         }
       : undefined
 

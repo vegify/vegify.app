@@ -8,6 +8,7 @@ import {
   type Visibility,
 } from '@vegify/ui/screens'
 import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
+import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import { LinkAdapter } from '../link'
 import type { IngredientEditData } from '../content'
@@ -93,15 +94,21 @@ function IngredientPage() {
   const { data } = useSuspenseQuery(ingredientQuery(ingredientId))
   const queryClient = useQueryClient()
   const router = useRouter()
-  if (!data) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
-
-  const state = data.edit
-  const patch = async (p: Partial<IngredientEditData>) => {
-    const id = await saveFn({ data: toInput({ ...state!, ...p }) })
+  // commit + history before the early return so hook order stays stable across renders.
+  const commit = async (next: IngredientEditData) => {
+    const id = await saveFn({ data: toInput(next) })
     await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
     await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
     // A recipe using this ingredient shows its name/nutrition — refetch recipe views too.
     await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+  }
+  const history = useEditHistory(commit)
+  if (!data) return <div className="p-8 text-muted-foreground">Ingredient not found.</div>
+
+  const state = data.edit
+  const patch = (p: Partial<IngredientEditData>) => {
+    history.record(state!)
+    return commit({ ...state!, ...p })
   }
 
   const edit: IngredientEditAdapter | undefined = state
@@ -116,6 +123,10 @@ function IngredientPage() {
           await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
           await router.navigate({ to: '/ingredients', search: { sort: 'newest' } })
         },
+        undo: () => void history.undo(state),
+        redo: () => void history.redo(state),
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
       }
     : undefined
 

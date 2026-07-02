@@ -18,6 +18,8 @@ export type DetailShortcuts = {
   onVisibility?: () => void;
   onDelete?: () => void;
   onHelp?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 };
 
 function inTypingContext(target: EventTarget | null): boolean {
@@ -44,6 +46,23 @@ export function useDetailShortcuts(shortcuts: DetailShortcuts, enabled = true) {
         if (shortcuts.onDelete) {
           e.preventDefault();
           shortcuts.onDelete();
+        }
+        return;
+      }
+      // Undo / redo of committed edits. Gated the same as the rest (never while a field is open, so
+      // the input's own native undo handles in-progress typing). Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd+Y.
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+        const handler = e.shiftKey ? shortcuts.onRedo : shortcuts.onUndo;
+        if (handler) {
+          e.preventDefault();
+          handler();
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) {
+        if (shortcuts.onRedo) {
+          e.preventDefault();
+          shortcuts.onRedo();
         }
         return;
       }
@@ -87,6 +106,8 @@ export const DETAIL_SHORTCUTS: readonly { keys: string; label: string }[] = [
   { keys: "e", label: "Edit name" },
   { keys: "a", label: "Add ingredient" },
   { keys: "v", label: "Change visibility" },
+  { keys: "⌘Z", label: "Undo" },
+  { keys: "⌘⇧Z", label: "Redo" },
   { keys: "⌘⌫", label: "Delete recipe" },
   { keys: "?", label: "Show shortcuts" },
 ];
@@ -94,6 +115,8 @@ export const DETAIL_SHORTCUTS: readonly { keys: string; label: string }[] = [
 export const INGREDIENT_SHORTCUTS: readonly { keys: string; label: string }[] = [
   { keys: "e", label: "Edit name" },
   { keys: "v", label: "Change visibility" },
+  { keys: "⌘Z", label: "Undo" },
+  { keys: "⌘⇧Z", label: "Redo" },
   { keys: "⌘⌫", label: "Delete ingredient" },
   { keys: "?", label: "Show shortcuts" },
 ];

@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
 import {
@@ -106,6 +107,11 @@ export type RecipeEditAdapter = {
   /** Create-blank draft: the name auto-opens and, while still untitled + empty, a Discard is offered. */
   isDraft?: boolean;
   discard?: () => Promise<void>;
+  /** Per-page undo/redo of committed edits (useEditHistory). Optional — absent ⇒ no undo UI. */
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 };
 export type IngredientDetailVM = {
   id: string;
@@ -130,6 +136,10 @@ export type IngredientEditAdapter = {
   setDescription: (next: string) => Promise<void>;
   setVisibility: (next: Visibility) => Promise<void>;
   remove: () => Promise<void>;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 };
 /** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
 export type ProfileVM = {
@@ -431,6 +441,8 @@ export function RecipeDetailView({
       onVisibility: () => queryFocus('[data-inline-field="visibility"]'),
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
+      onUndo: edit?.undo,
+      onRedo: edit?.redo,
     },
     !!edit,
   );
@@ -464,6 +476,10 @@ export function RecipeDetailView({
                   onDelete={() => setDeleteOpen(true)}
                   onDiscard={edit.discard}
                   onHelp={() => setHelpOpen(true)}
+                  undo={edit.undo}
+                  redo={edit.redo}
+                  canUndo={edit.canUndo}
+                  canRedo={edit.canRedo}
                 />
               </div>
             ) : null}
@@ -688,17 +704,25 @@ function AddIngredientRow({
   );
 }
 
-/** Page ⋯ menu (owner): delete, discard (drafts only), shortcuts. */
+/** Page ⋯ menu (owner): undo/redo, delete, discard (drafts only), shortcuts. */
 function RecipeOverflowMenu({
   isDraft,
   onDelete,
   onDiscard,
   onHelp,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
 }: {
   isDraft?: boolean;
   onDelete: () => void;
   onDiscard?: () => Promise<void>;
   onHelp: () => void;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -709,6 +733,7 @@ function RecipeOverflowMenu({
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
         {isDraft && onDiscard ? (
           <DropdownMenuItem onClick={() => void onDiscard()}>Discard draft</DropdownMenuItem>
         ) : null}
@@ -721,6 +746,34 @@ function RecipeOverflowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Shared Undo/Redo menu rows (with their shortcut hints), disabled when nothing to undo/redo. */
+function UndoRedoItems({
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: {
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}) {
+  if (!undo && !redo) return null;
+  return (
+    <>
+      <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
+        Undo
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘Z</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!canRedo} onClick={() => redo?.()}>
+        Redo
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘⇧Z</span>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+    </>
   );
 }
 
@@ -815,6 +868,8 @@ export function IngredientDetailView({
       onVisibility: () => queryFocus('[data-inline-field="visibility"]'),
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
+      onUndo: edit?.undo,
+      onRedo: edit?.redo,
     },
     !!edit,
   );
@@ -846,6 +901,10 @@ export function IngredientDetailView({
                 <IngredientOverflowMenu
                   onDelete={() => setDeleteOpen(true)}
                   onHelp={() => setHelpOpen(true)}
+                  undo={edit.undo}
+                  redo={edit.redo}
+                  canUndo={edit.canUndo}
+                  canRedo={edit.canRedo}
                 />
               </div>
             ) : null}
@@ -904,8 +963,22 @@ export function IngredientDetailView({
   );
 }
 
-/** Page ⋯ menu for an ingredient (owner): shortcuts + delete. */
-function IngredientOverflowMenu({ onDelete, onHelp }: { onDelete: () => void; onHelp: () => void }) {
+/** Page ⋯ menu for an ingredient (owner): undo/redo, shortcuts, delete. */
+function IngredientOverflowMenu({
+  onDelete,
+  onHelp,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: {
+  onDelete: () => void;
+  onHelp: () => void;
+  undo?: () => void;
+  redo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -915,6 +988,7 @@ function IngredientOverflowMenu({ onDelete, onHelp }: { onDelete: () => void; on
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
         <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
         <DropdownMenuItem
           onClick={onDelete}

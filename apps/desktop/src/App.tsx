@@ -59,6 +59,7 @@ import {
   type RecipeFormInput,
 } from '@vegify/ui/recipe-form'
 import { useChromeSearch } from '@vegify/ui/use-chrome-search'
+import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import {
   vegifyData,
@@ -523,18 +524,23 @@ const recipeDetailRoute = createRoute({
     const { data } = useSuspenseQuery(recipeDetailQuery(recipeId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
-    if (!data) return <NotFound what="recipe" />
-
-    const editState = data.edit?.state
     // Each inline commit patches one field, composes the whole-object save (shared helper — same
     // math the form uses), persists over IPC (local-first, ~instant), and invalidates so the read
     // view + list refetch. Optimistic in the primitives; a rejected save reverts the field.
+    // (commit + history before the early return to keep hook order stable.)
     const commit = async (next: RecipeEditState) => {
       const id = await saveRecipeFromForm(composeRecipeInput(next))
       await queryClient.invalidateQueries({ queryKey: ['recipe', String(id)] })
       await queryClient.invalidateQueries({ queryKey: ['recipes'] })
     }
-    const patch = (p: Partial<RecipeEditState>) => commit({ ...editState!, ...p })
+    const history = useEditHistory(commit)
+    if (!data) return <NotFound what="recipe" />
+
+    const editState = data.edit?.state
+    const patch = (p: Partial<RecipeEditState>) => {
+      history.record(editState!)
+      return commit({ ...editState!, ...p })
+    }
 
     const edit: RecipeEditAdapter | undefined =
       data.edit && editState
@@ -568,6 +574,10 @@ const recipeDetailRoute = createRoute({
               navigate({ to: '/recipes', search: { sort: 'newest' } })
             },
             search: searchForForm,
+            undo: () => void history.undo(editState),
+            redo: () => void history.redo(editState),
+            canUndo: history.canUndo,
+            canRedo: history.canRedo,
           }
         : undefined
 
@@ -696,25 +706,30 @@ const ingredientDetailRoute = createRoute({
     const { data } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
-    if (!data) return <NotFound what="ingredient" />
-
-    const state = data.edit
-    const patch = async (p: Partial<IngredientEditData>) => {
-      const merged = { ...state!, ...p }
+    // commit + history before the early return to keep hook order stable.
+    const commit = async (next: IngredientEditData) => {
       const id = await saveIngredientFromForm({
-        id: merged.id,
-        visibility: merged.visibility,
-        name: merged.name,
-        description: merged.description,
-        price: merged.price,
-        caloriesPer100g: merged.caloriesPer100g,
-        servingGrams: merged.servingGrams,
-        packageGrams: merged.packageGrams,
-        nutrients: merged.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+        id: next.id,
+        visibility: next.visibility,
+        name: next.name,
+        description: next.description,
+        price: next.price,
+        caloriesPer100g: next.caloriesPer100g,
+        servingGrams: next.servingGrams,
+        packageGrams: next.packageGrams,
+        nutrients: next.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
       })
       await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
       await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
       await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+    }
+    const history = useEditHistory(commit)
+    if (!data) return <NotFound what="ingredient" />
+
+    const state = data.edit
+    const patch = (p: Partial<IngredientEditData>) => {
+      history.record(state!)
+      return commit({ ...state!, ...p })
     }
 
     const edit: IngredientEditAdapter | undefined = state
@@ -730,6 +745,10 @@ const ingredientDetailRoute = createRoute({
             await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
             navigate({ to: '/ingredients', search: { sort: 'newest' } })
           },
+          undo: () => void history.undo(state),
+          redo: () => void history.redo(state),
+          canUndo: history.canUndo,
+          canRedo: history.canRedo,
         }
       : undefined
 
