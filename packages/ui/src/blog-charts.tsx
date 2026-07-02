@@ -88,17 +88,20 @@ export function NutrientRangeChart({
   );
 }
 
-/** One nutrient, different people: a bar per life-stage group with the shared ceiling (UL) drawn as a
- *  reference line — the visual case that a single label %DV can't fit everyone. */
+/** A bar per group for one nutrient. With `ceiling` set, the shared UL is drawn as a reference line
+ *  (the "one %DV can't fit everyone" case); without it, it's a plain comparison (e.g. US RDA vs EFSA
+ *  PRI, where there's no shared ceiling to show) and the axis just fits the bars. */
 export function NutrientByGroupChart({
   unit,
   ceiling,
   groups,
 }: {
   unit: string;
-  ceiling: number;
+  ceiling?: number;
   groups: { label: string; value: number }[];
 }) {
+  const maxValue = Math.max(...groups.map((g) => g.value), ceiling ?? 0);
+  const domainMax = Math.ceil((ceiling ? maxValue * 1.05 : maxValue * 1.18));
   return (
     <ChartFrame height={groups.length * 44 + 40}>
       <BarChart
@@ -106,14 +109,16 @@ export function NutrientByGroupChart({
         data={groups}
         margin={{ top: 4, right: 56, bottom: 4, left: 8 }}
       >
-        <XAxis type="number" domain={[0, Math.ceil(ceiling * 1.05)]} tick={axisTick} unit={` ${unit}`} />
+        <XAxis type="number" domain={[0, domainMax]} tick={axisTick} unit={` ${unit}`} />
         <YAxis type="category" dataKey="label" tick={axisTick} width={104} />
-        <ReferenceLine
-          x={ceiling}
-          stroke={ORANGE}
-          strokeDasharray="4 3"
-          label={{ value: `ceiling ${ceiling} ${unit}`, position: "top", fill: ORANGE, fontSize: 11 }}
-        />
+        {ceiling != null && (
+          <ReferenceLine
+            x={ceiling}
+            stroke={ORANGE}
+            strokeDasharray="4 3"
+            label={{ value: `ceiling ${ceiling} ${unit}`, position: "top", fill: ORANGE, fontSize: 11 }}
+          />
+        )}
         <Bar dataKey="value" fill={GREEN_SOFT} radius={[0, 4, 4, 0]} isAnimationActive={false}>
           <LabelList
             dataKey="value"
