@@ -33,6 +33,37 @@ export type RecipeFormInput = {
   items: { ingredientId: string; grams: number }[];
 };
 
+/**
+ * The full editable state of a recipe — the source both the form and the inline editor patch, then
+ * hand to `composeRecipeInput` to derive the storage shape. Keeps the servings→grams math in ONE
+ * place so the form and the inline path can never drift.
+ */
+export type RecipeEditState = {
+  id: string;
+  visibility: Visibility;
+  name: string;
+  subtitle: string | null;
+  directions: string | null;
+  servings: number | null;
+  items: { ingredientId: string; grams: number }[];
+};
+
+/** Derive the `saveRecipe` input from an edit state — the same math the form applies on save. */
+export function composeRecipeInput(state: RecipeEditState): RecipeFormInput {
+  const totalGrams = state.items.reduce((sum, i) => sum + (i.grams || 0), 0);
+  const servingsN = Math.max(1, state.servings ?? 1);
+  return {
+    id: state.id,
+    visibility: state.visibility,
+    name: state.name,
+    subtitle: state.subtitle,
+    directions: state.directions,
+    servingGrams: totalGrams > 0 ? totalGrams / servingsN : null,
+    batchGrams: totalGrams > 0 ? totalGrams : null,
+    items: state.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams })),
+  };
+}
+
 export type RecipeFormDefaults = {
   id?: string;
   visibility?: Visibility;
