@@ -6,6 +6,7 @@
 import { api } from './api'
 import type { RecipeFormInput, IngredientSearchItem } from '@vegify/ui/recipe-form'
 import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
+import type { BlogSummary, BlogPostData } from '@vegify/ui/blog'
 
 type Visibility = 'public' | 'private' | 'unlisted'
 type Reading = { name: string; amountPer100g: number; unit: string }
@@ -115,6 +116,10 @@ export const resolveRecipeBySlug = (username: string, slug: string) =>
 // Resolve /ingredients/<slug> → { ingredientId, canonicalSlug } (or null → 404).
 export const resolveIngredientBySlug = (slug: string) =>
   api<IngredientSlugHit | null>(`/api/content/ingredient-by-slug?slug=${encodeURIComponent(slug)}`)
+// Blog (DB-backed CMS) — public, unauthenticated content.
+export const listBlogPosts = () => api<BlogSummary[]>(`/api/content/blog`)
+export const getBlogPost = (slug: string) =>
+  api<BlogPostData | null>(`/api/content/blog-detail?slug=${encodeURIComponent(slug)}`)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

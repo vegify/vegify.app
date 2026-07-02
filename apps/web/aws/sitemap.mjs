@@ -1,15 +1,12 @@
 // Dynamic sitemap for the web SSR shell, served at /sitemap.xml by BOTH runtime wrappers (serve-bun +
 // lambda-handler). It is NOT a TanStack route — page routes can't emit raw XML in this Start version —
-// and NOT a static file, because the recipe/ingredient URLs grow as UGC is created. The dynamic,
-// SEO-valuable URLs (every public recipe + ingredient, by canonical slug) come from the Axum content
-// API (GET /api/content/sitemap, public data only). The small, stable set of top-level pages + blog
-// posts is listed here: blog posts are authored in code (@vegify/ui/blog BLOG_POSTS) and can't be
-// imported into this runtime .mjs from the Lambda bundle, so mirror a new post's slug here (low churn).
+// and NOT a static file, because the URLs grow as content is created. Everything dynamic comes from the
+// Axum content API (public data only): public recipes + ingredients from GET /api/content/sitemap, and
+// blog posts from GET /api/content/blog (the blog is DB-backed now, so a new post auto-appears here —
+// no hardcoded slug list to maintain). Only the stable top-level section pages are listed inline.
 export const SITEMAP_PATH = "/sitemap.xml";
 
 const STATIC_PATHS = ["/", "/recipes", "/ingredients", "/blog"];
-// Keep in sync with @vegify/ui/blog BLOG_POSTS when publishing a post.
-const BLOG_POST_SLUGS = ["no-such-thing-as-100-percent", "vegan-honestly"];
 
 const xmlEscape = (s) =>
   s.replace(
@@ -22,16 +19,21 @@ const urlTag = (origin, path) => `  <url><loc>${xmlEscape(origin + path)}</loc><
 // the Axum base (VEGIFY_API_URL). If the API is unreachable we still emit the static + blog URLs.
 export async function sitemapResponse(apiBaseUrl, origin) {
   let data = { recipes: [], ingredients: [] };
+  let posts = [];
   try {
-    const res = await fetch(`${apiBaseUrl}/api/content/sitemap`);
-    if (res.ok) data = await res.json();
+    const [sm, blog] = await Promise.all([
+      fetch(`${apiBaseUrl}/api/content/sitemap`),
+      fetch(`${apiBaseUrl}/api/content/blog`),
+    ]);
+    if (sm.ok) data = await sm.json();
+    if (blog.ok) posts = await blog.json();
   } catch {
-    /* API down → degrade to the static + blog URLs rather than 500 the crawler */
+    /* API down → degrade to the static top-level URLs rather than 500 the crawler */
   }
 
   const paths = [
     ...STATIC_PATHS,
-    ...BLOG_POST_SLUGS.map((s) => `/blog/${s}`),
+    ...posts.map((p) => `/blog/${p.slug}`),
     ...data.recipes.map((r) => `/${r.username}/${r.slug}`),
     ...data.ingredients.map((s) => `/ingredients/${s}`),
   ];

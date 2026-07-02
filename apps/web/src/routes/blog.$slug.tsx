@@ -1,34 +1,49 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import { BlogPostView, postBySlug } from '@vegify/ui/blog'
+import { createServerFn } from '@tanstack/react-start'
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
+import { BlogPostView } from '@vegify/ui/blog'
 import { LinkAdapter } from '../link'
 
-// A single public blog post. Posts are a static in-code registry (@vegify/ui/blog), so the
-// loader just validates the slug (404 on a miss) and hands head() what it needs for the
-// per-post meta; the Article JSON-LD renders inside BlogPostView (landing precedent).
+// A single public blog post, fetched from the DB-backed blog API. The loader loads the post (404 on a
+// miss) and returns its summary for the per-post head() meta; the full block body is read from the
+// query cache in the component. The Article JSON-LD renders inside BlogPostView (landing precedent).
+const getPost = createServerFn({ method: 'GET' })
+  .validator((slug: string) => slug)
+  .handler(async ({ data }) => {
+    const { getBlogPost } = await import('../content')
+    return getBlogPost(data)
+  })
+
+const postQuery = (slug: string) =>
+  queryOptions({ queryKey: ['blog', slug], queryFn: () => getPost({ data: slug }) })
 
 export const Route = createFileRoute('/blog/$slug')({
-  loader: ({ params }) => {
-    const post = postBySlug(params.slug)
+  loader: async ({ context, params }) => {
+    const post = await context.queryClient.ensureQueryData(postQuery(params.slug))
     if (!post) throw notFound()
-    return { slug: post.slug }
+    return {
+      slug: post.slug,
+      title: post.title,
+      description: post.description,
+      datePublished: post.datePublished,
+    }
   },
   head: ({ loaderData }) => {
-    const post = loaderData ? postBySlug(loaderData.slug) : undefined
-    if (!post) return {}
-    const url = `https://vegify.app/blog/${post.slug}`
+    if (!loaderData) return {}
+    const url = `https://vegify.app/blog/${loaderData.slug}`
     return {
       meta: [
-        { title: `${post.title} | Vegify` },
-        { name: 'description', content: post.description },
+        { title: `${loaderData.title} | Vegify` },
+        { name: 'description', content: loaderData.description },
         { property: 'og:type', content: 'article' },
         { property: 'og:site_name', content: 'Vegify' },
-        { property: 'og:title', content: post.title },
-        { property: 'og:description', content: post.description },
+        { property: 'og:title', content: loaderData.title },
+        { property: 'og:description', content: loaderData.description },
         { property: 'og:url', content: url },
-        { property: 'article:published_time', content: post.datePublished },
+        { property: 'article:published_time', content: loaderData.datePublished },
         { name: 'twitter:card', content: 'summary' },
-        { name: 'twitter:title', content: post.title },
-        { name: 'twitter:description', content: post.description },
+        { name: 'twitter:title', content: loaderData.title },
+        { name: 'twitter:description', content: loaderData.description },
       ],
       links: [{ rel: 'canonical', href: url }],
     }
@@ -37,7 +52,8 @@ export const Route = createFileRoute('/blog/$slug')({
 })
 
 function BlogPostPage() {
-  const { slug } = Route.useLoaderData()
-  const post = postBySlug(slug)!
-  return <BlogPostView post={post} LinkComponent={LinkAdapter} />
+  const { slug } = Route.useParams()
+  const { data } = useSuspenseQuery(postQuery(slug))
+  if (!data) return null // loader already 404s on a miss; this satisfies the nullable query type
+  return <BlogPostView post={data} LinkComponent={LinkAdapter} />
 }
