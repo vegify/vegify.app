@@ -176,6 +176,20 @@ export type ProfileVM = {
 const cardClass =
   "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70";
 
+/** Site footer for the detail right-rail — secondary links + copyright, sitting beneath the Nutrition
+ * Facts panel (the right column is where these belong, not the nav sidebar). */
+function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
+  return (
+    <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
+      <LinkComponent href="/blog" className="font-medium transition-colors hover:text-foreground">
+        Blog
+      </LinkComponent>
+      <span aria-hidden>·</span>
+      <span>© 2026 Vegify</span>
+    </footer>
+  );
+}
+
 export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-3xl flex-col items-center justify-center gap-6 p-8 text-center">
@@ -606,6 +620,7 @@ export function RecipeDetailView({
       <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={recipe.nutrition} />
+          <DetailRailFooter LinkComponent={LinkComponent} />
         </div>
       </aside>
 
@@ -968,6 +983,7 @@ export function IngredientDetailView({
       <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={ingredient.nutrition} />
+          <DetailRailFooter LinkComponent={LinkComponent} />
         </div>
       </aside>
 
