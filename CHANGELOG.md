@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/vegify/vegify.app/compare/v0.17.0...v0.17.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **server:** warm up transactional email copy ([#51](https://github.com/vegify/vegify.app/issues/51)) ([5f22f2f](https://github.com/vegify/vegify.app/commit/5f22f2feaca37d8601f5c19720a8c933255a2395))
+
 ## [0.17.0](https://github.com/vegify/vegify.app/compare/v0.16.0...v0.17.0) (2026-07-02)
 
 
