@@ -1975,4 +1975,70 @@ mod tests {
         drop(conn);
         let _ = fs::remove_file(&path);
     }
+
+    /// The sitemap is crawler-facing: it must list ONLY public, slugged, indexable URLs — never a
+    /// private/unlisted row, and never a recipe whose owner has no handle (there'd be no canonical URL).
+    #[test]
+    fn public_sitemap_excludes_private_and_headless() {
+        let path = std::env::temp_dir().join(format!("vegify-sm-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = Db::open(path.to_str().unwrap()).expect("open");
+        let conn = db.conn.lock().unwrap();
+
+        // A handled user + a headless one (NULL username → no canonical recipe URL).
+        conn.execute(
+            "INSERT INTO users(id, name, email, password_hash, username) VALUES
+             ('u1','U1','u1@example.com','h','chef'), ('u0','U0','u0@example.com','h',NULL)",
+            [],
+        )
+        .unwrap();
+
+        let ing = |name: &str, vis: Visibility| SaveIngredientInput {
+            id: None,
+            visibility: Some(vis),
+            name: name.into(),
+            description: None,
+            price: None,
+            calories_per_100g: None,
+            serving_grams: None,
+            package_grams: None,
+            nutrients: vec![],
+            slug: None,
+        };
+        do_save_ingredient(&conn, &ing("Tofu", Visibility::Public), None).unwrap();
+        do_save_ingredient(&conn, &ing("Secret Sauce", Visibility::Private), None).unwrap();
+
+        let rec = |name: &str, vis: Visibility| SaveRecipeInput {
+            id: None,
+            as_ingredient_id: None,
+            visibility: Some(vis),
+            name: name.into(),
+            subtitle: None,
+            directions: None,
+            serving_grams: None,
+            batch_grams: None,
+            items: vec![],
+            slug: None,
+        };
+        do_save_recipe(&conn, &rec("Public Stew", Visibility::Public), Some("u1")).unwrap();
+        do_save_recipe(&conn, &rec("Private Stew", Visibility::Private), Some("u1")).unwrap();
+        do_save_recipe(&conn, &rec("Headless Stew", Visibility::Public), Some("u0")).unwrap();
+
+        let sm = vegify_core::public_sitemap(&conn).unwrap();
+        let ings: Vec<&str> = sm.ingredients.iter().map(String::as_str).collect();
+        assert!(ings.contains(&"tofu"), "public leaf ingredient listed");
+        assert!(!ings.contains(&"secret-sauce"), "private ingredient excluded");
+
+        let recs: Vec<&str> = sm.recipes.iter().map(|r| r.slug.as_str()).collect();
+        assert!(recs.contains(&"public-stew"), "public recipe listed");
+        assert!(!recs.contains(&"private-stew"), "private recipe excluded");
+        assert!(!recs.contains(&"headless-stew"), "recipe under a handle-less user excluded");
+        assert!(
+            sm.recipes.iter().any(|r| r.username == "chef" && r.slug == "public-stew"),
+            "listed recipe carries its owner handle"
+        );
+
+        drop(conn);
+        let _ = fs::remove_file(&path);
+    }
 }

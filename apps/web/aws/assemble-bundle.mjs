@@ -12,6 +12,7 @@ const out = ".aws-lambda";
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 cpSync("aws/lambda-handler.mjs", `${out}/handler.mjs`);
+cpSync("aws/sitemap.mjs", `${out}/sitemap.mjs`); // handler.mjs imports it for the dynamic /sitemap.xml
 cpSync("dist/server", `${out}/server`, { recursive: true });
 
 // "type":"module" makes handler.mjs + server/server.js load as ESM. No dependencies: ssr.noExternal

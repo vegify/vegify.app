@@ -9,6 +9,7 @@
 // file is also the basis for the AWS Fargate entrypoint (a long-running Bun server).
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SITEMAP_PATH, sitemapResponse } from "./aws/sitemap.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverPath = process.env.SERVER_PATH ?? join(here, "dist/server/server.js");
@@ -25,7 +26,13 @@ Bun.serve({
   port,
   idleTimeout: 30,
   async fetch(req) {
-    const pathname = new URL(req.url).pathname;
+    const url = new URL(req.url);
+    const pathname = url.pathname;
+    // Dynamic sitemap (enumerates public recipes + ingredients from the Axum API) — before the static
+    // + SSR paths, since it's neither a built asset nor a TanStack route.
+    if (pathname === SITEMAP_PATH) {
+      return sitemapResponse(process.env.VEGIFY_API_URL, url.origin);
+    }
     if (pathname !== "/" && !pathname.endsWith("/")) {
       const file = Bun.file(join(clientDir, pathname));
       if (await file.exists()) return new Response(file);

@@ -1102,6 +1102,57 @@ pub fn resolve_ingredient_by_slug(
     Ok(None)
 }
 
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SitemapRecipe {
+    pub username: String,
+    pub slug: String,
+}
+
+/// The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes carry
+/// their owner handle (for `/<username>/<slug>`); ingredients are the global catalog (`/ingredients/<slug>`).
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SitemapData {
+    pub recipes: Vec<SitemapRecipe>,
+    pub ingredients: Vec<String>,
+}
+
+/// Enumerate every PUBLIC recipe (owner handle + slug) and PUBLIC leaf ingredient (slug) for the
+/// sitemap. Public-only + slug-bearing — never private/unlisted, never a pre-backfill NULL slug, never
+/// a headless (no-username) recipe. No viewer/pagination: a crawler-facing full list.
+pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
+    let recipes = {
+        let mut stmt = conn.prepare(
+            "SELECT u.username, i.slug
+             FROM recipes r
+             JOIN ingredients i ON i.id = r.as_ingredient_id
+             JOIN users u ON u.id = i.user_id
+             WHERE i.visibility = 'public' AND i.slug IS NOT NULL AND u.username IS NOT NULL
+             ORDER BY i.slug",
+        )?;
+        let v = stmt
+            .query_map([], |row| {
+                Ok(SitemapRecipe { username: row.get(0)?, slug: row.get(1)? })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        v
+    };
+    let ingredients = {
+        let mut stmt = conn.prepare(
+            "SELECT i.slug FROM ingredients i
+             WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+               AND i.visibility = 'public' AND i.slug IS NOT NULL
+             ORDER BY i.slug",
+        )?;
+        let v = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        v
+    };
+    Ok(SitemapData { recipes, ingredients })
+}
+
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
 pub fn search_ingredients(
     conn: &Connection,

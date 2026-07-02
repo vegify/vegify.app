@@ -343,6 +343,13 @@ async fn ingredient_by_slug(
     Ok(Json(out))
 }
 
+/// All public canonical URLs (recipes + ingredients) for the web's dynamic sitemap. Public data only —
+/// no session, safe for a crawler-facing web route to proxy unauthenticated.
+async fn sitemap(State(state): State<AppState>) -> Result<Json<vegify_core::SitemapData>, AppError> {
+    let out = db(&state, move |conn| vegify_core::public_sitemap(conn).map_err(AppError::from)).await?;
+    Ok(Json(out))
+}
+
 /// Public profile by handle. No bearer required; an optional one identifies the viewer so they also
 /// see their own non-public recipes when viewing themselves. 404 when the handle has no account.
 async fn profile(
@@ -777,6 +784,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/profile", get(profile))
         .route("/api/content/recipe-by-slug", get(recipe_by_slug))
         .route("/api/content/ingredient-by-slug", get(ingredient_by_slug))
+        .route("/api/content/sitemap", get(sitemap))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.
