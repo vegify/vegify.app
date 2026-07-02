@@ -27,6 +27,7 @@ pub struct PullRecipe {
     pub directions: Option<String>,
     pub serving_grams: Option<f64>,
     pub batch_grams: Option<f64>,
+    pub slug: Option<String>,
     pub items: Vec<PullItem>,
 }
 
@@ -50,6 +51,7 @@ pub struct PullIngredient {
     pub calories_per_100g: Option<f64>,
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
+    pub slug: Option<String>,
     pub nutrients: Vec<PullReading>,
 }
 
@@ -68,7 +70,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
     let mut recipes: Vec<PullRecipe> = {
         let mut stmt = conn.prepare(
             "SELECT r.id, r.as_ingredient_id, i.user_id, i.visibility, i.name, r.subtitle, r.directions,
-                    sa.grams, ba.grams
+                    sa.grams, ba.grams, i.slug
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
@@ -87,6 +89,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                 directions: row.get(6)?,
                 serving_grams: row.get(7)?,
                 batch_grams: row.get(8)?,
+                slug: row.get(9)?,
                 items: Vec::new(),
             })
         })?
@@ -117,7 +120,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
     let mut ingredients: Vec<PullIngredient> = {
         let mut stmt = conn.prepare(
             "SELECT i.id, i.user_id, i.visibility, i.name, i.description, i.price, i.calories_per_100g,
-                    sa.grams, ba.grams
+                    sa.grams, ba.grams, i.slug
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
@@ -136,6 +139,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                 calories_per_100g: row.get(6)?,
                 serving_grams: row.get(7)?,
                 package_grams: row.get(8)?,
+                slug: row.get(9)?,
                 nutrients: Vec::new(),
             })
         })?

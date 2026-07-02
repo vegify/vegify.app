@@ -251,6 +251,11 @@ pub struct SaveIngredientInput {
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
     pub nutrients: Vec<IngredientNutrientInput>,
+    /// SEO slug. `None` on a user create/edit ⇒ the DAL generates a unique one (and logs a rename to
+    /// slug_history). `Some` only on the sync pull-apply, which carries the SERVER's authoritative slug
+    /// so replicas never diverge. Serde-default so pre-slug payloads deserialize as None.
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Type)]
@@ -276,6 +281,10 @@ pub struct SaveRecipeInput {
     pub serving_grams: Option<f64>,
     pub batch_grams: Option<f64>,
     pub items: Vec<RecipeItemInput>,
+    /// See SaveIngredientInput::slug. `None` ⇒ generate (unique per owner); `Some` ⇒ pull carries the
+    /// server's slug verbatim.
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 /// Same recursive CTE as packages/db/src/nutrition.ts, normalized to per-100g (text ids).
@@ -355,6 +364,151 @@ fn find_or_create_nutrient(conn: &Connection, name: &str) -> Result<String, Erro
     Ok(id)
 }
 
+/// SEO slug scope. A recipe's slug is unique among its owner's recipes (`/<username>/<slug>`); a leaf
+/// ingredient's is unique globally (`/ingredients/<slug>`). The two namespaces are independent.
+#[derive(Clone, Copy)]
+pub enum SlugScope<'a> {
+    UserRecipes(&'a str),
+    GlobalIngredients,
+}
+
+impl SlugScope<'_> {
+    /// The slug_history.scope key. Empty string (not NULL) for the global namespace so the
+    /// UNIQUE(scope, slug) index actually dedups it — SQLite treats NULLs as distinct.
+    fn key(&self) -> &str {
+        match self {
+            SlugScope::UserRecipes(u) => u,
+            SlugScope::GlobalIngredients => "",
+        }
+    }
+}
+
+/// Kebab-case a display name into a URL segment: lowercase, non-alphanumeric runs → single '-',
+/// trimmed, capped at 60. Empty input (name of only punctuation) falls back to "item" so the segment
+/// is never blank.
+pub fn slugify(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !out.is_empty() && !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.len() > 60 {
+        out.truncate(60);
+        while out.ends_with('-') {
+            out.pop();
+        }
+    }
+    if out.is_empty() {
+        "item".to_string()
+    } else {
+        out
+    }
+}
+
+/// Is `slug` already used in `scope` by a row other than `exclude_id`?
+fn slug_taken(conn: &Connection, slug: &str, scope: SlugScope, exclude_id: &str) -> Result<bool, Error> {
+    let n: i64 = match scope {
+        SlugScope::UserRecipes(uid) => conn.query_row(
+            "SELECT COUNT(*) FROM ingredients i JOIN recipes r ON r.as_ingredient_id = i.id
+             WHERE i.slug = ?1 AND i.user_id = ?2 AND i.id != ?3",
+            params![slug, uid, exclude_id],
+            |r| r.get(0),
+        )?,
+        SlugScope::GlobalIngredients => conn.query_row(
+            "SELECT COUNT(*) FROM ingredients i
+             WHERE i.slug = ?1 AND i.id != ?2 AND i.id NOT IN (SELECT as_ingredient_id FROM recipes)",
+            params![slug, exclude_id],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(n > 0)
+}
+
+/// Generate a unique slug from `name` in `scope` (appending -2, -3… on collision), store it on the
+/// ingredients row `ing_id`, and — if the row's slug changed (a rename) — log the OLD slug to
+/// slug_history so it 301s to the row's new canonical URL. Returns the assigned slug.
+fn assign_generated_slug(
+    conn: &Connection,
+    ing_id: &str,
+    name: &str,
+    scope: SlugScope,
+) -> Result<String, Error> {
+    let base = slugify(name);
+    let mut candidate = base.clone();
+    let mut n = 1u32;
+    while slug_taken(conn, &candidate, scope, ing_id)? {
+        n += 1;
+        candidate = format!("{base}-{n}");
+    }
+    let current: Option<String> = conn
+        .query_row("SELECT slug FROM ingredients WHERE id = ?1", [ing_id], |r| r.get(0))
+        .optional()?
+        .flatten();
+    if let Some(old) = current {
+        if old != candidate && !old.is_empty() {
+            let scope_key = scope.key();
+            // This row is (re)claiming `candidate`; drop any stale redirect that pointed there.
+            conn.execute(
+                "DELETE FROM slug_history WHERE scope = ?1 AND slug = ?2",
+                params![scope_key, candidate],
+            )?;
+            // Log old → this row (upsert: renaming back over a prior old slug just re-points it).
+            conn.execute(
+                "INSERT INTO slug_history(id, slug, scope, target_id) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(scope, slug) DO UPDATE SET target_id = excluded.target_id",
+                params![new_id(), old, scope_key, ing_id],
+            )?;
+        }
+    }
+    conn.execute(
+        "UPDATE ingredients SET slug = ?1 WHERE id = ?2",
+        params![candidate, ing_id],
+    )?;
+    Ok(candidate)
+}
+
+/// Store a slug verbatim (the sync pull-apply — the server is authoritative, so no generation or
+/// history on replicas).
+fn store_slug(conn: &Connection, ing_id: &str, slug: &str) -> Result<(), Error> {
+    conn.execute("UPDATE ingredients SET slug = ?1 WHERE id = ?2", params![slug, ing_id])?;
+    Ok(())
+}
+
+/// One-time boot backfill: assign a slug to every ingredients row that lacks one. Recipe rows get an
+/// owner-scoped slug; leaf rows a global one. Idempotent (skips rows that already have a slug).
+pub fn backfill_all_slugs(conn: &Connection) -> Result<(), Error> {
+    let rows: Vec<(String, String, Option<String>, bool)> = {
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.name, i.user_id, (r.id IS NOT NULL)
+             FROM ingredients i LEFT JOIN recipes r ON r.as_ingredient_id = i.id
+             WHERE i.slug IS NULL OR i.slug = '' ORDER BY i.id",
+        )?;
+        let v = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get::<_, i64>(3)? != 0))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        v
+    };
+    for (id, name, user_id, is_recipe) in rows {
+        let scope = match (is_recipe, user_id.as_deref()) {
+            (true, Some(u)) => SlugScope::UserRecipes(u),
+            _ => SlugScope::GlobalIngredients,
+        };
+        assign_generated_slug(conn, &id, &name, scope)?;
+    }
+    Ok(())
+}
+
 pub fn do_save_ingredient(
     conn: &Connection,
     input: &SaveIngredientInput,
@@ -419,6 +573,15 @@ pub fn do_save_ingredient(
         )?;
         id
     };
+
+    // Slug: verbatim from the pull (server-authoritative), else generate a globally-unique one for
+    // this leaf ingredient (logging a rename to slug_history).
+    match input.slug.as_deref() {
+        Some(s) => store_slug(conn, &ingredient_id, s)?,
+        None => {
+            assign_generated_slug(conn, &ingredient_id, &input.name, SlugScope::GlobalIngredients)?;
+        }
+    }
 
     let mut seen = HashSet::new();
     for n in &input.nutrients {
@@ -519,6 +682,30 @@ pub fn do_save_recipe(
         )?;
         rid
     };
+
+    // Slug on the recipe's as-ingredient: verbatim from the pull, else generate one unique among the
+    // owner's recipes (a rename logs to slug_history). Scope is the as-ingredient's owner.
+    {
+        let as_ing_id: String = conn.query_row(
+            "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+            [&recipe_id],
+            |r| r.get(0),
+        )?;
+        match input.slug.as_deref() {
+            Some(s) => store_slug(conn, &as_ing_id, s)?,
+            None => {
+                let owner: Option<String> = conn
+                    .query_row("SELECT user_id FROM ingredients WHERE id = ?1", [&as_ing_id], |r| r.get(0))
+                    .optional()?
+                    .flatten();
+                let scope = match owner.as_deref() {
+                    Some(u) => SlugScope::UserRecipes(u),
+                    None => SlugScope::GlobalIngredients,
+                };
+                assign_generated_slug(conn, &as_ing_id, &input.name, scope)?;
+            }
+        }
+    }
 
     let mut order = 0i64;
     for item in &input.items {

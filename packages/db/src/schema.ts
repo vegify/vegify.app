@@ -105,6 +105,15 @@ export const ingredients = sqliteTable(
       .notNull()
       .default("public"),
     name: text("name").notNull(),
+    // SEO/GEO slug (kebab of the name), the human URL segment. One column serves both roles this row
+    // can play: a RECIPE (has a recipes row) is canonical at /<username>/<slug> — slug unique per
+    // owner; a LEAF ingredient (no recipes row) is canonical at /ingredients/<slug> — slug unique
+    // globally. The two namespaces are independent, so a recipe slug and an ingredient slug may
+    // coincide. Uniqueness is enforced per-scope in the shared DAL at save time (not a single DB
+    // constraint — the scope differs), with a numeric suffix on collision. Nullable only for the
+    // pre-backfill window; the DAL always writes it. Renames regenerate it and log the old one to
+    // slug_history for 301s.
+    slug: text("slug"),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),
     price: integer("price"), // cents (USD)
@@ -120,7 +129,27 @@ export const ingredients = sqliteTable(
   (t) => [
     index("ingredients_user_idx").on(t.userId),
     index("ingredients_name_idx").on(t.name),
+    index("ingredients_slug_idx").on(t.slug),
   ]
+);
+
+// Old→current slug redirects. On a rename that changes the slug, the previous slug is logged here so
+// /<username>/<old-slug> and /ingredients/<old-slug> 301 to the row's current canonical URL. `scope`
+// disambiguates the two namespaces: the owner's user_id for a recipe slug, NULL for a global
+// ingredient slug — so the same old slug can live in both without clashing. `targetId` is the
+// ingredients.id whose current slug wins (resolve it to the live canonical URL at redirect time).
+export const slugHistory = sqliteTable(
+  "slug_history",
+  {
+    id: pk(),
+    slug: text("slug").notNull(),
+    scope: text("scope"), // user_id for recipe slugs; NULL = global ingredient scope
+    targetId: text("target_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("slug_history_scope_slug_uq").on(t.scope, t.slug)]
 );
 
 export const videos = sqliteTable("videos", {
