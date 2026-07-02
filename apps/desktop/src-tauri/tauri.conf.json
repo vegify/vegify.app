@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "vegify",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "identifier": "app.vegify.desktop",
   "build": {
     "frontendDist": "../dist",

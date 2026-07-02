@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/vegify/vegify.app/compare/v0.10.0...v0.10.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **web:** render the blog bare and fix its dark-mode and light-mode chrome ([#34](https://github.com/vegify/vegify.app/issues/34)) ([10efaf2](https://github.com/vegify/vegify.app/commit/10efaf22b6f7b2dc929db9ea486b81c9f347b855))
+
 ## [0.10.0](https://github.com/vegify/vegify.app/compare/v0.9.0...v0.10.0) (2026-07-01)
 
 
