@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/vegify/vegify.app/compare/v0.15.0...v0.16.0) (2026-07-02)
+
+
+### Features
+
+* **ui:** site footer under the nutrition label in the detail right-rail ([#47](https://github.com/vegify/vegify.app/issues/47)) ([ddc733d](https://github.com/vegify/vegify.app/commit/ddc733d85ecc0ce74debac8f797f0bebb721a176))
+
 ## [0.15.0](https://github.com/vegify/vegify.app/compare/v0.14.0...v0.15.0) (2026-07-02)
 
 
