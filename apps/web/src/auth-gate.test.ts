@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { PUBLIC_PATHS, PUBLIC_SECTIONS, STATIC_TOP_LEVEL, isPublicPath } from './auth-gate'
+import { PUBLIC_PATHS, PUBLIC_SECTIONS, STATIC_TOP_LEVEL, isBarePath, isPublicPath } from './auth-gate'
 
 describe('isPublicPath', () => {
   it('serves the landing and the auth/token pages to logged-out visitors', () => {
@@ -27,6 +27,15 @@ describe('isPublicPath', () => {
   it('serves the blog (index + posts) logged-out — pure public content', () => {
     for (const p of ['/blog', '/blog/vegan-honestly']) {
       expect(isPublicPath(p), `${p} should be public`).toBe(true)
+    }
+  })
+
+  it('renders the blog bare (own chrome, no app shell) but keeps the app pages shelled', () => {
+    for (const p of ['/blog', '/blog/vegan-honestly', '/login', '/reset']) {
+      expect(isBarePath(p), `${p} should render bare`).toBe(true)
+    }
+    for (const p of ['/', '/recipes', '/recipes/abc123', '/settings', '/simone']) {
+      expect(isBarePath(p), `${p} should keep the shell`).toBe(false)
     }
   })
 

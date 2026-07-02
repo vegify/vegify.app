@@ -30,7 +30,7 @@ export type BlogPost = {
 // brand-dark, same tab.
 const ARTICLE_CLASSES = [
   "space-y-5 text-[17px] leading-relaxed text-foreground",
-  "[&_a]:font-medium [&_a]:text-primary-dark [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-primary-light",
+  "[&_a]:font-medium [&_a]:text-primary-dark dark:[&_a]:text-primary-light [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-primary dark:hover:[&_a]:text-primary",
   "[&_strong]:font-semibold",
   "[&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6",
 ].join(" ");
@@ -174,7 +174,8 @@ function BlogChrome({ LinkComponent, children }: { LinkComponent: NavLink; child
     <div className="min-h-screen bg-background text-foreground">
       <header className="bg-green-dark">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
-          <LinkComponent href="/" className="block w-28" aria-label="Vegify home">
+          {/* text-white: the mark inherits currentColor; without it light mode paints it near-black on the green band. */}
+          <LinkComponent href="/" className="block w-28 text-white" aria-label="Vegify home">
             <VegifyLogo className="h-auto w-full" />
           </LinkComponent>
           <nav className="flex items-center gap-5 text-sm font-semibold text-white/90">
@@ -189,10 +190,11 @@ function BlogChrome({ LinkComponent, children }: { LinkComponent: NavLink; child
       </header>
       <main className="mx-auto max-w-2xl px-6 py-12">{children}</main>
       <footer className="mx-auto max-w-2xl px-6 pb-12 text-sm text-muted-foreground">
-        <LinkComponent href="/" className="font-medium text-primary-dark underline underline-offset-2">
+        <LinkComponent href="/" className="font-medium text-primary-dark dark:text-primary-light underline underline-offset-2">
           Vegify
-        </LinkComponent>{" "}
-        — micronutrition tracking for plant-based cooking.
+        </LinkComponent>
+        <span className="mx-2" aria-hidden>·</span>
+        micronutrition tracking for plant-based cooking.
       </footer>
     </div>
   );
@@ -201,15 +203,15 @@ function BlogChrome({ LinkComponent, children }: { LinkComponent: NavLink; child
 export function BlogIndexView({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <BlogChrome LinkComponent={LinkComponent}>
-      <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">Blog</h1>
+      <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">Blog</h1>
       <p className="mb-10 text-muted-foreground">
-        Notes on plant-based nutrition — research-led, citations included, honest about the caveats.
+        Notes on plant-based nutrition: research-led, citations included, honest about the caveats.
       </p>
       <ul className="space-y-8">
         {BLOG_POSTS.map((post) => (
           <li key={post.slug}>
             <LinkComponent href={`/blog/${post.slug}`} className="group block">
-              <h2 className="font-serif text-2xl font-semibold group-hover:text-primary-dark">
+              <h2 className="font-serif text-2xl font-semibold group-hover:text-primary-dark dark:group-hover:text-primary-light">
                 {post.title}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">{post.dateDisplay}</p>
@@ -246,15 +248,17 @@ export function BlogPostView({ post, LinkComponent }: { post: BlogPost; LinkComp
       <BlogPostJsonLd post={post} />
       <p className="mb-3 text-sm text-muted-foreground">
         <time dateTime={post.datePublished}>{post.dateDisplay}</time>
+        <span className="mx-2" aria-hidden>·</span>
+        John M. Carmack
       </p>
-      <h1 className="mb-8 font-serif text-4xl font-bold leading-tight text-primary-dark">
+      <h1 className="mb-8 font-serif text-4xl font-bold leading-tight text-primary-dark dark:text-primary-light">
         {post.title}
       </h1>
       <article className={ARTICLE_CLASSES}>{post.body}</article>
       <p className="mt-12">
         <LinkComponent
           href="/blog"
-          className="font-medium text-primary-dark underline underline-offset-2"
+          className="font-medium text-primary-dark dark:text-primary-light underline underline-offset-2"
         >
           ← All posts
         </LinkComponent>

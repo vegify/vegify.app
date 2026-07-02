@@ -8,7 +8,7 @@ import { LinkAdapter } from '../link'
 
 const TITLE = 'Blog | Vegify'
 const DESCRIPTION =
-  'Notes on plant-based nutrition from Vegify — research-led, citations included, honest about the caveats.'
+  'Notes on plant-based nutrition from Vegify: research-led, citations included, honest about the caveats.'
 const URL = 'https://vegify.app/blog'
 
 export const Route = createFileRoute('/blog/')({
