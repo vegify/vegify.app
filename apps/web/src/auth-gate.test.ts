@@ -18,6 +18,14 @@ describe('isPublicPath', () => {
     }
   })
 
+  it('treats "/<username>/<recipe-slug>" as a public, shareable recipe', () => {
+    for (const p of ['/simone/complete-shake', '/dev-user/biga', '/x9/pizza-dough-2']) {
+      expect(isPublicPath(p), `${p} should be a public recipe`).toBe(true)
+    }
+    // …but a static section's second segment is NOT a profile-recipe (it routes elsewhere / gates).
+    expect(isPublicPath('/settings/foo'), 'a static section is not a profile-recipe').toBe(false)
+  })
+
   it('serves the public catalog sections and their detail pages logged-out', () => {
     for (const p of ['/recipes', '/ingredients', '/recipes/abc123', '/ingredients/abc123']) {
       expect(isPublicPath(p), `${p} should be public`).toBe(true)

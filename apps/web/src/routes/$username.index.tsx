@@ -20,7 +20,7 @@ const getProfileFn = createServerFn({ method: 'GET' })
 const profileQuery = (username: string) =>
   queryOptions({ queryKey: ['profile', username], queryFn: () => getProfileFn({ data: username }) })
 
-export const Route = createFileRoute('/$username')({
+export const Route = createFileRoute('/$username/')({
   loader: ({ context, params }) => context.queryClient.ensureQueryData(profileQuery(params.username)),
   component: ProfilePage,
 })

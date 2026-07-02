@@ -66,9 +66,14 @@ const inPublicSection = (pathname: string): boolean =>
 // rules (handles.rs), which is fine: a non-handle single segment that isn't a static route just renders
 // "profile not found".
 const HANDLE_RE = /^\/[a-z0-9][a-z0-9-]*$/
+// A canonical recipe URL: /<handle>/<recipe-slug> (two [a-z0-9-] segments). Public read, like the
+// profile; the leading segment must be a handle, not a static section (so /recipes/<id> is excluded
+// here — it's covered by inPublicSection, which also gates the /new and /edit write leaves).
+const PROFILE_RECIPE_RE = /^\/[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/
 // Reachable logged-out iff: an explicit public page, OR inside a public catalog section (read-only), OR a
-// "/<username>" profile (a handle that is not one of our static routes).
+// "/<username>" profile, OR a "/<username>/<recipe-slug>" recipe — where the handle isn't a static route.
 export const isPublicPath = (pathname: string): boolean =>
   PUBLIC_PATHS.has(pathname) ||
   inPublicSection(pathname) ||
-  (HANDLE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(pathname))
+  (HANDLE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(pathname)) ||
+  (PROFILE_RECIPE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(`/${pathname.split('/')[1]}`))

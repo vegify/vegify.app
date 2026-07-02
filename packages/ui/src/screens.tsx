@@ -50,7 +50,20 @@ import { ThemeSetting } from "./theme-setting";
  */
 export type NavLink = ComponentType<AppShellLinkProps>;
 
-export type RecipeListItem = { id: string; name: string; subtitle?: string | null };
+export type RecipeListItem = {
+  id: string;
+  name: string;
+  subtitle?: string | null;
+  /** Owner handle + slug for the canonical `/<username>/<slug>` link; fall back to `/recipes/<id>`. */
+  username?: string | null;
+  slug?: string | null;
+};
+
+/** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
+ * (which 301s to canonical). One helper so every card + search result links the same way. */
+export function recipeHref(r: { id: string; username?: string | null; slug?: string | null }): string {
+  return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`;
+}
 export type IngredientListItem = { id: string; name: string; caloriesPer100g?: number | null };
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
 export type RecipeDetailItem = { key: string; label: string; href: string };
@@ -262,7 +275,7 @@ export function RecipeListView({
       ) : (
         <div className="flex flex-col gap-4">
           {recipes.map((r) => (
-            <LinkComponent key={r.id} href={`/recipes/${r.id}`} className="block">
+            <LinkComponent key={r.id} href={recipeHref(r)} className="block">
               <div className={cardClass}>
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
                 <div className="min-w-0">
@@ -320,7 +333,7 @@ export function ProfileView({
         ) : (
           <div className="flex flex-col gap-4">
             {profile.recipes.map((r) => (
-              <LinkComponent key={r.id} href={`/recipes/${r.id}`} className="block">
+              <LinkComponent key={r.id} href={recipeHref(r)} className="block">
                 <div className={cardClass}>
                   <div className="size-16 shrink-0 rounded-lg bg-muted" />
                   <div className="min-w-0">
@@ -1046,7 +1059,7 @@ export function SearchResultsView({
                     key={r.id}
                     name={r.name}
                     sub={r.subtitle ?? "Recipe"}
-                    href={`/recipes/${r.id}`}
+                    href={recipeHref(r)}
                     LinkComponent={LinkComponent}
                   />
                 ))}

@@ -140,7 +140,10 @@ pub struct RecipeView {
     pub name: String,
     pub subtitle: Option<String>,
     pub directions: Option<String>,
+    /// The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`.
     pub creator: Option<String>,
+    /// This recipe's current slug (the `/<creator>/<slug>` segment). None only pre-backfill.
+    pub slug: Option<String>,
     /// Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
     /// guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
     pub can_edit: bool,
@@ -156,6 +159,10 @@ pub struct RecipeCard {
     pub id: String,
     pub name: String,
     pub subtitle: Option<String>,
+    /// Owner handle + slug for the canonical `/<username>/<slug>` link. Optional (pre-backfill /
+    /// ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.
+    pub username: Option<String>,
+    pub slug: Option<String>,
 }
 
 /// A public profile: the handle, the display name, and the user's visible recipes. Shared by the
@@ -916,8 +923,9 @@ pub fn list_recipes(
 ) -> Result<Vec<RecipeCard>, Error> {
     let (keyset, order) = page.sort.clauses("r.id", "i.name");
     let sql = format!(
-        "SELECT r.id, i.name, r.subtitle
+        "SELECT r.id, i.name, r.subtitle, u.username, i.slug
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+         LEFT JOIN users u ON u.id = i.user_id
          WHERE (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
          ORDER BY {order}
          LIMIT ?4"
@@ -931,7 +939,15 @@ pub fn list_recipes(
                 page.cursor_name.as_deref(),
                 page.limit.map_or(-1, |n| n as i64)
             ],
-            |row| Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? }),
+            |row| {
+                Ok(RecipeCard {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    subtitle: row.get(2)?,
+                    username: row.get(3)?,
+                    slug: row.get(4)?,
+                })
+            },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
@@ -956,17 +972,84 @@ pub fn get_profile(
         return Ok(None);
     };
     let mut stmt = conn.prepare(
-        "SELECT r.id, i.name, r.subtitle
+        "SELECT r.id, i.name, r.subtitle, u.username, i.slug
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+         LEFT JOIN users u ON u.id = i.user_id
          WHERE i.user_id = ?1 AND (i.visibility = 'public' OR i.user_id = ?2)
          ORDER BY i.name",
     )?;
     let recipes = stmt
         .query_map(params![uid, viewer], |row| {
-            Ok(RecipeCard { id: row.get(0)?, name: row.get(1)?, subtitle: row.get(2)? })
+            Ok(RecipeCard {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                subtitle: row.get(2)?,
+                username: row.get(3)?,
+                slug: row.get(4)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(Some(Profile { username, name, recipes }))
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeSlugHit {
+    pub recipe_id: String,
+    /// The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
+    /// `/<username>/<canonical_slug>`.
+    pub canonical_slug: String,
+}
+
+/// Resolve a `/<username>/<slug>` recipe URL to a recipe id + its current canonical slug. A live-slug
+/// match returns (id, requested-slug); a slug_history hit returns (id, current-slug) so the caller
+/// redirects; no match ⇒ None (404). Visibility is enforced by `recipe()` at render time, so this can
+/// resolve private recipes too (the render then 404s a non-owner) — matching the by-id behavior.
+pub fn resolve_recipe_by_slug(
+    conn: &Connection,
+    username: &str,
+    slug: &str,
+) -> Result<Option<RecipeSlugHit>, Error> {
+    let uid: Option<String> = conn
+        .query_row("SELECT id FROM users WHERE username = ?1", [username], |r| r.get(0))
+        .optional()?;
+    let Some(uid) = uid else { return Ok(None) };
+
+    // Current-slug match.
+    let live: Option<String> = conn
+        .query_row(
+            "SELECT r.id FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+             WHERE i.user_id = ?1 AND i.slug = ?2",
+            params![uid, slug],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(recipe_id) = live {
+        return Ok(Some(RecipeSlugHit { recipe_id, canonical_slug: slug.to_string() }));
+    }
+
+    // Old slug → 301 to the row's current canonical (scope = owner user_id).
+    let target: Option<String> = conn
+        .query_row(
+            "SELECT target_id FROM slug_history WHERE scope = ?1 AND slug = ?2",
+            params![uid, slug],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(target_ing) = target {
+        let hit: Option<(String, Option<String>)> = conn
+            .query_row(
+                "SELECT r.id, i.slug FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+                 WHERE i.id = ?1",
+                [target_ing],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if let Some((recipe_id, Some(canonical_slug))) = hit {
+            return Ok(Some(RecipeSlugHit { recipe_id, canonical_slug }));
+        }
+    }
+    Ok(None)
 }
 
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
@@ -1144,7 +1227,7 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
     let meta = conn
         .query_row(
             "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
-                    sa.amount, sa.unit, sa.grams, ba.grams, i.user_id
+                    sa.amount, sa.unit, sa.grams, ba.grams, i.user_id, i.slug
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id
              LEFT JOIN users u ON u.id = i.user_id
@@ -1164,11 +1247,12 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
                     row.get::<_, Option<f64>>(7)?,
                     row.get::<_, Option<f64>>(8)?,
                     row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             },
         )
         .optional()?;
-    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner)) =
+    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner, slug)) =
         meta
     else {
         return Ok(None);
@@ -1207,6 +1291,7 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
         subtitle,
         directions,
         creator,
+        slug,
         can_edit,
         serving,
         batch_grams,

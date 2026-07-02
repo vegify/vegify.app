@@ -664,6 +664,11 @@ pub trait VegifyData {
     fn list_recipes(&self, page: Page) -> Result<Vec<RecipeCard>, DataError>;
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
     fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError>;
+    fn resolve_recipe_by_slug(
+        &self,
+        username: String,
+        slug: String,
+    ) -> Result<Option<RecipeSlugHit>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn list_ingredients(&self, page: Page) -> Result<Vec<IngredientCard>, DataError>;
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
@@ -710,6 +715,17 @@ impl VegifyData for Db {
         let me = self.current_uid();
         let conn = self.conn.lock().unwrap();
         vegify_core::get_profile(&conn, &username, me.as_deref()).map_err(Into::into)
+    }
+
+    /// Resolve `/<username>/<slug>` against the local cache (offline-first). Mirrors the server's
+    /// /api/content/recipe-by-slug.
+    fn resolve_recipe_by_slug(
+        &self,
+        username: String,
+        slug: String,
+    ) -> Result<Option<RecipeSlugHit>, DataError> {
+        let conn = self.conn.lock().unwrap();
+        vegify_core::resolve_recipe_by_slug(&conn, &username, &slug).map_err(Into::into)
     }
 
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {
