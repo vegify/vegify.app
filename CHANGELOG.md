@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/vegify/vegify.app/compare/v0.14.0...v0.15.0) (2026-07-02)
+
+
+### Features
+
+* **blog:** post [#2](https://github.com/vegify/vegify.app/issues/2) — "There's no such thing as 100%" (DRI explainer + charts) ([#44](https://github.com/vegify/vegify.app/issues/44)) ([73ce6e7](https://github.com/vegify/vegify.app/commit/73ce6e7dc94ee4f5d9faf6eac18bebc0e9fdfb96))
+
 ## [0.14.0](https://github.com/vegify/vegify.app/compare/v0.13.0...v0.14.0) (2026-07-02)
 
 
