@@ -45,19 +45,19 @@ fn verify_link(token: &str) -> String {
 pub async fn send_password_reset(to: &str, name: &str, token: &str) {
     let link = reset_link(token);
     let text = format!(
-        "Hi {name},\n\nSomeone requested a password reset for your Vegify account. Open the link below \
-         within one hour to choose a new password:\n\n{link}\n\nIf you didn't request this, you can safely \
-         ignore this email — your password won't change.\n\n— Vegify"
+        "Hi {name},\n\nSomeone asked to reset your Vegify password. Open this link within one hour \
+         to choose a new one:\n\n{link}\n\nIf you didn't request this, ignore this email; your \
+         password won't change.\n\nThe Vegify team"
     );
     let html = format!(
         "<p>Hi {name},</p>\
-         <p>Someone requested a password reset for your Vegify account. Use the button below within one \
-         hour to choose a new password:</p>\
+         <p>Someone asked to reset your Vegify password. Use the button below within one hour to \
+         choose a new one:</p>\
          <p><a href=\"{link}\" style=\"display:inline-block;padding:10px 16px;background:#16a34a;\
          color:#ffffff;border-radius:8px;text-decoration:none\">Reset your password</a></p>\
          <p>Or paste this link into your browser:<br><a href=\"{link}\">{link}</a></p>\
-         <p>If you didn't request this, you can safely ignore this email — your password won't change.</p>\
-         <p>— Vegify</p>"
+         <p>If you didn't request this, ignore this email; your password won't change.</p>\
+         <p>The Vegify team</p>"
     );
     match try_send(to, "Reset your Vegify password", &text, &html).await {
         Ok(()) => tracing::info!(to = %to, "password-reset email sent"),
@@ -71,18 +71,20 @@ pub async fn send_password_reset(to: &str, name: &str, token: &str) {
 pub async fn send_email_verification(to: &str, name: &str, token: &str) {
     let link = verify_link(token);
     let text = format!(
-        "Hi {name},\n\nWelcome to Vegify! Confirm your email address by opening the link below within \
-         24 hours:\n\n{link}\n\nIf you didn't create a Vegify account, you can safely ignore this \
-         email.\n\n— Vegify"
+        "Hi {name},\n\nWelcome to Vegify! One click to confirm your email, and you're set:\n\n{link}\n\n\
+         Then go see exactly what your plants are feeding you. (The link works for 24 hours.)\n\n\
+         If you didn't create a Vegify account, ignore this email and nothing happens.\n\n\
+         Happy cooking,\nThe Vegify team"
     );
     let html = format!(
         "<p>Hi {name},</p>\
-         <p>Welcome to Vegify! Confirm your email address using the button below within 24 hours:</p>\
+         <p>Welcome to Vegify! One click to confirm your email, and you're set:</p>\
          <p><a href=\"{link}\" style=\"display:inline-block;padding:10px 16px;background:#16a34a;\
          color:#ffffff;border-radius:8px;text-decoration:none\">Confirm your email</a></p>\
          <p>Or paste this link into your browser:<br><a href=\"{link}\">{link}</a></p>\
-         <p>If you didn't create a Vegify account, you can safely ignore this email.</p>\
-         <p>— Vegify</p>"
+         <p>Then go see exactly what your plants are feeding you. (The link works for 24 hours.)</p>\
+         <p>If you didn't create a Vegify account, ignore this email and nothing happens.</p>\
+         <p>Happy cooking,<br>The Vegify team</p>"
     );
     match try_send(to, "Confirm your Vegify email", &text, &html).await {
         Ok(()) => tracing::info!(to = %to, "email-verification email sent"),
