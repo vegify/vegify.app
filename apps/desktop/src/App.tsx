@@ -42,6 +42,7 @@ import {
   SearchResultsView,
   SettingsView,
   type IngredientDetailVM,
+  type IngredientEditAdapter,
   type IngredientListItem,
   type ProfileVM,
   type RecipeDetailVM,
@@ -284,12 +285,16 @@ const ingredientsQuery = (sort: Sort) =>
       return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
     },
   })
+// Mirrors the recipe payload: the read VM plus, for an owner, the full editable data the inline
+// editor patches (a 1:1 save map — the ingredient stores everything per-100g, no derivation).
+type IngredientDetailPayload = { vm: IngredientDetailVM; edit: IngredientEditData | null }
 const ingredientDetailQuery = (id: string) =>
   queryOptions({
     queryKey: ['ingredient', id],
-    queryFn: async () => {
+    queryFn: async (): Promise<IngredientDetailPayload | null> => {
       const d = await vegifyData.ingredient(id)
-      return d ? ingredientEditToVM(d) : null
+      if (!d) return null
+      return { vm: ingredientEditToVM(d), edit: d.canEdit ? d : null }
     },
   })
 const ingredientEditQuery = (id: string) =>
@@ -688,9 +693,47 @@ const ingredientDetailRoute = createRoute({
   loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientDetailQuery(params.ingredientId)),
   component: function IngredientDetail() {
     const { ingredientId } = useParams({ from: '/ingredients/$ingredientId' })
-    const { data: vm } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
-    if (!vm) return <NotFound what="ingredient" />
-    return <IngredientDetailView ingredient={vm} LinkComponent={LinkComponent} />
+    const { data } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    if (!data) return <NotFound what="ingredient" />
+
+    const state = data.edit
+    const patch = async (p: Partial<IngredientEditData>) => {
+      const merged = { ...state!, ...p }
+      const id = await saveIngredientFromForm({
+        id: merged.id,
+        visibility: merged.visibility,
+        name: merged.name,
+        description: merged.description,
+        price: merged.price,
+        caloriesPer100g: merged.caloriesPer100g,
+        servingGrams: merged.servingGrams,
+        packageGrams: merged.packageGrams,
+        nutrients: merged.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
+      await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+      await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+    }
+
+    const edit: IngredientEditAdapter | undefined = state
+      ? {
+          visibility: state.visibility,
+          rename: (name) => patch({ name }),
+          setDescription: (description) => patch({ description: description || null }),
+          setVisibility: (visibility) => patch({ visibility }),
+          remove: async () => {
+            await vegifyData.deleteIngredient(state.id)
+            scheduleSync()
+            queryClient.removeQueries({ queryKey: ['ingredient', state.id] })
+            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+            navigate({ to: '/ingredients', search: { sort: 'newest' } })
+          },
+        }
+      : undefined
+
+    return <IngredientDetailView ingredient={data.vm} LinkComponent={LinkComponent} edit={edit} />
   },
 })
 

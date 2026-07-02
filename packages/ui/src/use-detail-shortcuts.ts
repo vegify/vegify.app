@@ -82,11 +82,18 @@ export function useDetailShortcuts(shortcuts: DetailShortcuts, enabled = true) {
   }, [shortcuts, enabled]);
 }
 
-/** The canonical shortcut list for the `?` help sheet. */
+/** The canonical shortcut lists for the `?` help sheet (one per detail page kind). */
 export const DETAIL_SHORTCUTS: readonly { keys: string; label: string }[] = [
   { keys: "e", label: "Edit name" },
   { keys: "a", label: "Add ingredient" },
   { keys: "v", label: "Change visibility" },
   { keys: "⌘⌫", label: "Delete recipe" },
+  { keys: "?", label: "Show shortcuts" },
+];
+
+export const INGREDIENT_SHORTCUTS: readonly { keys: string; label: string }[] = [
+  { keys: "e", label: "Edit name" },
+  { keys: "v", label: "Change visibility" },
+  { keys: "⌘⌫", label: "Delete ingredient" },
   { keys: "?", label: "Show shortcuts" },
 ];
