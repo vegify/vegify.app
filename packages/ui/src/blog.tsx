@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { NavLink } from "./screens";
 import { VegifyLogo } from "./vegify-logo";
+import { NutrientByGroupChart, NutrientRangeChart } from "./blog-charts";
 
 /**
  * BLOG — the public, unauthenticated writing surface (vegify.app/blog), the GEO/SEO layer's
@@ -36,6 +37,140 @@ const ARTICLE_CLASSES = [
 ].join(" ");
 
 export const BLOG_POSTS: BlogPost[] = [
+  {
+    slug: "no-such-thing-as-100-percent",
+    title: "There's no such thing as 100%",
+    description:
+      "The label says 100% Vitamin C. 100% of what, and for whom? A short, honest tour of RDA, UL, and the numbers behind the number.",
+    datePublished: "2026-07-02",
+    dateDisplay: "July 2, 2026",
+    body: (
+      <>
+        <p>
+          Your cereal box says "Vitamin C: 100%." A hundred percent of what? Of a number some very
+          careful scientists picked for an average adult who is not you.
+        </p>
+        <p>That's not a scam. It's a compromise. And once you see how it's built, the label reads differently.</p>
+        <p>
+          <strong>The alphabet soup, decoded.</strong> All these acronyms live under one umbrella: the{" "}
+          <strong>DRI</strong>, the Dietary Reference Intakes the US and Canada publish (Europe has its
+          own, called DRVs; they mostly agree). The DRI isn't one number. It's a small family (
+          <a href="https://ods.od.nih.gov/HealthInformation/Dietary_Reference_Intakes.aspx">NIH ODS</a>):
+        </p>
+        <ul>
+          <li>
+            <strong>EAR</strong> — the amount that covers <em>half</em> of people. Useful to scientists,
+            useless to you: aim for the EAR and it's a coin flip whether you came up short.
+          </li>
+          <li>
+            <strong>RDA</strong> — the EAR plus a safety cushion, set to cover about 97–98% of healthy
+            people. THIS is the "aim for roughly here" number. Most labels are built on it.
+          </li>
+          <li>
+            <strong>AI</strong> — when the data's too thin to draw an RDA, they set an "Adequate Intake"
+            instead: an honest best guess. A lot of nutrients are AIs, not RDAs. The science isn't finished.
+          </li>
+          <li>
+            <strong>UL</strong> — the ceiling. The most you can take every day before the risk of{" "}
+            <em>harm</em> starts to climb. Not a target. A guardrail.
+          </li>
+        </ul>
+        <p>
+          <strong>So a nutrient isn't a number. It's a range.</strong> Picture a line: a floor on the
+          left (go under, you're deficient), a target in the middle, a ceiling on the right. You want to
+          live in the wide, comfortable part.
+        </p>
+        <figure className="my-8 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+          <figcaption className="mb-3 text-sm font-semibold text-foreground">
+            Vitamin C — aim ~90&nbsp;mg, ceiling 2,000&nbsp;mg
+          </figcaption>
+          <NutrientRangeChart name="Vitamin C" target={90} ceiling={2000} unit="mg" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Roughly 22× headroom between the target and the ceiling. This is why nobody's ever hurt
+            themselves with an orange (
+            <a href="https://ods.od.nih.gov/factsheets/VitaminC-HealthProfessional/">NIH ODS, Vitamin C</a>).
+          </p>
+        </figure>
+        <p>Other nutrients give you far less room.</p>
+        <figure className="my-8 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+          <figcaption className="mb-3 text-sm font-semibold text-foreground">
+            Zinc — aim ~11&nbsp;mg, ceiling 40&nbsp;mg
+          </figcaption>
+          <NutrientRangeChart name="Zinc" target={11} ceiling={40} unit="mg" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Same picture, a much tighter band — under 4× headroom (
+            <a href="https://ods.od.nih.gov/factsheets/Zinc-HealthProfessional/">NIH ODS, Zinc</a>). The
+            shape of the safe range is different for every nutrient.
+          </p>
+        </figure>
+        <p>
+          <strong>Not every nutrient even has a ceiling.</strong> Thiamin, riboflavin, B12, biotin,
+          vitamin K — no UL has been set for any of them. That does NOT mean "megadose freely." It means
+          the evidence for harm at high intakes is too thin to draw the line. Absence of a ceiling is
+          absence of data, not a green light. (That's the kind of honesty a label has no room to print.)
+        </p>
+        <p>
+          <strong>Now, the label's one number.</strong> The %DV — Percent Daily Value — is a single
+          figure the FDA picked for everyone, on a 2,000-calorie basis (the current set took effect in
+          2020;{" "}
+          <a href="https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels">
+            FDA
+          </a>
+          ). One number. For a pregnant 30-year-old, a sedentary 70-year-old, a teenage athlete, and you.
+        </p>
+        <p>Take iron.</p>
+        <figure className="my-8 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+          <figcaption className="mb-3 text-sm font-semibold text-foreground">
+            Iron — the same nutrient, three different targets
+          </figcaption>
+          <NutrientByGroupChart
+            unit="mg"
+            ceiling={45}
+            groups={[
+              { label: "Men 19–50", value: 8 },
+              { label: "Women 19–50", value: 18 },
+              { label: "Pregnancy", value: 27 },
+            ]}
+          />
+          <p className="mt-2 text-sm text-muted-foreground">
+            A man needs about 8&nbsp;mg; a menstruating woman, 18; pregnancy, 27 — all under the same
+            45&nbsp;mg ceiling (
+            <a href="https://ods.od.nih.gov/factsheets/Iron-HealthProfessional/">NIH ODS, Iron</a>). Same
+            label, wildly different "100%." The %DV can't tell you which one you are. It was never trying
+            to — it's a shelf-comparison tool, not a personal target.
+          </p>
+        </figure>
+        <p>
+          <strong>Here's the part where I talk you off the ledge.</strong> None of this means you should
+          start weighing food and running spreadsheets at dinner. Eat a varied diet — actual plants, a
+          real mix — and you land in the comfortable middle on almost everything without trying. The
+          numbers matter at the <em>edges</em>: a nutrient you're genuinely low on, or a supplement you're
+          taking by the fistful. That's it.
+        </p>
+        <p>
+          And I'll say the vegan part plainly, because I always do: the one number a plant-based eater
+          should actually put on the calendar is B12. Supplement it (
+          <a href="https://ods.od.nih.gov/factsheets/VitaminB12-HealthProfessional/">NIH ODS, B12</a>).
+          It's cheap, it's non-negotiable, and — see above — it has no ceiling to fret about. Everything
+          else, breathe.
+        </p>
+        <p>
+          <strong>Why Vegify cares.</strong> Because "100% of the label" is the wrong question, and we'd
+          rather answer the right one: are you in <em>your</em> range, for the nutrients that matter to{" "}
+          <em>you</em>? That means storing nutrients as floors, targets, and ceilings — not single
+          numbers — and eventually letting the range fit the actual person doing the cooking. That
+          feature's coming. This post is the groundwork.
+        </p>
+        <p>The label isn't lying to you. It's just answering an easier question than the one you have. :)</p>
+        <p className="text-sm text-muted-foreground">
+          <em>
+            (Reference values from the NIH Office of Dietary Supplements; adult US DRIs. General
+            information, not medical advice — targets shift with age, sex, pregnancy, and health.)
+          </em>
+        </p>
+      </>
+    ),
+  },
   {
     slug: "vegan-honestly",
     title: "Vegan, honestly: what a decade of research actually changed",
