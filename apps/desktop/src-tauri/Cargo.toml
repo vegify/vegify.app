@@ -1,6 +1,6 @@
 [package]
 name = "vegify"
-version = "0.12.0" # x-release-please-version
+version = "0.13.0" # x-release-please-version
 description = "Vegify desktop (local-first)"
 authors = ["you"]
 edition = "2021"

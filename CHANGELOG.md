@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/vegify/vegify.app/compare/v0.12.0...v0.13.0) (2026-07-02)
+
+
+### Features
+
+* **slugs:** canonical /&lt;username&gt;/&lt;recipe-slug&gt; + /ingredients/&lt;slug&gt; URLs (recipes recovered + ingredients) ([#40](https://github.com/vegify/vegify.app/issues/40)) ([388ba13](https://github.com/vegify/vegify.app/commit/388ba13b9d11ad5de03e5ad97767cfa8ffec9065))
+
 ## [0.12.0](https://github.com/vegify/vegify.app/compare/v0.11.0...v0.12.0) (2026-07-02)
 
 
