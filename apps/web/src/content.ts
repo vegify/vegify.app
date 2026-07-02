@@ -12,8 +12,15 @@ type Reading = { name: string; amountPer100g: number; unit: string }
 type Amount = { amount: number | null; unit: string | null; grams: number }
 type AggregatedNutrition = { caloriesPer100g: number | null; readings: Reading[] }
 
-export type RecipeCard = { id: string; name: string; subtitle: string | null }
+export type RecipeCard = {
+  id: string
+  name: string
+  subtitle: string | null
+  username: string | null
+  slug: string | null
+}
 export type Profile = { username: string; name: string; recipes: RecipeCard[] }
+export type RecipeSlugHit = { recipeId: string; canonicalSlug: string }
 export type RecipeItem = { id: string; name: string; amount: Amount; recipeId: string | null }
 export type RecipeView = {
   id: string
@@ -21,6 +28,7 @@ export type RecipeView = {
   subtitle: string | null
   directions: string | null
   creator: string | null
+  slug: string | null
   canEdit: boolean
   serving: Amount | null
   batchGrams: number | null
@@ -43,7 +51,12 @@ export type RecipeEditData = {
   visibility: Visibility
   items: RecipeEditItem[]
 }
-export type IngredientCard = { id: string; name: string; caloriesPer100g: number | null }
+export type IngredientCard = {
+  id: string
+  name: string
+  caloriesPer100g: number | null
+  slug: string | null
+}
 export type IngredientEditData = {
   id: string
   name: string
@@ -53,9 +66,11 @@ export type IngredientEditData = {
   servingGrams: number | null
   packageGrams: number | null
   visibility: Visibility
+  slug: string | null
   canEdit: boolean
   nutrients: Reading[]
 }
+export type IngredientSlugHit = { ingredientId: string; canonicalSlug: string }
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`
 
@@ -92,6 +107,14 @@ export const searchIngredients = (q: string) =>
 // non-public recipes on their own profile). Null when the handle has no account.
 export const getProfile = (username: string) =>
   api<Profile | null>(`/api/content/profile?username=${encodeURIComponent(username)}`)
+// Resolve /<username>/<slug> → { recipeId, canonicalSlug } (or null → 404).
+export const resolveRecipeBySlug = (username: string, slug: string) =>
+  api<RecipeSlugHit | null>(
+    `/api/content/recipe-by-slug?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}`,
+  )
+// Resolve /ingredients/<slug> → { ingredientId, canonicalSlug } (or null → 404).
+export const resolveIngredientBySlug = (slug: string) =>
+  api<IngredientSlugHit | null>(`/api/content/ingredient-by-slug?slug=${encodeURIComponent(slug)}`)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

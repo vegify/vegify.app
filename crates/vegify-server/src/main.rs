@@ -297,6 +297,52 @@ struct UsernameQuery {
     username: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct RecipeSlugQuery {
+    username: Option<String>,
+    slug: Option<String>,
+}
+
+/// Resolve `/<username>/<slug>` → { recipeId, canonicalSlug } (or null → 404). No bearer needed
+/// (visibility is enforced when the recipe is then loaded by id); the web route 301s if canonical
+/// differs from the requested slug, else loads the recipe.
+async fn recipe_by_slug(
+    State(state): State<AppState>,
+    Query(q): Query<RecipeSlugQuery>,
+) -> Result<Json<Option<vegify_core::RecipeSlugHit>>, AppError> {
+    let (username, slug) = (q.username.unwrap_or_default(), q.slug.unwrap_or_default());
+    if username.is_empty() || slug.is_empty() {
+        return Err(AppError::BadRequest("username and slug are required.".into()));
+    }
+    let out = db(&state, move |conn| {
+        vegify_core::resolve_recipe_by_slug(conn, &username, &slug).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
+#[derive(Deserialize)]
+struct SlugQuery {
+    slug: Option<String>,
+}
+
+/// Resolve /ingredients/<slug> → { ingredientId, canonicalSlug } (or null → 404). The web route 301s
+/// if canonical differs, else loads the ingredient by id.
+async fn ingredient_by_slug(
+    State(state): State<AppState>,
+    Query(q): Query<SlugQuery>,
+) -> Result<Json<Option<vegify_core::IngredientSlugHit>>, AppError> {
+    let slug = q.slug.unwrap_or_default();
+    if slug.is_empty() {
+        return Err(AppError::BadRequest("slug is required.".into()));
+    }
+    let out = db(&state, move |conn| {
+        vegify_core::resolve_ingredient_by_slug(conn, &slug).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
 /// Public profile by handle. No bearer required; an optional one identifies the viewer so they also
 /// see their own non-public recipes when viewing themselves. 404 when the handle has no account.
 async fn profile(
@@ -729,6 +775,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Public profile by handle — optionally-authed (a signed-in viewer also sees their own
         // non-public recipes on their own profile). Unlike the rest of /api/content, no auth required.
         .route("/api/content/profile", get(profile))
+        .route("/api/content/recipe-by-slug", get(recipe_by_slug))
+        .route("/api/content/ingredient-by-slug", get(ingredient_by_slug))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.

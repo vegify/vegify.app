@@ -14,7 +14,10 @@ export const vegifyData = {
 	name: string,
 	subtitle: string | null,
 	directions: string | null,
+	/**  The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`. */
 	creator: string | null,
+	/**  This recipe's current slug (the `/<creator>/<slug>` segment). None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
 	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
@@ -35,6 +38,26 @@ export const vegifyData = {
 	recipes: RecipeCard[],
 } | null> {
     return invoke("get_profile", { username });
+  },
+
+  /** @throws {DataError} */
+  resolveRecipeBySlug(username: string, slug: string): Promise<{
+	recipeId: string,
+	/**
+	 *  The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
+	 *  `/<username>/<canonical_slug>`.
+	 */
+	canonicalSlug: string,
+} | null> {
+    return invoke("resolve_recipe_by_slug", { username, slug });
+  },
+
+  /** @throws {DataError} */
+  resolveIngredientBySlug(slug: string): Promise<{
+	ingredientId: string,
+	canonicalSlug: string,
+} | null> {
+    return invoke("resolve_ingredient_by_slug", { slug });
   },
 
   /** @throws {DataError} */
@@ -65,6 +88,8 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -86,6 +111,8 @@ export const vegifyData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -210,6 +237,8 @@ export type IngredientCard = {
 	id: string,
 	name: string,
 	caloriesPer100g: number | null,
+	/**  Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`. */
+	slug: string | null,
 };
 
 /**  IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving). */
@@ -222,6 +251,8 @@ export type IngredientEditData = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	visibility: Visibility,
+	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always
 	 *  true on the owner-only edit-load path; on the detail path it reflects ownership (false for
@@ -243,6 +274,11 @@ export type IngredientSearchResult = {
 	servingGrams: number | null,
 	caloriesPer100g: number | null,
 	readings: Reading[],
+};
+
+export type IngredientSlugHit = {
+	ingredientId: string,
+	canonicalSlug: string,
 };
 
 /**
@@ -276,6 +312,12 @@ export type RecipeCard = {
 	id: string,
 	name: string,
 	subtitle: string | null,
+	/**
+	 *  Owner handle + slug for the canonical `/<username>/<slug>` link. Optional (pre-backfill /
+	 *  ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.
+	 */
+	username: string | null,
+	slug: string | null,
 };
 
 export type RecipeEditData = {
@@ -314,12 +356,24 @@ export type RecipeItemInput = {
 	unit: string | null,
 };
 
+export type RecipeSlugHit = {
+	recipeId: string,
+	/**
+	 *  The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
+	 *  `/<username>/<canonical_slug>`.
+	 */
+	canonicalSlug: string,
+};
+
 export type RecipeView = {
 	id: string,
 	name: string,
 	subtitle: string | null,
 	directions: string | null,
+	/**  The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`. */
 	creator: string | null,
+	/**  This recipe's current slug (the `/<creator>/<slug>` segment). None only pre-backfill. */
+	slug: string | null,
 	/**
 	 *  Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
 	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
@@ -345,6 +399,12 @@ export type SaveIngredientInput = {
 	servingGrams: number | null,
 	packageGrams: number | null,
 	nutrients: IngredientNutrientInput[],
+	/**
+	 *  SEO slug. `None` on a user create/edit ⇒ the DAL generates a unique one (and logs a rename to
+	 *  slug_history). `Some` only on the sync pull-apply, which carries the SERVER's authoritative slug
+	 *  so replicas never diverge. Serde-default so pre-slug payloads deserialize as None.
+	 */
+	slug?: string | null,
 };
 
 export type SaveRecipeInput = {
@@ -362,6 +422,11 @@ export type SaveRecipeInput = {
 	servingGrams: number | null,
 	batchGrams: number | null,
 	items: RecipeItemInput[],
+	/**
+	 *  See SaveIngredientInput::slug. `None` ⇒ generate (unique per owner); `Some` ⇒ pull carries the
+	 *  server's slug verbatim.
+	 */
+	slug?: string | null,
 };
 
 export type SignInInput = {

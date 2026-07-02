@@ -1,4 +1,4 @@
-import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import {
@@ -19,6 +19,7 @@ import type { IngredientEditData } from '../content'
 type IngredientDetailPayload = {
   vm: IngredientDetailVM
   edit: IngredientEditData | null
+  canonical: string | null // the current slug; the id route 301s here
 }
 
 const getIngredient = createServerFn({ method: 'GET' })
@@ -47,7 +48,16 @@ const getIngredient = createServerFn({ method: 'GET' })
       canEdit: ing.canEdit,
       nutrition,
     }
-    return { vm, edit: ing.canEdit ? ing : null }
+    return { vm, edit: ing.canEdit ? ing : null, canonical: ing.slug }
+  })
+
+// Resolve a slug segment → { ingredientId, canonicalSlug } (or null when it's not a slug — likely a
+// legacy id, handled by the loader's id fallback).
+const resolveFn = createServerFn({ method: 'GET' })
+  .validator((slug: string) => slug)
+  .handler(async ({ data }) => {
+    const { resolveIngredientBySlug } = await import('../content')
+    return resolveIngredientBySlug(data)
   })
 
 const saveFn = createServerFn({ method: 'POST' })
@@ -67,10 +77,34 @@ const deleteFn = createServerFn({ method: 'POST' })
 const ingredientQuery = (id: string) =>
   queryOptions({ queryKey: ['ingredient', id], queryFn: () => getIngredient({ data: id }) })
 
+// The `/ingredients/<segment>` segment is EITHER a slug (canonical) or a legacy ULID — unlike recipes,
+// both share this URL shape. Resolve slug first; else treat it as an id and 301 to its canonical slug.
 export const Route = createFileRoute('/ingredients/$ingredientId/')({
-  loader: async ({ context, params }) => {
-    const ing = await context.queryClient.ensureQueryData(ingredientQuery(params.ingredientId))
+  loader: async ({ context, params }): Promise<{ ingredientId: string }> => {
+    const seg = params.ingredientId
+    const hit = await resolveFn({ data: seg })
+    if (hit) {
+      if (hit.canonicalSlug !== seg) {
+        throw redirect({
+          to: '/ingredients/$ingredientId',
+          params: { ingredientId: hit.canonicalSlug },
+          statusCode: 301, // old slug → current canonical
+        })
+      }
+      await context.queryClient.ensureQueryData(ingredientQuery(hit.ingredientId))
+      return { ingredientId: hit.ingredientId }
+    }
+    // Not a slug → a legacy id. Load it; if it has a canonical slug, 301 to /ingredients/<slug>.
+    const ing = await context.queryClient.ensureQueryData(ingredientQuery(seg))
     if (!ing) throw notFound()
+    if (ing.canonical) {
+      throw redirect({
+        to: '/ingredients/$ingredientId',
+        params: { ingredientId: ing.canonical },
+        statusCode: 301, // legacy id → canonical slug
+      })
+    }
+    return { ingredientId: seg } // fallback: no slug yet, render by id
   },
   component: IngredientPage,
 })
@@ -90,7 +124,7 @@ const toInput = (d: IngredientEditData): IngredientFormInput => ({
 })
 
 function IngredientPage() {
-  const { ingredientId } = Route.useParams()
+  const { ingredientId } = Route.useLoaderData() // the resolved id (slug already mapped in the loader)
   const { data } = useSuspenseQuery(ingredientQuery(ingredientId))
   const queryClient = useQueryClient()
   const router = useRouter()
