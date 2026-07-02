@@ -472,6 +472,9 @@ export function RecipeDetailView({
               autoEdit={edit?.isDraft}
               selectAllOnEdit={edit?.isDraft}
               className="inline-block"
+              // The editing input goes w-full inside the centered h1 — keep the text centered so
+              // entering edit mode doesn't visually jump the title to the left edge.
+              inputClassName="text-center"
             />
           </h1>
           {edit || recipe.subtitle ? (
@@ -483,6 +486,7 @@ export function RecipeDetailView({
                 placeholder={edit ? "Add a subtitle" : ""}
                 ariaLabel="subtitle"
                 className="inline-block"
+                inputClassName="text-center"
               />
             </p>
           ) : null}
