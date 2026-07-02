@@ -9,7 +9,7 @@ export const SITEMAP_PATH = "/sitemap.xml";
 
 const STATIC_PATHS = ["/", "/recipes", "/ingredients", "/blog"];
 // Keep in sync with @vegify/ui/blog BLOG_POSTS when publishing a post.
-const BLOG_POST_SLUGS = ["vegan-honestly"];
+const BLOG_POST_SLUGS = ["no-such-thing-as-100-percent", "vegan-honestly"];
 
 const xmlEscape = (s) =>
   s.replace(

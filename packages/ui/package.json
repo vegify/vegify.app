@@ -7,6 +7,7 @@
     "./app-shell": "./src/app-shell.tsx",
     "./auth-form": "./src/auth-form.tsx",
     "./blog": "./src/blog.tsx",
+    "./blog-charts": "./src/blog-charts.tsx",
     "./breadcrumb": "./src/breadcrumb.tsx",
     "./button": "./src/button.tsx",
     "./card": "./src/card.tsx",
@@ -46,6 +47,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.545.0",
+    "recharts": "^3.9.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
