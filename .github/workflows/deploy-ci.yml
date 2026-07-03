@@ -1,0 +1,46 @@
+name: deploy-ci
+
+# Deploys the CI/OIDC stack (VegifyCi) from CI via the dedicated bin/ci.ts app, so
+# the GitHub Actions deploy role and the release-signing role — and their
+# main-pinned OIDC trust — stay in sync without a local `cdk deploy VegifyCi`.
+# bin/ci.ts instantiates only VegifyCi, so no server/web assets are needed (the
+# whole-app synth in bin/vegify.ts would otherwise require them). The deploy role
+# updates its own stack through the CDK bootstrap roles.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/lib/ci-stack.ts
+      - infra/bin/ci.ts
+      - .github/workflows/deploy-ci.yml
+  workflow_dispatch:
+
+concurrency:
+  group: vegify-deploy-ci
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # AWS OIDC
+  contents: read
+
+jobs:
+  deploy-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Deploy VegifyCi
+        env:
+          APPLE_SIGNING_SECRET_ID: ${{ vars.APPLE_SIGNING_SECRET_ID }}
+        run: pnpm --filter @vegify/infra exec cdk --app 'tsx bin/ci.ts' deploy VegifyCi --require-approval never
