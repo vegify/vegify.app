@@ -31,8 +31,11 @@ export class CiStack extends Stack {
       roleName: "vegify-github-deploy",
       description: "Assumed by GitHub Actions (OIDC) to run cdk deploy via the CDK bootstrap roles.",
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
-        StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-        StringLike: { "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:*` },
+        StringEquals: {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          // Only this repo's workflows on the main branch may assume the role.
+          "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+        },
       }),
     });
 
@@ -63,8 +66,11 @@ export class CiStack extends Stack {
       description:
         "Assumed by GitHub Actions (OIDC) to read the shared Apple signing secret for notarized desktop releases.",
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
-        StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-        StringLike: { "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:*` },
+        StringEquals: {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          // Only this repo's workflows on the main branch may assume the role.
+          "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+        },
       }),
     });
     releaseRole.addToPolicy(
