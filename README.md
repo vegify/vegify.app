@@ -71,7 +71,8 @@ Production ships only through CI, AWS-only via CDK: merging release-please's PR 
 | `VEGIFY_DOMAIN_NAMES` | Comma-separated custom domains (apex,www). The hosted zone is looked up from the first domain; the backend + ingest origins are wired cross-stack. |
 | `VEGIFY_API_URL` | Backend origin baked into desktop builds (the web derives it from the server stack). |
 | `VEGIFY_CERT_ARN` | Optional bring-your-own us-east-1 ACM cert; unset, the web stack creates a DNS-validated one. |
-| `ORIGIN_VERIFY_SECRET` | Shared header that restricts the Lambda Function URLs to CloudFront. |
+
+The origin-verify secret that restricts the Lambda Function URLs to CloudFront is not a repository secret: it is generated in-account (SSM SecureString) on first deploy and wired in at deploy time.
 
 CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `VegifyCi`. Without the secrets, `cdk synth` still succeeds against inert placeholders.
 

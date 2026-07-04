@@ -37,7 +37,7 @@ Copy `.env.example` to `.env` (or just export the vars) — every variable is do
 
 - **`VEGIFY_DOMAIN_NAMES`** — your domains (first is primary). Everything else derives: the hosted zone is looked up by that name, the TLS cert is created (DNS-validated) by the web stack, the backend + ingest origins are wired cross-stack, and the server's email config (public URL, From address, SES grant) is derived and injected by the CDK.
 
-Common opt-ins: `ORIGIN_VERIFY_SECRET` (required for the deployed web/ingest Lambdas to serve — they fail closed without it), `VEGIFY_SIGNUPS_OPEN=1` to allow signups, and `VEGIFY_EMAIL_DOMAIN`/`VEGIFY_EMAIL_FROM` if they differ from the derived defaults. Overrides for unusual setups: `VEGIFY_HOSTED_ZONE_ID` (explicit zone), `VEGIFY_CERT_ARN` (bring your own us-east-1 cert), `VEGIFY_API_URL` (point the web at a different backend).
+Common opt-ins: `VEGIFY_SIGNUPS_OPEN=1` to allow signups, and `VEGIFY_EMAIL_DOMAIN`/`VEGIFY_EMAIL_FROM` if they differ from the derived defaults. The origin-verify secret needs nothing from you — it's generated in your account (SSM SecureString `/vegify/origin-verify`) on first deploy and wired into CloudFront + the Lambdas automatically. Overrides for unusual setups: `VEGIFY_HOSTED_ZONE_ID` (explicit zone), `VEGIFY_CERT_ARN` (bring your own us-east-1 cert), `VEGIFY_API_URL` (point the web at a different backend).
 
 ## 3. Bootstrap + the CI deploy role
 
@@ -87,7 +87,6 @@ Pushing conventional commits drives release-please, which cuts a release and run
 - `VEGIFY_DOMAIN_NAMES` — your domain list (drives the zone lookup, the server's email env, and the derived URLs).
 - `VEGIFY_API_URL` — only for desktop publishing (baked into the binary at build time); the web derives its backend origin cross-stack.
 - `VEGIFY_CERT_ARN` — optional bring-your-own cert; omit it and the web stack manages one.
-- `ORIGIN_VERIFY_SECRET` — your origin-verify secret. Required for a working deploy: the web SSR + log-ingest Lambdas fail closed (503) when deployed without it.
 - `RELEASE_APP_PRIVATE_KEY` (secret) + `RELEASE_APP_CLIENT_ID` (repository **variable**) — a GitHub App that lets release-please open/label its release PRs and lets the merge trigger the deploy cascade. Create a minimal App (Contents + Pull requests read/write), install it on the repo, and store its client id + private key.
 - Desktop signing/notarization (only if you publish the desktop app): `AWS_RELEASE_SIGNING_ROLE_ARN`, `APPLE_SIGNING_SECRET_ID`, `VEGIFY_APPLE_TEAM_ID`, `VEGIFY_PROVISION_PROFILE_B64`.
 

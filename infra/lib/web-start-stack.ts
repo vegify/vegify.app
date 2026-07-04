@@ -37,9 +37,10 @@ const webStart = path.join(repoRoot, "apps/web");
 // zone is looked up from the domain and the cert is created in-stack unless overridden — the only
 // required input is the domain list. See @vegify/config/deploy.
 export interface WebStartStackProps extends StackProps {
-  /** Origin-verify secret: CloudFront injects it as `x-vegify-origin` on the Function URL origins and the
-   *  Lambdas reject requests lacking it, restricting the URLs to CloudFront. Empty = no header at synth
-   *  (the deployed Lambda fails closed without it). */
+  /** Origin-verify secret: CloudFront injects it as `x-vegify-origin` on the Function URL origins and
+   *  the Lambdas reject requests lacking it, restricting the URLs to CloudFront. Always present now —
+   *  it is generated in-account and resolved at deploy time (ClientLogsStack.originSecret), never
+   *  supplied by a human. */
   originSecret: string;
   /** The standing Axum backend's public origin; the SSR shell calls it for ALL auth + content
    *  (P4: web-SSR-calls-Axum). Wired from ServerStack.apiUrl (or the VEGIFY_API_URL override). */
@@ -68,8 +69,8 @@ export class WebStartStack extends Stack {
     const ingestHost = Fn.select(2, Fn.split("/", props.ingestUrl));
 
     // CloudFront injects this on every forwarded origin request; the Function URL Lambdas reject anything
-    // lacking it (a direct public hit). undefined when no secret is set → no header, no enforcement.
-    const verifyHeaders = props.originSecret ? { "x-vegify-origin": props.originSecret } : undefined;
+    // lacking it (a direct public hit). The value is a deploy-time token — hardening is always on.
+    const verifyHeaders = { "x-vegify-origin": props.originSecret };
 
     const fn = new lambda.Function(this, "ServerFn", {
       runtime: lambda.Runtime.NODEJS_22_X,
