@@ -110,6 +110,9 @@ jobs:
           fi
           next=$(scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
           echo "cutting $next"
+          # Annotated tags need a committer identity, which runners don't have (exit 128 without it).
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$next" -m "$next" HEAD
           git push origin "refs/tags/$next"
           gh release create "$next" --verify-tag --generate-notes --title "$next"
