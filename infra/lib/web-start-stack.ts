@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, Fn, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -9,6 +9,7 @@ import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import type { Construct } from "constructs";
+import { resolveZone } from "./zone.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const webStart = path.join(repoRoot, "apps/web");
@@ -31,33 +32,40 @@ const webStart = path.join(repoRoot, "apps/web");
  * CloudFront via an origin-verify secret header (props.originSecret) injected on the origin and checked
  * by the Lambda adapter (apps/web/aws/lambda-handler.mjs) — a check that works for POST.
  */
-// Deployment-specific identifiers arrive as props from bin/vegify.ts's one deployConfig() read (CI
-// injects them from repository secrets; the fallbacks there are inert placeholders so a fresh
-// `cdk synth` succeeds) — see @vegify/config/deploy.
+// Deployment coordinates arrive as props from bin/vegify.ts's one deployConfig() read. The backend
+// origin and the ingest URL are wired CROSS-STACK from the sibling stacks (never hand-carried); the
+// zone is looked up from the domain and the cert is created in-stack unless overridden — the only
+// required input is the domain list. See @vegify/config/deploy.
 export interface WebStartStackProps extends StackProps {
   /** Origin-verify secret: CloudFront injects it as `x-vegify-origin` on the Function URL origins and the
    *  Lambdas reject requests lacking it, restricting the URLs to CloudFront. Empty = no header at synth
    *  (the deployed Lambda fails closed without it). */
   originSecret: string;
   /** The standing Axum backend's public origin; the SSR shell calls it for ALL auth + content
-   *  (P4: web-SSR-calls-Axum). */
+   *  (P4: web-SSR-calls-Axum). Wired from ServerStack.apiUrl (or the VEGIFY_API_URL override). */
   apiUrl: string;
-  /** The browser-log Lambda's Function URL host (VegifyClientLogs); the client beacons a SAME-ORIGIN
-   *  POST to /__ingest, forwarded here first-party so ad/tracking blockers don't eat it (a raw
-   *  cross-origin beacon gets dropped). */
-  ingestOrigin: string;
+  /** The browser-log Lambda's Function URL (VegifyClientLogs.ingestUrl, cross-stack); its host becomes
+   *  the /__ingest origin — the client beacons a SAME-ORIGIN POST to /__ingest, forwarded first-party
+   *  so ad/tracking blockers don't eat it (a raw cross-origin beacon gets dropped). */
+  ingestUrl: string;
   /** The web shell's domains (first is primary — it becomes VEGIFY_PUBLIC_URL for the Lambda). */
   domainNames: string[];
-  /** Route53 hosted zone the apex/www alias records are written into. */
-  hostedZoneId: string;
-  /** us-east-1 ACM cert for the domains (CloudFront requirement — which this stack satisfies). */
-  certificateArn: string;
+  /** Whether the domains came from real configuration (gates the zone lookup — see resolveZone). */
+  domainsConfigured: boolean;
+  /** Explicit zone id override; default = lookup by the primary domain name. */
+  hostedZoneIdOverride?: string;
+  /** Bring-your-own us-east-1 ACM cert ARN; default = a DNS-validated cert created in this stack
+   *  (which is us-east-1 — the CloudFront requirement). */
+  certificateArnOverride?: string;
 }
 
 export class WebStartStack extends Stack {
   constructor(scope: Construct, id: string, props: WebStartStackProps) {
     super(scope, id, props);
-    const { apiUrl, ingestOrigin, domainNames, hostedZoneId, certificateArn } = props;
+    const { apiUrl, domainNames } = props;
+    // https://<host>/ → <host>: CloudFront's HttpOrigin wants a domain, and the split/select works on
+    // the deploy-time token (Fn::Select over Fn::Split over the cross-stack import).
+    const ingestHost = Fn.select(2, Fn.split("/", props.ingestUrl));
 
     // CloudFront injects this on every forwarded origin request; the Function URL Lambdas reject anything
     // lacking it (a direct public hit). undefined when no secret is set → no header, no enforcement.
@@ -93,11 +101,21 @@ export class WebStartStack extends Stack {
       destinationBucket: assets,
     });
 
-    const zone = route53.HostedZone.fromHostedZoneAttributes(this, "Zone", {
-      hostedZoneId,
+    const zone = resolveZone(this, "Zone", {
       zoneName: domainNames[0],
+      configured: props.domainsConfigured,
+      overrideZoneId: props.hostedZoneIdOverride,
     });
-    const certificate = acm.Certificate.fromCertificateArn(this, "Cert", certificateArn);
+    // Bring-your-own cert if an ARN is supplied (vegify's live deploy — avoids cert churn); otherwise
+    // create a DNS-validated cert for the domains in the zone above. Issuance is automatic (minutes,
+    // first deploy only) — no manual ACM step.
+    const certificate = props.certificateArnOverride
+      ? acm.Certificate.fromCertificateArn(this, "Cert", props.certificateArnOverride)
+      : new acm.Certificate(this, "ManagedCert", {
+          domainName: domainNames[0],
+          subjectAlternativeNames: domainNames.slice(1),
+          validation: acm.CertificateValidation.fromDns(zone),
+        });
 
     // Force `Content-Type: application/json` on /.well-known/* responses. S3 stores the extensionless
     // apple-app-site-association file as `binary/octet-stream`, but Apple's swcd requires
@@ -134,7 +152,7 @@ export class WebStartStack extends Stack {
         // caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
         // URL host (a Lambda Function URL rejects a mismatched Host).
         "/__ingest": {
-          origin: new origins.HttpOrigin(ingestOrigin, { customHeaders: verifyHeaders }),
+          origin: new origins.HttpOrigin(ingestHost, { customHeaders: verifyHeaders }),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
