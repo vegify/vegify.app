@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.5](https://github.com/vegify/vegify.app/compare/v0.17.4...v0.17.5) (2026-07-04)
+
+
+### Bug Fixes
+
+* **infra:** derive deploy wiring - cross-stack origins, zone lookup, managed cert ([#64](https://github.com/vegify/vegify.app/issues/64)) ([75b25b2](https://github.com/vegify/vegify.app/commit/75b25b23416253a3f264d2fabacbe6677ccd7f19))
+
 ## [0.17.4](https://github.com/vegify/vegify.app/compare/v0.17.3...v0.17.4) (2026-07-04)
 
 
