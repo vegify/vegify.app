@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/vegify/vegify.app/compare/v0.17.2...v0.17.3) (2026-07-04)
+
+
+### Bug Fixes
+
+* **web:** fail closed when the origin-verify secret is missing on Lambda ([#59](https://github.com/vegify/vegify.app/issues/59)) ([792faf8](https://github.com/vegify/vegify.app/commit/792faf8ac323e03f1ad38526e68278b3588c4dbf))
+
 ## [0.17.2](https://github.com/vegify/vegify.app/compare/v0.17.1...v0.17.2) (2026-07-02)
 
 
