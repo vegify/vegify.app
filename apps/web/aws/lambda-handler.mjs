@@ -28,11 +28,16 @@ async function toLambda(response) {
 
 // Origin-verify: CloudFront injects x-vegify-origin on every forwarded request (set by the CDK from
 // $ORIGIN_VERIFY_SECRET). Reject anything that doesn't carry it — i.e. a direct hit to the public
-// Function URL, bypassing CloudFront. Skipped when ORIGIN_SECRET is unset (local/dev, or hardening off)
-// so the built bundle still serves standalone. This replaces OAC, which can't sign POST bodies.
+// Function URL, bypassing CloudFront. FAIL CLOSED on Lambda: a deployment missing the secret is a
+// misconfiguration, not permission to serve the raw Function URL unprotected. Standalone/local runs
+// (no Lambda env) still serve without it. This replaces OAC, which can't sign POST bodies.
 const ORIGIN_SECRET = process.env.ORIGIN_SECRET;
+const ON_LAMBDA = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 export const handler = async (event) => {
+  if (ON_LAMBDA && !ORIGIN_SECRET) {
+    return { statusCode: 503, headers: { "content-type": "text/plain" }, body: "Service Unavailable" };
+  }
   if (ORIGIN_SECRET && event.headers?.["x-vegify-origin"] !== ORIGIN_SECRET) {
     return { statusCode: 403, headers: { "content-type": "text/plain" }, body: "Forbidden" };
   }
