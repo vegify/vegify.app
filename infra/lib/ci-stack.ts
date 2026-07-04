@@ -55,6 +55,16 @@ export class CiStack extends Stack {
         resources: [`arn:aws:ssm:*:${this.account}:parameter/cdk-bootstrap/*`],
       }),
     );
+    // deployConfig() reads the /vegify/deploy/* decisions AT SYNTH under this role. Without this
+    // grant the read fails and (in CI) the synth aborts — v0.18.0 proved the silent alternative:
+    // an AccessDenied that degraded to placeholders deployed example.com email config to prod.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadDeployDecisions",
+        actions: ["ssm:GetParameter", "ssm:GetParametersByPath"],
+        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/*`],
+      }),
+    );
 
     new CfnOutput(this, "DeployRoleArn", { value: role.roleArn });
 

@@ -35,8 +35,16 @@ async function ssmDecisions(region: string): Promise<Record<string, string>> {
       token = page.NextToken
     } while (token)
     return out
-  } catch {
-    // No credentials, no permission, or no parameters — the fresh-clone / zero-config path.
+  } catch (e) {
+    // In CI a failed read is NEVER "unconfigured" — it's a broken grant or region, and continuing
+    // would synth placeholders into a real deploy (v0.18.0 shipped example.com email config to prod
+    // exactly this way). Fail the synth loudly instead.
+    if (process.env.GITHUB_ACTIONS) {
+      throw new Error(
+        `cannot read the ${DEPLOY_PARAM_PATH} decisions in region ${region} — fix the deploy role's ssm:GetParametersByPath grant or the parameter region; refusing to synth with placeholders in CI (${e})`,
+      )
+    }
+    // Locally: no credentials / no parameters is the legitimate fresh-clone, zero-config path.
     return {}
   }
 }
