@@ -1,0 +1,14 @@
+# Release-notes grouping for `gh release create --generate-notes` (the deploy workflow's release
+# job). PR titles are the changelog — label PRs to sort them into sections; anything unlabeled
+# lands in Other. CHANGELOG.md is frozen (the release-please era record); GitHub Releases are the
+# changelog now.
+changelog:
+  categories:
+    - title: Features
+      labels: [feature, enhancement]
+    - title: Fixes
+      labels: [fix, bug]
+    - title: Infra & ops
+      labels: [infra, ci, ops, dependencies]
+    - title: Other
+      labels: ["*"]
