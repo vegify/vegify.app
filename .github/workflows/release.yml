@@ -495,8 +495,13 @@ jobs:
         run: |
           set -euo pipefail
           region="${{ vars.AWS_REGION || 'us-east-1' }}"
-          echo "VEGIFY_API_URL=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/api-url --query Parameter.Value --output text)" >> "$GITHUB_ENV"
-          echo "APPLE_SIGNING_SECRET_ID=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/apple-secret-id --query Parameter.Value --output text)" >> "$GITHUB_ENV"
+          # Assign-then-echo: a failure inside `echo "$(cmd)"` is invisible to set -e (the echo still
+          # exits 0), which is how v0.18.0 carried an EMPTY secret id into the next step. A plain
+          # assignment propagates the substitution's exit status, so a missing parameter fails HERE.
+          api_url=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/api-url --query Parameter.Value --output text)
+          apple_secret_id=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/apple-secret-id --query Parameter.Value --output text)
+          echo "VEGIFY_API_URL=$api_url" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id" >> "$GITHUB_ENV"
       - name: Load the Apple signing secret
         # Secrets Manager JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
         # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID cert

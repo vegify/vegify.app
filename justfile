@@ -50,20 +50,25 @@ db:
     pnpm db:push && pnpm db:seed
 
 # ── Deploy decisions (SSM Parameter Store — the account itself is the config store) ──────────────
+# The decisions live in the DEPLOY region — pinned here so a shell whose default AWS region differs
+# can't write them somewhere the deploys never look (exactly the bug that shipped placeholder email
+# config in v0.18.0). Override with AWS_REGION if you deploy elsewhere.
+deploy_region := env_var_or_default("AWS_REGION", "us-east-1")
+
 # One-time account setup: record the deploy decisions under /vegify/deploy/. Everything else derives
 # (zone lookup, cert, cross-stack wiring, generated origin-verify secret). Needs an AWS login
-# (`aws sts get-caller-identity` works) in the deploy region. Args are positional:
+# (`aws sts get-caller-identity` works). Args are positional:
 #   just init vegify.app,www.vegify.app        # domains (first is primary); signups default closed
 init domains signups="0":
-    aws ssm put-parameter --name /vegify/deploy/domain-names --type String --overwrite --value "{{domains}}"
-    aws ssm put-parameter --name /vegify/deploy/signups-open --type String --overwrite --value "{{signups}}"
-    @echo "Recorded. Optional extras: just config-set email-from 'You <hello@your.domain>' | email-domain | mail-from-domain | cert-arn | apple-secret-id"
+    aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/domain-names --type String --overwrite --value "{{domains}}"
+    aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/signups-open --type String --overwrite --value "{{signups}}"
+    @echo "Recorded in {{deploy_region}}. Optional extras: just config-set email-from 'You <hello@your.domain>' | email-domain | mail-from-domain | cert-arn | apple-secret-id"
     @echo "Next: cdk bootstrap (once), then cdk deploy VegifyVpc VegifyServer && cdk deploy VegifyWebStart VegifyClientLogs"
 
 # Show the recorded deploy decisions.
 config:
-    aws ssm get-parameters-by-path --path /vegify/deploy/ --query 'Parameters[].{key:Name,value:Value}' --output table
+    aws ssm get-parameters-by-path --region {{deploy_region}} --path /vegify/deploy/ --query 'Parameters[].{key:Name,value:Value}' --output table
 
 # Set one deploy decision, e.g. `just config-set signups-open 1` (takes effect on the next release).
 config-set key value:
-    aws ssm put-parameter --name /vegify/deploy/{{key}} --type String --overwrite --value "{{value}}"
+    aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/{{key}} --type String --overwrite --value "{{value}}"
