@@ -38,17 +38,27 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Mint a short-lived installation token for the release bot App. App-authored pushes and
+      # merges trigger follow-on workflows — which GITHUB_TOKEN-authored ones deliberately don't —
+      # and unlike the PAT this replaces, the token expires hourly and only carries this repo's
+      # grants.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v7
         with:
-          # PAT so the Cargo.lock-sync commit below is pushed as a real user, not github-actions[bot]:
-          # a bot-pushed PR HEAD makes GitHub gate the release PR's CI behind a manual approval.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # The App token so the Cargo.lock-sync commit below is pushed as the bot App (an actor
+          # whose pushes still trigger the PR's CI, unlike github-actions[bot]).
+          token: ${{ steps.app-token.outputs.token }}
       - uses: googleapis/release-please-action@v5
         id: release
         with:
-          # A PAT (not GITHUB_TOKEN) so the auto-merge below — and the release it cuts — can trigger the
-          # follow-on deploy run; GITHUB_TOKEN-authored pushes deliberately don't trigger workflows.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # The App token (not GITHUB_TOKEN) so the auto-merge below — and the release it cuts — can
+          # trigger the follow-on deploy run; GITHUB_TOKEN-authored pushes deliberately don't trigger
+          # workflows.
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       # release-type "simple" bumps the crate Cargo.tomls but leaves their entries in the root
@@ -57,7 +67,7 @@ jobs:
       - name: Sync Cargo.lock to the release version
         if: ${{ steps.release.outputs.pr }}
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
           set -euo pipefail
@@ -68,10 +78,10 @@ jobs:
           VER="$version" perl -0pi -e 's/(name = "vegify-server"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
           VER="$version" perl -0pi -e 's/(name = "vegify"\nversion = ")[^"]*/$1$ENV{VER}/' Cargo.lock
           if git diff --quiet -- Cargo.lock; then echo "Cargo.lock already in sync at $version"; exit 0; fi
-          # Author as the PAT user (not github-actions[bot]) — gh reads GH_TOKEN (the PAT) above. With
-          # the PAT checkout, the push below is the PAT user's too, so the PR's CI runs without approval.
-          login=$(gh api user --jq '.login')
-          uid=$(gh api user --jq '.id')
+          # Author as the bot App's user (not github-actions[bot]) — with the App-token checkout, the
+          # push below is the App's too, so the PR's CI runs without approval.
+          login="${{ steps.app-token.outputs.app-slug }}[bot]"
+          uid=$(gh api "users/${login}" --jq '.id')
           git config user.name "$login"
           git config user.email "${uid}+${login}@users.noreply.github.com"
           git add Cargo.lock
@@ -79,7 +89,7 @@ jobs:
           git push origin "HEAD:$PR_BRANCH"
 
       # Fully automatic (decision 2026-06-26): merge the release PR as soon as it's prepared. The merge
-      # is PAT-authored so it triggers the NEXT release run, which detects the merge, cuts the tag +
+      # is App-authored so it triggers the NEXT release run, which detects the merge, cuts the tag +
       # Release, and runs the ordered deploy — whose build+test gate still protects prod. No human gate
       # on the version/CHANGELOG PR itself; conventional commits on main are the only input.
       #
@@ -94,7 +104,7 @@ jobs:
       # template error on the empty value.
       - name: Auto-merge the release PR
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
@@ -117,8 +127,9 @@ jobs:
           # An immediate `gh pr merge --squash` would ship a RED build (it once merged a release PR while
           # its ci was still running). Wait for the PR head's check-runs to finish and require they ALL
           # pass. Read them with the default Actions token (READ_TOKEN + `checks: read`) over REST — the
-          # PAT (GH_TOKEN) can merge but reads NO checks here, which silently stranded an earlier gate.
-          # Merge with the PAT once green so the merge still triggers the deploy run.
+          # App token (GH_TOKEN) can merge but may read no checks here, which silently stranded an
+          # earlier gate when a PAT held this seat. Merge with the App token once green so the merge
+          # still triggers the deploy run.
           for i in $(seq 1 40); do
             sha=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha 2>/dev/null) || sha=""
             if [ -z "$sha" ]; then echo "could not read #$PR_NUMBER head ($i); waiting 15s…"; sleep 15; continue; fi
