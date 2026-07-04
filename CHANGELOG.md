@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/vegify/vegify.app/compare/v0.17.6...v0.18.0) (2026-07-04)
+
+
+### Features
+
+* **infra:** the account is the config store - SSM decisions, just init, CI shrunk to two secrets ([#68](https://github.com/vegify/vegify.app/issues/68)) ([9274488](https://github.com/vegify/vegify.app/commit/92744885067088e9b779e2bf4ac917eefa443e60))
+
 ## [0.17.6](https://github.com/vegify/vegify.app/compare/v0.17.5...v0.17.6) (2026-07-04)
 
 
