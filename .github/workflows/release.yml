@@ -385,6 +385,9 @@ jobs:
       - name: Deploy the server
         env:
           ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+          # The server's systemd env (VEGIFY_PUBLIC_URL, the derived From address) and its SES grant
+          # derive from the domain list — the server refuses email sends if these are missing.
+          VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
         run: |
           # Absolute path: `pnpm --filter … exec` runs cdk with CWD=infra/, so a bare cdk-out.json
           # would land in infra/ where the next step (CWD=repo root) can't find it.

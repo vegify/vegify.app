@@ -7,13 +7,12 @@
 // Server-only: `getCookie` is server-only, so importing this module pins it to the server bundle —
 // never import a VALUE from here into a client component (types are fine; they erase).
 
+import { apiUrl } from '@vegify/config'
+
 export const SESSION_COOKIE = 'vegify_session'
 
-/** The standing backend's base URL. Defaults to the deployed VegifyServer CloudFront; override with
- *  VEGIFY_API_URL (dev → a local `cargo run -p vegify-server`, e.g. http://localhost:8787). */
-export function apiUrl(): string {
-  return process.env.VEGIFY_API_URL ?? 'http://localhost:8787'
-}
+/** The standing backend's base URL (VEGIFY_API_URL; dev default = a local vegify-server). */
+export { apiUrl }
 
 /** The current request's opaque session token (from the httpOnly cookie), or null. Server-only — the
  *  dynamic import keeps @tanstack/react-start/server out of the client module graph (api.ts is reachable

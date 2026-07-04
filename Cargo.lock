@@ -5540,7 +5540,6 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 name = "vegify"
 version = "0.17.3"
 dependencies = [
- "dirs",
  "futures-util",
  "keyring",
  "rusqlite",
@@ -5557,7 +5556,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "vegify-config",
  "vegify-core",
+]
+
+[[package]]
+name = "vegify-config"
+version = "0.1.0"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]
@@ -5591,6 +5598,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "vegify-config",
  "vegify-core",
 ]
 

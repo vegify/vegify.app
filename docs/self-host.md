@@ -89,8 +89,8 @@ Pushing conventional commits drives release-please, which cuts a release and run
 
 - `AWS_DEPLOY_ROLE_ARN` — the `VegifyCi` role ARN (from its stack output).
 - `VEGIFY_API_URL`, `VEGIFY_DOMAIN_NAMES`, `VEGIFY_HOSTED_ZONE_ID`, `VEGIFY_CERT_ARN`, `VEGIFY_INGEST_ORIGIN` — the same deploy values as your `.env`.
-- `ORIGIN_VERIFY_SECRET` — your origin-verify secret (if you turned hardening on).
-- `RELEASE_PLEASE_TOKEN` — a PAT for release-please to open/label its release PRs.
+- `ORIGIN_VERIFY_SECRET` — your origin-verify secret. Required for a working deploy: the web SSR + log-ingest Lambdas fail closed (503) when deployed without it.
+- `RELEASE_APP_PRIVATE_KEY` (secret) + `RELEASE_APP_CLIENT_ID` (repository **variable**) — a GitHub App that lets release-please open/label its release PRs and lets the merge trigger the deploy cascade. Create a minimal App (Contents + Pull requests read/write), install it on the repo, and store its client id + private key.
 - Desktop signing/notarization (only if you publish the desktop app): `AWS_RELEASE_SIGNING_ROLE_ARN`, `APPLE_SIGNING_SECRET_ID`, `VEGIFY_APPLE_TEAM_ID`, `VEGIFY_PROVISION_PROFILE_B64`.
 
 ## What's vegify-specific (and safe to ignore)

@@ -5,6 +5,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/vegify-config",
   "crates/vegify-core",
   "crates/vegify-server",
   "apps/desktop/src-tauri",

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { App } from "aws-cdk-lib";
+import { deployConfig } from "@vegify/config/deploy";
 import { VpcStack } from "../lib/vpc-stack.js";
 import { WebStartStack } from "../lib/web-start-stack.js";
 import { ServerStack } from "../lib/server-stack.js";
@@ -15,19 +16,18 @@ import { EmailStack } from "../lib/email-stack.js";
 // standing cost) is kept ready in lib/web-start-fargate-stack.ts for when revenue justifies it.
 
 const app = new App();
-const env = {
-  account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION ?? "us-east-1",
-};
+// Every deployment-specific identifier, resolved ONCE (env in CI from repository secrets; inert
+// placeholders otherwise) and handed to the stacks as typed props — no stack reads process.env.
+// See @vegify/config/deploy for each value + .env.example for the human-facing docs.
+const cfg = deployConfig();
+const env = { account: cfg.account, region: cfg.region };
 
 // Origin-verify secret (defense-in-depth, replaces the reverted OAC): CloudFront injects it as a custom
 // header on the Function URL origins and the Lambdas reject any request lacking it — restricting the URLs
 // to CloudFront-only WITHOUT OAC (OAC can't sign POST bodies to a Lambda URL → InvalidSignatureException,
-// which is why the OAC attempt was reverted). Both stacks read the SAME value here, so the one synth
-// process bakes an identical literal into each — no cross-stack reference, no cycle. Empty = hardening
-// OFF (fail-open: never breaks the app). In CI it's the ORIGIN_VERIFY_SECRET GitHub Actions secret;
-// locally it's usually unset (the built bundle still serves standalone).
-const originSecret = process.env.ORIGIN_VERIFY_SECRET ?? "";
+// which is why the OAC attempt was reverted). Both stacks receive the SAME value from the one deployConfig
+// read, so a single synth bakes an identical literal into each — no cross-stack reference, no cycle.
+// Empty = no header injected at synth; the deployed web Lambda fails closed without it (#59).
 
 // One VPC, no NAT (cost). The standing Axum backend (VegifyServer) uses its public subnet; the web
 // Lambda runs OUTSIDE the VPC (it just needs internet egress to call that backend's public CloudFront).
@@ -35,11 +35,26 @@ const net = new VpcStack(app, "VegifyVpc", { env });
 
 // web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
 // backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle).
-new WebStartStack(app, "VegifyWebStart", { env, originSecret });
+new WebStartStack(app, "VegifyWebStart", {
+  env,
+  originSecret: cfg.originSecret,
+  apiUrl: cfg.apiUrl,
+  ingestOrigin: cfg.ingestOrigin,
+  domainNames: cfg.domainNames,
+  hostedZoneId: cfg.hostedZoneId,
+  certificateArn: cfg.certificateArn,
+});
 
 // The standing Axum backend (P2): a t4g.nano running vegify-server over SQLite-WAL + Litestream→S3,
 // fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
-new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
+// publicUrl/emailFrom land in the instance's systemd env — the server refuses email sends without them.
+new ServerStack(app, "VegifyServer", {
+  env,
+  vpc: net.vpc,
+  publicUrl: cfg.publicUrl,
+  emailFrom: cfg.emailFrom,
+  emailDomain: cfg.emailDomain,
+});
 
 // (Retired 2026-06-25) The old VegifySync stack — an S3 changeset-blob store for the desktop's former
 // S3-mesh sync — is gone: the desktop now syncs through the standing Axum backend (content pull/push),
@@ -49,12 +64,12 @@ new ServerStack(app, "VegifyServer", { env, vpc: net.vpc });
 // Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
 // client-side logs to a CloudWatch group (/vegify/web-client). Standalone (doesn't touch web-start);
 // wire the IngestUrl output into the web build as VITE_CLIENT_LOG_URL. See lib/client-logs-stack.ts.
-new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret });
+new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret: cfg.originSecret });
 
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it. The
 // repo for the OIDC trust comes from GITHUB_REPOSITORY (auto-set in Actions; falls back to vegify's only
 // for local hand-deploys), so a fork's CI works without editing this file.
-new CiStack(app, "VegifyCi", { env, githubRepo: process.env.GITHUB_REPOSITORY ?? "vegify/vegify.app" });
+new CiStack(app, "VegifyCi", { env, githubRepo: cfg.githubRepo, appleSecretId: cfg.appleSecretId });
 
 // DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's
 // Terraform so the domain is owned in this repo. Standing stack — deploy on demand, NOT in the cascade.
@@ -64,4 +79,10 @@ new DnsStack(app, "VegifyDns", { env });
 // through its zone. Generic + parameterized for self-host; deploy on demand (`cdk deploy VegifyEmail`),
 // NOT in the cascade. vegify.app's own identity is still in Terraform — see docs/self-host.md for the
 // gated cutover.
-new EmailStack(app, "VegifyEmail", { env });
+new EmailStack(app, "VegifyEmail", {
+  env,
+  domain: cfg.emailDomain,
+  hostedZoneId: cfg.hostedZoneId,
+  mailFromDomain: cfg.mailFromDomain,
+  manageDns: cfg.manageEmailDns,
+});

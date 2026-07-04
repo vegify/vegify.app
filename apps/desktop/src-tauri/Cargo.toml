@@ -23,6 +23,8 @@ tauri-build = { version = "2.6.2", features = [] }
 # The shared DAL (content types, mutations, nutrition CTE, visibility, viewer-scoped reads) — the
 # SAME crate the standing server consumes, so the two can never drift. No Tauri/HTTP in it.
 vegify-core = { path = "../../../crates/vegify-core" }
+# Central env-sourced settings (backend URL incl. the build-time VEGIFY_API_URL bake, on-device DB path).
+vegify-config = { path = "../../../crates/vegify-config", features = ["desktop"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.2", features = ["tray-icon", "image-png"] }
@@ -40,8 +42,6 @@ keyring = { version = "3", features = ["apple-native"] }
 # tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs
 # to the frontend (onOpenUrl/getCurrent). Runtime needs a built .app bundle — inert under `tauri dev`.
 tauri-plugin-deep-link = "2.4"
-# Resolve the per-user OS app-data dir for the on-device DB in shipped (release) builds — see db_path().
-dirs = "6"
 # Realtime push (replaces the 60s poll): a background task connects to the server's /ws and emits a Tauri
 # event on each content change so the frontend pulls immediately. Separate from the sync ureq path above —
 # tokio-tungstenite over rustls (webpki roots, no system OpenSSL) on its own current-thread runtime.

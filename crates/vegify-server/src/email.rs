@@ -1,23 +1,26 @@
 //! Transactional email via Amazon SES v2 — password-reset links (A5). The client is built lazily on
 //! first send from the default AWS credential chain (the EC2 instance role in prod; env/SSO locally), in
-//! VEGIFY_SES_REGION (default us-east-1, where the vegify.app identity is verified), so the server boots
-//! with no email config and costs nothing until a reset is actually requested.
-
-use std::env;
+//! vegify_config::server::ses_region(), so the server boots with no email config and costs nothing until
+//! a reset is actually requested.
+//!
+//! FAIL CLOSED on missing link-base/From config: VEGIFY_PUBLIC_URL and VEGIFY_EMAIL_FROM have NO
+//! fallback — a default domain here would silently mail reset/verify links that point at someone
+//! else's site (exactly what a misconfigured self-host would do). A send with either unset is refused
+//! and logged; deploys set both explicitly (the CDK writes them into the systemd unit).
 
 use aws_config::Region;
 use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message};
 use aws_sdk_sesv2::Client;
 use tokio::sync::OnceCell;
+use vegify_config::server as config;
 
 static CLIENT: OnceCell<Client> = OnceCell::const_new();
 
 async fn client() -> &'static Client {
     CLIENT
         .get_or_init(|| async {
-            let region = env::var("VEGIFY_SES_REGION").unwrap_or_else(|_| "us-east-1".to_string());
             let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(Region::new(region))
+                .region(Region::new(config::ses_region()))
                 .load()
                 .await;
             Client::new(&cfg)
@@ -25,25 +28,22 @@ async fn client() -> &'static Client {
         .await
 }
 
-fn from_address() -> String {
-    env::var("VEGIFY_EMAIL_FROM").unwrap_or_else(|_| "Vegify <hello@vegify.app>".to_string())
+fn reset_link(token: &str) -> Option<String> {
+    config::public_url().map(|base| format!("{base}/reset?token={token}"))
 }
 
-fn reset_link(token: &str) -> String {
-    let base = env::var("VEGIFY_PUBLIC_URL").unwrap_or_else(|_| "https://vegify.app".to_string());
-    format!("{}/reset?token={}", base.trim_end_matches('/'), token)
-}
-
-fn verify_link(token: &str) -> String {
-    let base = env::var("VEGIFY_PUBLIC_URL").unwrap_or_else(|_| "https://vegify.app".to_string());
-    format!("{}/verify?token={}", base.trim_end_matches('/'), token)
+fn verify_link(token: &str) -> Option<String> {
+    config::public_url().map(|base| format!("{base}/verify?token={token}"))
 }
 
 /// Send the password-reset email. Best-effort by design: a failure is logged but NOT propagated, because
 /// the request endpoint always returns 200 to avoid revealing whether an email is registered. Runs on
 /// the async side, outside the blocking DB closure.
 pub async fn send_password_reset(to: &str, name: &str, token: &str) {
-    let link = reset_link(token);
+    let Some(link) = reset_link(token) else {
+        tracing::error!("VEGIFY_PUBLIC_URL is not set; refusing to send a password-reset email (links would point at the wrong site)");
+        return;
+    };
     let text = format!(
         "Hi {name},\n\nSomeone asked to reset your Vegify password. Open this link within one hour \
          to choose a new one:\n\n{link}\n\nIf you didn't request this, ignore this email; your \
@@ -69,7 +69,10 @@ pub async fn send_password_reset(to: &str, name: &str, token: &str) {
 /// the reset send: a failure is logged but never propagated, so the request endpoint can always 200
 /// without revealing whether an email is registered.
 pub async fn send_email_verification(to: &str, name: &str, token: &str) {
-    let link = verify_link(token);
+    let Some(link) = verify_link(token) else {
+        tracing::error!("VEGIFY_PUBLIC_URL is not set; refusing to send an email-verification email (links would point at the wrong site)");
+        return;
+    };
     let text = format!(
         "Hi {name},\n\nWelcome to Vegify! One click to confirm your email, and you're set:\n\n{link}\n\n\
          Then go see exactly what your plants are feeding you. (The link works for 24 hours.)\n\n\
@@ -98,6 +101,8 @@ async fn try_send(
     text: &str,
     html: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let from = config::email_from()
+        .ok_or("VEGIFY_EMAIL_FROM is not set; refusing to send email as an unconfigured sender")?;
     let body = Body::builder()
         .text(Content::builder().data(text).charset("UTF-8").build()?)
         .html(Content::builder().data(html).charset("UTF-8").build()?)
@@ -109,7 +114,7 @@ async fn try_send(
     client()
         .await
         .send_email()
-        .from_email_address(from_address())
+        .from_email_address(from)
         .destination(Destination::builder().to_addresses(to).build())
         .content(EmailContent::builder().simple(message).build())
         .send()
@@ -122,8 +127,10 @@ mod live_tests {
     use super::*;
 
     // A REAL SES send — proves the production send path end to end. Ignored by default (needs AWS creds
-    // + sends a real email). The recipient comes from the environment so no address is committed:
-    //   VEGIFY_TEST_EMAIL=you@example.com cargo test -p vegify-server send_live -- --ignored --nocapture
+    // + sends a real email). The recipient AND sender come from the environment so no address is
+    // committed (try_send fails closed without a configured From):
+    //   VEGIFY_TEST_EMAIL=you@example.com VEGIFY_EMAIL_FROM='You <hello@your.domain>' \
+    //     cargo test -p vegify-server send_live -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn send_live() {

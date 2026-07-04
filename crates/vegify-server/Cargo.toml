@@ -7,6 +7,8 @@ description = "Vegify standing backend — Axum over SQLite-WAL, serving the SAM
 [dependencies]
 # The shared DAL — the same content model + viewer-scoped reads the desktop uses.
 vegify-core = { path = "../vegify-core" }
+# Central env-sourced settings (db path, port, signups gate, SES region, email link base/From).
+vegify-config = { path = "../vegify-config", features = ["server"] }
 axum = { version = "0.8", features = ["ws"] }
 # `sync` = the broadcast channel that fans content-change signals to /ws clients; `time` = the keepalive ping interval.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }

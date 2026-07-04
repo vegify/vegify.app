@@ -1,0 +1,14 @@
+[package]
+name = "vegify-config"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Vegify runtime configuration — the single home for every environment-sourced setting the Rust binaries read (the @vegify/config analogue for the Rust side). Feature-gated per binary: `server` (vegify-server) and `desktop` (the Tauri app)."
+
+[features]
+server = []
+desktop = ["dep:dirs"]
+
+[dependencies]
+# Resolve the per-user OS app-data dir for the desktop's on-device DB in shipped builds.
+dirs = { version = "6", optional = true }
