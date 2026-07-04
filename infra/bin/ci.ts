@@ -13,7 +13,10 @@ import { deployConfig } from "@vegify/config/deploy";
 import { CiStack } from "../lib/ci-stack.js";
 
 const app = new App();
-const cfg = await deployConfig();
+// Bootstrap context — env + placeholders ONLY, no SSM: this app deploys the very role policy that
+// permits reading /vegify/deploy/*, so it must synth without that permission (deploy-ci.yml passes
+// APPLE_SIGNING_SECRET_ID from a repository variable instead). See DeployConfigOptions.ssm.
+const cfg = await deployConfig({ ssm: false });
 
 new CiStack(app, "VegifyCi", {
   env: { account: cfg.account, region: cfg.region },
