@@ -33,22 +33,10 @@ const env = { account: cfg.account, region: cfg.region };
 // Lambda runs OUTSIDE the VPC (it just needs internet egress to call that backend's public CloudFront).
 const net = new VpcStack(app, "VegifyVpc", { env });
 
-// web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
-// backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle).
-new WebStartStack(app, "VegifyWebStart", {
-  env,
-  originSecret: cfg.originSecret,
-  apiUrl: cfg.apiUrl,
-  ingestOrigin: cfg.ingestOrigin,
-  domainNames: cfg.domainNames,
-  hostedZoneId: cfg.hostedZoneId,
-  certificateArn: cfg.certificateArn,
-});
-
 // The standing Axum backend (P2): a t4g.nano running vegify-server over SQLite-WAL + Litestream→S3,
 // fronted by its own CloudFront. Reuses the VPC's public subnet. Dissolves the web's 429 ceiling.
 // publicUrl/emailFrom land in the instance's systemd env — the server refuses email sends without them.
-new ServerStack(app, "VegifyServer", {
+const server = new ServerStack(app, "VegifyServer", {
   env,
   vpc: net.vpc,
   publicUrl: cfg.publicUrl,
@@ -62,9 +50,25 @@ new ServerStack(app, "VegifyServer", {
 // down out-of-band; the changeset bucket was RETAIN, so it's deleted separately if/when wanted.
 
 // Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
-// client-side logs to a CloudWatch group (/vegify/web-client). Standalone (doesn't touch web-start);
-// wire the IngestUrl output into the web build as VITE_CLIENT_LOG_URL. See lib/client-logs-stack.ts.
-new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret: cfg.originSecret });
+// client-side logs to a CloudWatch group (/vegify/web-client). Its Function URL feeds the web stack's
+// /__ingest origin cross-stack; the browser beacons the same-origin /__ingest path. See the stack file.
+const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret: cfg.originSecret });
+
+// web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
+// backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle). Its backend
+// origin + ingest origin are wired CROSS-STACK from the server/log stacks (VEGIFY_API_URL only
+// overrides); the zone is looked up from the domain and the cert created in-stack unless overridden —
+// the release cascade deploys the server (creating the exports) before publishing the web.
+new WebStartStack(app, "VegifyWebStart", {
+  env,
+  originSecret: cfg.originSecret,
+  apiUrl: cfg.apiUrlOverride ?? server.apiUrl,
+  ingestUrl: clientLogs.ingestUrl,
+  domainNames: cfg.domainNames,
+  domainsConfigured: cfg.domainsConfigured,
+  hostedZoneIdOverride: cfg.hostedZoneIdOverride,
+  certificateArnOverride: cfg.certificateArnOverride,
+});
 
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it. The
 // repo for the OIDC trust comes from GITHUB_REPOSITORY (auto-set in Actions; falls back to vegify's only
@@ -82,7 +86,8 @@ new DnsStack(app, "VegifyDns", { env });
 new EmailStack(app, "VegifyEmail", {
   env,
   domain: cfg.emailDomain,
-  hostedZoneId: cfg.hostedZoneId,
+  domainConfigured: cfg.emailConfigured,
+  hostedZoneIdOverride: cfg.hostedZoneIdOverride,
   mailFromDomain: cfg.mailFromDomain,
   manageDns: cfg.manageEmailDns,
 });

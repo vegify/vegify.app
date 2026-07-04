@@ -68,11 +68,9 @@ Production ships only through CI, AWS-only via CDK: merging release-please's PR 
 | `AWS_DEPLOY_ROLE_ARN` | OIDC role assumed to run `cdk deploy`. |
 | `AWS_RELEASE_SIGNING_ROLE_ARN` | OIDC role to read the Apple signing secret (notarized desktop). |
 | `APPLE_SIGNING_SECRET_ID` | Secrets Manager id of the Developer ID cert + ASC API key. |
-| `VEGIFY_API_URL` | Public origin of the deployed backend. |
-| `VEGIFY_INGEST_ORIGIN` | Function URL host of the browser-log ingestion Lambda. |
-| `VEGIFY_DOMAIN_NAMES` | Comma-separated custom domains (apex,www). |
-| `VEGIFY_HOSTED_ZONE_ID` | Route 53 hosted zone id for those domains. |
-| `VEGIFY_CERT_ARN` | us-east-1 ACM certificate ARN covering the domains. |
+| `VEGIFY_DOMAIN_NAMES` | Comma-separated custom domains (apex,www). The hosted zone is looked up from the first domain; the backend + ingest origins are wired cross-stack. |
+| `VEGIFY_API_URL` | Backend origin baked into desktop builds (the web derives it from the server stack). |
+| `VEGIFY_CERT_ARN` | Optional bring-your-own us-east-1 ACM cert; unset, the web stack creates a DNS-validated one. |
 | `ORIGIN_VERIFY_SECRET` | Shared header that restricts the Lambda Function URLs to CloudFront. |
 
 CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `VegifyCi`. Without the secrets, `cdk synth` still succeeds against inert placeholders.
