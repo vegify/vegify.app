@@ -72,3 +72,15 @@ config:
 # Set one deploy decision, e.g. `just config-set signups-open 1` (takes effect on the next release).
 config-set key value:
     aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/{{key}} --type String --overwrite --value "{{value}}"
+
+# ── Releases (stormdeck model: merging to main ships + auto-cuts a PATCH release) ─────────────────
+# Bigger bumps are the human lever: dispatch the deploy workflow with a minor/major bump from main
+# HEAD. Patch releases need no command — every shipping merge cuts one ([skip release] in the PR
+# title suppresses it).
+release level="minor":
+    gh workflow run deploy.yml -f bump={{level}}
+    @echo "dispatched — follow with: gh run list --workflow deploy.yml (verify conclusion via gh run view <id>, not gh run watch)"
+
+# Re-run the deploy for an existing tag (the recovery path), e.g. `just redeploy v0.18.2`.
+redeploy tag:
+    gh workflow run deploy.yml -f tag={{tag}}

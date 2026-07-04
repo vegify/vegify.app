@@ -69,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          out() { echo "ref=$1" >> "$GITHUB_OUTPUT"; echo "version=${2#v}" >> "$GITHUB_OUTPUT"; echo "released=$3" >> "$GITHUB_OUTPUT"; echo "→ ref=$1 version=${2#v} released=$3"; }
+          out() { { echo "ref=$1"; echo "version=${2#v}"; echo "released=$3"; } >> "$GITHUB_OUTPUT"; echo "→ ref=$1 version=${2#v} released=$3"; }
 
           # Recovery path: (re)deploy an existing tag — no new release is cut.
           if [ -n "${{ github.event.inputs.tag }}" ]; then
@@ -102,7 +102,12 @@ jobs:
 
           # The normal path: cut the next version (patch per shipping merge; dispatch may bump higher),
           # tag with GITHUB_TOKEN (triggers nothing), and create the Release with generated notes
-          # (grouped by PR label via .github/release.yml; PR titles are the changelog).
+          # (grouped by PR label via .github/release.yml; PR titles are the changelog). Fresh versions
+          # are only ever cut from main — a dispatch pointed at another ref must not tag it.
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::refusing to cut a release from '$GITHUB_REF_NAME' — fresh versions come from main (redeploys use the tag input)"
+            exit 1
+          fi
           next=$(scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
           echo "cutting $next"
           git tag -a "$next" -m "$next" HEAD
