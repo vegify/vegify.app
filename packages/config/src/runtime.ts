@@ -2,7 +2,8 @@
 // web shell and db tooling read while RUNNING. (Deploy-time synth settings live in ./deploy.ts; the
 // Rust binaries' twin is crates/vegify-config.) Accessors, not constants: each call reads the live
 // process env, so nothing is captured at import time and a bundler can't inline a build machine's
-// values. Every knob is documented in .env.example.
+// values. These modules ARE the config documentation — every knob, default, and override lives here
+// (plus docs/self-host.md for the deploy story). There is no .env file anywhere, by design.
 //
 // The two Lambda entry files (apps/web/aws/lambda-handler.mjs, infra/lambda/client-logs/index.mjs)
 // deliberately do NOT import this module: they ship as standalone assets with no node_modules, so

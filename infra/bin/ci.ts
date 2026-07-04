@@ -13,7 +13,7 @@ import { deployConfig } from "@vegify/config/deploy";
 import { CiStack } from "../lib/ci-stack.js";
 
 const app = new App();
-const cfg = deployConfig();
+const cfg = await deployConfig();
 
 new CiStack(app, "VegifyCi", {
   env: { account: cfg.account, region: cfg.region },

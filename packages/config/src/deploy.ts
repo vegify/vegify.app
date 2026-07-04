@@ -1,17 +1,45 @@
 // Deploy-time (CDK synth) configuration — every deployment-specific identifier the infra consumes,
-// resolved in ONE place and passed to the stacks as typed props (no stack reads process.env). Values
-// come from the environment: CI injects them from repository secrets; locally your shell (or nothing).
-// The fallbacks are inert placeholders so a fresh clone `cdk synth`s with zero setup and the
-// open-source tree carries no account-specific value. See .env.example + docs/self-host.md.
+// resolved in ONE place and passed to the stacks as typed props (no stack reads process.env).
+//
+// Resolution order, per value: environment variable (explicit override / CI escape hatch) → SSM
+// Parameter Store decision (/vegify/deploy/*, written once by `just init` — the account itself is
+// the config store) → derivation/placeholder. The placeholders keep a fresh clone `cdk synth`ing
+// with zero setup and no credentials: the SSM read fails soft (no creds / no params → {}), and the
+// open-source tree carries no account-specific value.
 //
 // Derivations beat inputs: everything computable from the domain list (public URL, email domain,
-// MAIL FROM, the From address) is derived here rather than asked for, and everything knowable from
-// the CDK app itself (the backend origin, the ingest Function URL, the hosted zone, the certificate)
-// is wired cross-stack / looked up / created in infra — the env vars for those are OVERRIDES now,
-// not required inputs.
+// MAIL FROM, the From address) is derived rather than asked for, and everything knowable from the
+// CDK app itself (backend origin, ingest URL, hosted zone, certificate, origin-verify secret) is
+// wired cross-stack / looked up / created in infra.
+
+import { GetParametersByPathCommand, SSMClient } from '@aws-sdk/client-ssm'
+
+/** Parameter Store home of the deploy decisions (`just init` / `just config-set` write here). */
+export const DEPLOY_PARAM_PATH = '/vegify/deploy/'
 
 /** Zone id used on the unconfigured placeholder path (fresh-clone synth never touches AWS). */
 export const PLACEHOLDER_ZONE_ID = 'ZEXAMPLE00000000'
+
+async function ssmDecisions(region: string): Promise<Record<string, string>> {
+  try {
+    const ssm = new SSMClient({ region })
+    const out: Record<string, string> = {}
+    let token: string | undefined
+    do {
+      const page = await ssm.send(
+        new GetParametersByPathCommand({ Path: DEPLOY_PARAM_PATH, WithDecryption: true, NextToken: token }),
+      )
+      for (const p of page.Parameters ?? []) {
+        if (p.Name && p.Value !== undefined) out[p.Name.slice(DEPLOY_PARAM_PATH.length)] = p.Value
+      }
+      token = page.NextToken
+    } while (token)
+    return out
+  } catch {
+    // No credentials, no permission, or no parameters — the fresh-clone / zero-config path.
+    return {}
+  }
+}
 
 export interface DeployConfig {
   /** CDK env — from the ambient credentials (CDK_DEFAULT_ACCOUNT/REGION). */
@@ -25,60 +53,72 @@ export interface DeployConfig {
    *  through here — it is generated and resolved entirely in-account (see client-logs-stack.ts). */
   originSecretRotationNonce: string
   /** OVERRIDE for the backend origin the web SSR calls. Default (unset) = the VegifyServer stack's own
-   *  CloudFront URL, wired cross-stack in bin/vegify.ts. (Desktop CI builds still bake VEGIFY_API_URL
-   *  directly at cargo-build time — that consumer doesn't flow through here.) */
+   *  CloudFront URL, wired cross-stack in bin/vegify.ts. (Desktop CI builds bake VEGIFY_API_URL at
+   *  cargo-build time, resolved from the /vegify/deploy/api-url parameter the server stack writes.) */
   apiUrlOverride: string | undefined
-  /** The web shell's domains (first is primary — it drives every derivation below). */
+  /** The web shell's domains (first is primary — it drives every derivation below).
+   *  Env VEGIFY_DOMAIN_NAMES → SSM domain-names → placeholder. */
   domainNames: string[]
-  /** True when VEGIFY_DOMAIN_NAMES was actually set: real domains may be zone-LOOKED-UP against live
-   *  AWS; the placeholder default must never be (fresh-clone `cdk synth` needs no credentials). */
+  /** True when the domains came from real configuration (env or SSM): real domains may be
+   *  zone-LOOKED-UP against live AWS; the placeholder default never is. */
   domainsConfigured: boolean
   /** OVERRIDE for the Route53 hosted zone id. Default (unset) = looked up by the primary domain name. */
   hostedZoneIdOverride: string | undefined
-  /** OVERRIDE: bring-your-own us-east-1 ACM cert ARN. Default (unset) = the web stack creates a
-   *  DNS-validated certificate for the domains in its own zone. */
+  /** OVERRIDE: bring-your-own us-east-1 ACM cert ARN (env VEGIFY_CERT_ARN → SSM cert-arn). Default
+   *  (unset) = the web stack creates a DNS-validated certificate for the domains in its own zone. */
   certificateArnOverride: string | undefined
   /** Canonical public origin — derived: https://<first domain>. */
   publicUrl: string
-  /** SES identity domain — VEGIFY_EMAIL_DOMAIN, else the first domain. */
+  /** Signups gate the server enforces (env VEGIFY_SIGNUPS_OPEN → SSM signups-open → closed). Lands in
+   *  the instance's systemd env; flip with `just config-set signups-open 1` + a release. */
+  signupsOpen: boolean
+  /** SES identity domain — env VEGIFY_EMAIL_DOMAIN → SSM email-domain → the first domain. */
   emailDomain: string
-  /** True when either VEGIFY_EMAIL_DOMAIN or VEGIFY_DOMAIN_NAMES was set (gates the email zone lookup,
-   *  same rule as domainsConfigured). */
+  /** True when either the email domain or the domain list was really configured (gates the email
+   *  stack's zone lookup, same rule as domainsConfigured). */
   emailConfigured: boolean
-  /** From: header for transactional mail — VEGIFY_EMAIL_FROM, else derived from the email domain. */
+  /** From: header for transactional mail — env VEGIFY_EMAIL_FROM → SSM email-from → derived. */
   emailFrom: string
-  /** Custom MAIL FROM subdomain — VEGIFY_MAIL_FROM_DOMAIN, else mail.<email domain>. */
+  /** Custom MAIL FROM subdomain — env VEGIFY_MAIL_FROM_DOMAIN → SSM mail-from-domain → mail.<domain>. */
   mailFromDomain: string
   /** VEGIFY_EMAIL_MANAGE_DNS: "0" = identity-only (DNS managed elsewhere); default managed. */
   manageEmailDns: boolean
-  /** Secrets Manager id of the shared Apple signing secret (desktop notarization). */
+  /** Secrets Manager id of the shared Apple signing secret (desktop notarization) —
+   *  env APPLE_SIGNING_SECRET_ID → SSM apple-secret-id → placeholder. */
   appleSecretId: string
 }
 
-export function deployConfig(): DeployConfig {
-  const rawDomains = (process.env.VEGIFY_DOMAIN_NAMES ?? '')
+export async function deployConfig(): Promise<DeployConfig> {
+  const region = process.env.CDK_DEFAULT_REGION ?? 'us-east-1'
+  const ssm = await ssmDecisions(region)
+  /** env override → SSM decision → undefined. Empty strings count as unset. */
+  const pick = (envKey: string, ssmKey: string): string | undefined =>
+    process.env[envKey] || ssm[ssmKey] || undefined
+
+  const rawDomains = (pick('VEGIFY_DOMAIN_NAMES', 'domain-names') ?? '')
     .split(',')
     .map((d) => d.trim())
     .filter(Boolean)
   const domainsConfigured = rawDomains.length > 0
   const domainNames = domainsConfigured ? rawDomains : ['example.com', 'www.example.com']
-  const emailDomain = process.env.VEGIFY_EMAIL_DOMAIN ?? domainNames[0]
+  const emailDomain = pick('VEGIFY_EMAIL_DOMAIN', 'email-domain') ?? domainNames[0]
   return {
     account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
+    region,
     githubRepo: process.env.GITHUB_REPOSITORY ?? 'vegify/vegify.app',
     originSecretRotationNonce: process.env.ORIGIN_VERIFY_ROTATE ?? '0',
     apiUrlOverride: process.env.VEGIFY_API_URL || undefined,
     domainNames,
     domainsConfigured,
     hostedZoneIdOverride: process.env.VEGIFY_HOSTED_ZONE_ID || undefined,
-    certificateArnOverride: process.env.VEGIFY_CERT_ARN || undefined,
+    certificateArnOverride: pick('VEGIFY_CERT_ARN', 'cert-arn'),
     publicUrl: `https://${domainNames[0]}`,
+    signupsOpen: (pick('VEGIFY_SIGNUPS_OPEN', 'signups-open') ?? '0') === '1',
     emailDomain,
-    emailConfigured: Boolean(process.env.VEGIFY_EMAIL_DOMAIN) || domainsConfigured,
-    emailFrom: process.env.VEGIFY_EMAIL_FROM ?? `Vegify <hello@${emailDomain}>`,
-    mailFromDomain: process.env.VEGIFY_MAIL_FROM_DOMAIN ?? `mail.${emailDomain}`,
+    emailConfigured: Boolean(pick('VEGIFY_EMAIL_DOMAIN', 'email-domain')) || domainsConfigured,
+    emailFrom: pick('VEGIFY_EMAIL_FROM', 'email-from') ?? `Vegify <hello@${emailDomain}>`,
+    mailFromDomain: pick('VEGIFY_MAIL_FROM_DOMAIN', 'mail-from-domain') ?? `mail.${emailDomain}`,
     manageEmailDns: (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? '1') !== '0',
-    appleSecretId: process.env.APPLE_SIGNING_SECRET_ID ?? 'your-org/apple-signing',
+    appleSecretId: pick('APPLE_SIGNING_SECRET_ID', 'apple-secret-id') ?? 'your-org/apple-signing',
   }
 }

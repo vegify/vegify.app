@@ -1,7 +1,9 @@
 //! vegify-config — the single home for every environment-sourced setting the Rust binaries read.
 //! Each accessor reads the process environment on every call (no caching), matching the inline
 //! `env::var` reads it replaced; the value of this crate is that every knob is defined, defaulted,
-//! and documented exactly once. The JS twin is packages/config; every knob is listed in .env.example.
+//! and documented exactly once. The JS twin is packages/config. These modules ARE the config
+//! documentation — there is no .env file anywhere, by design; deployed values are injected by the
+//! CDK (systemd/Lambda env) from the account's own SSM decisions.
 //!
 //! Defaults are DEV conventions only. Anything whose wrong value would silently point a deployment
 //! at someone else's site (the public URL, the From address) has NO default and returns `Option` —

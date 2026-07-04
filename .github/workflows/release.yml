@@ -291,7 +291,9 @@ jobs:
       - name: Build the deployable web bundle (validates against the just-built server)
         env:
           VITE_CLIENT_LOG_URL: /__ingest
-          VEGIFY_APPLE_TEAM_ID: ${{ secrets.VEGIFY_APPLE_TEAM_ID }}
+          # A repository VARIABLE, not a secret — the team id is public by construction (it is served
+          # verbatim in the AASA at /.well-known/apple-app-site-association).
+          VEGIFY_APPLE_TEAM_ID: ${{ vars.VEGIFY_APPLE_TEAM_ID }}
         run: pnpm --filter web build:aws
       - uses: actions/upload-artifact@v4
         with:
@@ -380,13 +382,13 @@ jobs:
           path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
+          # Constructed, not stored: the role name is fixed by ci-stack.ts, so the only GitHub-side
+          # fact is the account id (a repository VARIABLE — role ARNs aren't secrets).
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Deploy the server
-        env:
-          # The server's systemd env (VEGIFY_PUBLIC_URL, the derived From address) and its SES grant
-          # derive from the domain list — the server refuses email sends if these are missing.
-          VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
+        # No env: the domain list + email derivations come from the account's own SSM decisions
+        # (/vegify/deploy/*, written once by `just init`) — deployConfig reads them at synth.
         run: |
           # Absolute path: `pnpm --filter … exec` runs cdk with CWD=infra/, so a bare cdk-out.json
           # would land in infra/ where the next step (CWD=repo root) can't find it.
@@ -438,15 +440,12 @@ jobs:
           path: apps/web
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Publish the web shell
-        env:
-          # Only the domain list (+ the bring-your-own cert) remain: the backend origin + ingest origin
-          # are wired cross-stack, the hosted zone is looked up from the domain, and the origin-verify
-          # secret is generated in-account and resolved at deploy time (client-logs-stack.ts).
-          VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
-          VEGIFY_CERT_ARN: ${{ secrets.VEGIFY_CERT_ARN }}
+        # No env: the domain list, cert override, backend origin, ingest origin, hosted zone, and
+        # origin-verify secret are all either SSM decisions (/vegify/deploy/*), cross-stack wiring,
+        # lookups, or generated in-account — nothing GitHub-side remains.
         run: |
           # --exclusively: VegifyWebStart imports from VegifyServer (deployed earlier in the cascade) —
           # without it, cdk would "helpfully" redeploy the server here too, breaking the path-filter
@@ -486,14 +485,22 @@ jobs:
       - run: pnpm --filter @vegify/tokens build
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_RELEASE_SIGNING_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
+      - name: Resolve deploy parameters (backend origin, Apple secret id)
+        # Both come from the account, not GitHub: VegifyServer publishes its origin to
+        # /vegify/deploy/api-url (baked into the binary below via option_env!), and the Apple signing
+        # secret's id is the /vegify/deploy/apple-secret-id decision. The params live in the deploy
+        # region; the job's own region (us-west-1) is where the shared Apple secret lives.
+        run: |
+          set -euo pipefail
+          region="${{ vars.AWS_REGION || 'us-east-1' }}"
+          echo "VEGIFY_API_URL=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/api-url --query Parameter.Value --output text)" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_SECRET_ID=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/apple-secret-id --query Parameter.Value --output text)" >> "$GITHUB_ENV"
       - name: Load the Apple signing secret
         # Secrets Manager JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
         # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID cert
-        # + ASC API key are Apple-account-wide; the secret's id is supplied via APPLE_SIGNING_SECRET_ID.
-        env:
-          APPLE_SIGNING_SECRET_ID: ${{ secrets.APPLE_SIGNING_SECRET_ID }}
+        # + ASC API key are Apple-account-wide; the secret's id was resolved from SSM above.
         run: |
           set -euo pipefail
           s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
@@ -520,9 +527,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Baked into the binary via option_env! (apps/desktop/.../data.rs auth_base_url) so the
-          # shipped app points at the real backend without the host living in the source tree.
-          VEGIFY_API_URL: ${{ secrets.VEGIFY_API_URL }}
+          # VEGIFY_API_URL rides in from the resolve step (GITHUB_ENV) and is baked into the binary
+          # via option_env! so the shipped app points at the real backend without the host living in
+          # the source tree or a repository secret.
         with:
           projectPath: apps/desktop
           tagName: ${{ needs.build-server.outputs.tag }}

@@ -16,10 +16,10 @@ import { EmailStack } from "../lib/email-stack.js";
 // standing cost) is kept ready in lib/web-start-fargate-stack.ts for when revenue justifies it.
 
 const app = new App();
-// Every deployment-specific identifier, resolved ONCE (env in CI from repository secrets; inert
-// placeholders otherwise) and handed to the stacks as typed props — no stack reads process.env.
-// See @vegify/config/deploy for each value + .env.example for the human-facing docs.
-const cfg = deployConfig();
+// Every deployment-specific identifier, resolved ONCE (env override → the account's own SSM
+// decisions under /vegify/deploy/, written by `just init` → inert placeholders) and handed to the
+// stacks as typed props — no stack reads process.env. See @vegify/config/deploy.
+const cfg = await deployConfig();
 const env = { account: cfg.account, region: cfg.region };
 
 // Origin-verify secret (defense-in-depth, replaces the reverted OAC): CloudFront injects it as a custom
@@ -43,6 +43,7 @@ const server = new ServerStack(app, "VegifyServer", {
   publicUrl: cfg.publicUrl,
   emailFrom: cfg.emailFrom,
   emailDomain: cfg.emailDomain,
+  signupsOpen: cfg.signupsOpen,
 });
 
 // (Retired 2026-06-25) The old VegifySync stack — an S3 changeset-blob store for the desktop's former
