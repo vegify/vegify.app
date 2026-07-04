@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/vegify/vegify.app/compare/v0.18.0...v0.18.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **infra:** fail synth loudly on unreadable deploy decisions; pin the decision region ([#70](https://github.com/vegify/vegify.app/issues/70)) ([ca35eb0](https://github.com/vegify/vegify.app/commit/ca35eb0f132b5f9b9c7574224d41f6221138b29e))
+
 ## [0.18.0](https://github.com/vegify/vegify.app/compare/v0.17.6...v0.18.0) (2026-07-04)
 
 
