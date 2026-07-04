@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/vegify/vegify.app/compare/v0.17.3...v0.17.4) (2026-07-04)
+
+
+### Bug Fixes
+
+* **config:** centralize env config and fail closed on missing email/origin values ([#61](https://github.com/vegify/vegify.app/issues/61)) ([f4565b8](https://github.com/vegify/vegify.app/commit/f4565b82afe229a8121c35b647a1fdf2ee815449))
+
 ## [0.17.3](https://github.com/vegify/vegify.app/compare/v0.17.2...v0.17.3) (2026-07-04)
 
 
