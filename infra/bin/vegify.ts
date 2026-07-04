@@ -25,9 +25,10 @@ const env = { account: cfg.account, region: cfg.region };
 // Origin-verify secret (defense-in-depth, replaces the reverted OAC): CloudFront injects it as a custom
 // header on the Function URL origins and the Lambdas reject any request lacking it — restricting the URLs
 // to CloudFront-only WITHOUT OAC (OAC can't sign POST bodies to a Lambda URL → InvalidSignatureException,
-// which is why the OAC attempt was reverted). Both stacks receive the SAME value from the one deployConfig
-// read, so a single synth bakes an identical literal into each — no cross-stack reference, no cycle.
-// Empty = no header injected at synth; the deployed web Lambda fails closed without it (#59).
+// which is why the OAC attempt was reverted). The secret is GENERATED IN-ACCOUNT on first deploy (an SSM
+// SecureString via a custom resource in VegifyClientLogs — the home that respects the existing dependency
+// direction) and resolved into both stacks at deploy time; no human ever knows or transports it, and
+// hardening is always on. Rotation: overwrite the parameter + bump ORIGIN_VERIFY_ROTATE + redeploy.
 
 // One VPC, no NAT (cost). The standing Axum backend (VegifyServer) uses its public subnet; the web
 // Lambda runs OUTSIDE the VPC (it just needs internet egress to call that backend's public CloudFront).
@@ -52,7 +53,10 @@ const server = new ServerStack(app, "VegifyServer", {
 // Browser-log ingestion: a dedicated scale-to-zero Lambda (Function URL) that writes the web shell's
 // client-side logs to a CloudWatch group (/vegify/web-client). Its Function URL feeds the web stack's
 // /__ingest origin cross-stack; the browser beacons the same-origin /__ingest path. See the stack file.
-const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", { env, originSecret: cfg.originSecret });
+const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", {
+  env,
+  originSecretRotationNonce: cfg.originSecretRotationNonce,
+});
 
 // web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
 // backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle). Its backend
@@ -61,7 +65,7 @@ const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", { env, originSec
 // the release cascade deploys the server (creating the exports) before publishing the web.
 new WebStartStack(app, "VegifyWebStart", {
   env,
-  originSecret: cfg.originSecret,
+  originSecret: clientLogs.originSecret,
   apiUrl: cfg.apiUrlOverride ?? server.apiUrl,
   ingestUrl: clientLogs.ingestUrl,
   domainNames: cfg.domainNames,

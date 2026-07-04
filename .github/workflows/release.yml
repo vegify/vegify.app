@@ -384,7 +384,6 @@ jobs:
           aws-region: us-east-1
       - name: Deploy the server
         env:
-          ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
           # The server's systemd env (VEGIFY_PUBLIC_URL, the derived From address) and its SES grant
           # derive from the domain list — the server refuses email sends if these are missing.
           VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
@@ -443,9 +442,9 @@ jobs:
           aws-region: us-east-1
       - name: Publish the web shell
         env:
-          ORIGIN_VERIFY_SECRET: ${{ secrets.ORIGIN_VERIFY_SECRET }}
           # Only the domain list (+ the bring-your-own cert) remain: the backend origin + ingest origin
-          # are wired cross-stack, and the hosted zone is looked up from the domain (web-start-stack.ts).
+          # are wired cross-stack, the hosted zone is looked up from the domain, and the origin-verify
+          # secret is generated in-account and resolved at deploy time (client-logs-stack.ts).
           VEGIFY_DOMAIN_NAMES: ${{ secrets.VEGIFY_DOMAIN_NAMES }}
           VEGIFY_CERT_ARN: ${{ secrets.VEGIFY_CERT_ARN }}
         run: |

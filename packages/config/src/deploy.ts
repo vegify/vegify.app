@@ -19,9 +19,11 @@ export interface DeployConfig {
   region: string
   /** "owner/repo" pinned into the CI OIDC role trust. Auto-set inside GitHub Actions. */
   githubRepo: string
-  /** Origin-verify secret CloudFront injects + the web/ingest Lambdas require. Empty = no header at synth
-   *  (the deployed Lambdas fail closed without it). */
-  originSecret: string
+  /** Rotation lever for the in-account generated origin-verify secret: after rotating the SSM parameter
+   *  (aws ssm put-parameter --overwrite), bump ORIGIN_VERIFY_ROTATE so the custom resource re-reads it
+   *  and the next deploy re-syncs the CloudFront header + Lambda envs. The secret VALUE never passes
+   *  through here — it is generated and resolved entirely in-account (see client-logs-stack.ts). */
+  originSecretRotationNonce: string
   /** OVERRIDE for the backend origin the web SSR calls. Default (unset) = the VegifyServer stack's own
    *  CloudFront URL, wired cross-stack in bin/vegify.ts. (Desktop CI builds still bake VEGIFY_API_URL
    *  directly at cargo-build time — that consumer doesn't flow through here.) */
@@ -65,7 +67,7 @@ export function deployConfig(): DeployConfig {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
     githubRepo: process.env.GITHUB_REPOSITORY ?? 'vegify/vegify.app',
-    originSecret: process.env.ORIGIN_VERIFY_SECRET ?? '',
+    originSecretRotationNonce: process.env.ORIGIN_VERIFY_ROTATE ?? '0',
     apiUrlOverride: process.env.VEGIFY_API_URL || undefined,
     domainNames,
     domainsConfigured,
