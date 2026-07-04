@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.6](https://github.com/vegify/vegify.app/compare/v0.17.5...v0.17.6) (2026-07-04)
+
+
+### Bug Fixes
+
+* **infra:** generate the origin-verify secret in-account ([#66](https://github.com/vegify/vegify.app/issues/66)) ([1a0e417](https://github.com/vegify/vegify.app/commit/1a0e417d1d54bcc79c90d5749294ed09706c4b4e))
+
 ## [0.17.5](https://github.com/vegify/vegify.app/compare/v0.17.4...v0.17.5) (2026-07-04)
 
 
