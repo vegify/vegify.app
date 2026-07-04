@@ -1,6 +1,6 @@
 # Self-hosting vegify.app
 
-This repo is meant to deploy into **your own** AWS account and domain from a clean clone. Everything account-specific comes from the environment (`.env` locally, GitHub Actions secrets in CI) with inert placeholders in code, so a fresh clone builds and `cdk synth`s without any of vegify's values. This guide is the end-to-end path: clone → configure → deploy → wire DNS + email.
+This repo is meant to deploy into **your own** AWS account and domain from a clean clone. There are no env files and no account-specific values in the tree: the deploy decisions live in **your account's** SSM Parameter Store (written once by `just init`), everything else is derived, wired cross-stack, or generated in-account, and inert placeholders keep a fresh clone building and `cdk synth`ing with zero setup. This guide is the end-to-end path: clone → configure → deploy → wire DNS + email.
 
 If something here blocks a clean self-host, it's a bug — please open an issue.
 
@@ -33,11 +33,17 @@ pnpm build                            # turbo build of everything
 
 ## 2. Configure
 
-Copy `.env.example` to `.env` (or just export the vars) — every variable is documented inline there. The one required deploy input:
+There is no `.env` file. Your AWS account is the config store: record the deploy decisions once, in SSM Parameter Store under `/vegify/deploy/`, and every synth (local or CI) reads them from there.
 
-- **`VEGIFY_DOMAIN_NAMES`** — your domains (first is primary). Everything else derives: the hosted zone is looked up by that name, the TLS cert is created (DNS-validated) by the web stack, the backend + ingest origins are wired cross-stack, and the server's email config (public URL, From address, SES grant) is derived and injected by the CDK.
+```sh
+just init example.com,www.example.com    # the ONE required decision (first domain is primary)
+just config-set signups-open 1           # optional: open signups (default closed)
+just config                              # show what's recorded
+```
 
-Common opt-ins: `VEGIFY_SIGNUPS_OPEN=1` to allow signups, and `VEGIFY_EMAIL_DOMAIN`/`VEGIFY_EMAIL_FROM` if they differ from the derived defaults. The origin-verify secret needs nothing from you — it's generated in your account (SSM SecureString `/vegify/origin-verify`) on first deploy and wired into CloudFront + the Lambdas automatically. Overrides for unusual setups: `VEGIFY_HOSTED_ZONE_ID` (explicit zone), `VEGIFY_CERT_ARN` (bring your own us-east-1 cert), `VEGIFY_API_URL` (point the web at a different backend).
+Everything else derives: the hosted zone is looked up by the domain name, the TLS cert is created (DNS-validated) by the web stack, the backend + ingest origins are wired cross-stack, the server's email config (public URL, From address, SES grant) is derived and injected by the CDK, and the origin-verify secret is generated in your account (SSM SecureString `/vegify/origin-verify`) on first deploy.
+
+Optional decisions (`just config-set <key> <value>`): `email-domain` / `email-from` / `mail-from-domain` if the derived defaults don't fit, `cert-arn` to bring your own us-east-1 cert, `apple-secret-id` for desktop signing. Environment variables (`VEGIFY_DOMAIN_NAMES`, `VEGIFY_CERT_ARN`, `VEGIFY_HOSTED_ZONE_ID`, `VEGIFY_API_URL`, …) override any decision per-synth — every knob is documented where it's defined, in `packages/config/src/deploy.ts` (deploy), `packages/config/src/runtime.ts` (JS runtime), and `crates/vegify-config` (Rust runtime).
 
 ## 3. Bootstrap + the CI deploy role
 
@@ -83,14 +89,21 @@ Two records the stack deliberately does **not** manage (because the apex TXT usu
 
 Pushing conventional commits drives release-please, which cuts a release and runs the deploy cascade. To enable it, set these repository **secrets** (the deploy role from §3 is assumed via OIDC — no static AWS keys):
 
-- `AWS_DEPLOY_ROLE_ARN` — the `VegifyCi` role ARN (from its stack output).
-- `VEGIFY_DOMAIN_NAMES` — your domain list (drives the zone lookup, the server's email env, and the derived URLs).
-- `VEGIFY_API_URL` — only for desktop publishing (baked into the binary at build time); the web derives its backend origin cross-stack.
-- `VEGIFY_CERT_ARN` — optional bring-your-own cert; omit it and the web stack manages one.
-- `RELEASE_APP_PRIVATE_KEY` (secret) + `RELEASE_APP_CLIENT_ID` (repository **variable**) — a GitHub App that lets release-please open/label its release PRs and lets the merge trigger the deploy cascade. Create a minimal App (Contents + Pull requests read/write), install it on the repo, and store its client id + private key.
-- Desktop signing/notarization (only if you publish the desktop app): `AWS_RELEASE_SIGNING_ROLE_ARN`, `APPLE_SIGNING_SECRET_ID`, `VEGIFY_APPLE_TEAM_ID`, `VEGIFY_PROVISION_PROFILE_B64`.
+Repository **variables** (none are sensitive):
+
+- `AWS_ACCOUNT_ID` — your 12-digit account id; the workflows construct the two fixed-name role ARNs (`vegify-github-deploy`, `vegify-release-signing`) from it.
+- `AWS_REGION` — your deploy region if not `us-east-1`.
+- `RELEASE_APP_CLIENT_ID` — the GitHub App's client id (see below).
+- `VEGIFY_APPLE_TEAM_ID` — only for desktop publishing; public by construction (it's served in the AASA).
+
+Repository **secrets** (the irreducible GitHub-side credentials):
+
+- `RELEASE_APP_PRIVATE_KEY` — a GitHub App that lets release-please open/label its release PRs and lets the merge trigger the deploy cascade. Create a minimal App (Contents + Pull requests read/write), install it on the repo, and store its private key here + its client id in the variable above.
+- `VEGIFY_PROVISION_PROFILE_B64` — only for desktop publishing (the embedded provisioning profile).
+
+Everything else CI needs comes from your account at run time: the domain list and Apple secret id from the `/vegify/deploy/*` decisions, the backend origin from the parameter `VegifyServer` publishes, and the origin-verify secret generated in-account.
 
 ## What's vegify-specific (and safe to ignore)
 
 - **`VegifyDns`** — vegify.app's exact hosted zone + records. Useful as a worked example of adopting a zone into CDK, but it's vegify's data; you manage your own DNS as above.
-- The fallback literals in code (e.g. the CI repo defaulting to `vegify/vegify.app` for local hand-deploys) — overridden by your env, never reached in your Actions runs.
+- The fallback literals in code (e.g. the CI repo defaulting to `vegify/vegify.app` for local hand-deploys) — overridden by your env/decisions, never reached in your Actions runs.

@@ -6,6 +6,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import type { Construct } from "constructs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -29,6 +30,9 @@ interface ServerStackProps extends StackProps {
   emailFrom: string;
   /** SES identity domain the instance may send as (scopes the ses:SendEmail grant). */
   emailDomain: string;
+  /** Signups gate (SSM decision signups-open / VEGIFY_SIGNUPS_OPEN; default closed). Lands in the
+   *  systemd env; the server rejects signups unless it's "1". */
+  signupsOpen: boolean;
 }
 
 /**
@@ -58,7 +62,7 @@ export class ServerStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc, publicUrl, emailFrom, emailDomain } = props;
+    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     const replica = new s3.Bucket(this, "Replica", {
@@ -173,6 +177,7 @@ export class ServerStack extends Stack {
       `Environment=VEGIFY_PUBLIC_URL=${publicUrl}`,
       `Environment="VEGIFY_EMAIL_FROM=${emailFrom}"`,
       `Environment=VEGIFY_SES_REGION=${this.region}`,
+      `Environment=VEGIFY_SIGNUPS_OPEN=${signupsOpen ? "1" : "0"}`,
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
@@ -235,6 +240,14 @@ export class ServerStack extends Stack {
     });
 
     this.apiUrl = `https://${distribution.distributionDomainName}`;
+
+    // Publish the backend origin as an account fact: publish-desktop reads it to bake VEGIFY_API_URL
+    // into the shipped binary (replacing the repository secret), and anything else in the account can
+    // discover the API the same way.
+    new ssm.StringParameter(this, "ApiUrlParam", {
+      parameterName: "/vegify/deploy/api-url",
+      stringValue: this.apiUrl,
+    });
 
     new CfnOutput(this, "Url", { value: this.apiUrl });
     new CfnOutput(this, "EipAddress", { value: eip.attrPublicIp });

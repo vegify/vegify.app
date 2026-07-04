@@ -38,9 +38,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Deploy VegifyCi
-        env:
-          APPLE_SIGNING_SECRET_ID: ${{ vars.APPLE_SIGNING_SECRET_ID }}
+        # No env: the Apple secret id is the /vegify/deploy/apple-secret-id SSM decision, read by
+        # deployConfig at synth (the step above provided the credentials).
         run: pnpm --filter @vegify/infra exec cdk --app 'tsx bin/ci.ts' deploy VegifyCi --require-approval never

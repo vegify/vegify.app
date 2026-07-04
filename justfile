@@ -48,3 +48,22 @@ bindings:
 # Create/refresh the dev DB from the Drizzle schema + seed it.
 db:
     pnpm db:push && pnpm db:seed
+
+# ── Deploy decisions (SSM Parameter Store — the account itself is the config store) ──────────────
+# One-time account setup: record the deploy decisions under /vegify/deploy/. Everything else derives
+# (zone lookup, cert, cross-stack wiring, generated origin-verify secret). Needs an AWS login
+# (`aws sts get-caller-identity` works) in the deploy region. Args are positional:
+#   just init vegify.app,www.vegify.app        # domains (first is primary); signups default closed
+init domains signups="0":
+    aws ssm put-parameter --name /vegify/deploy/domain-names --type String --overwrite --value "{{domains}}"
+    aws ssm put-parameter --name /vegify/deploy/signups-open --type String --overwrite --value "{{signups}}"
+    @echo "Recorded. Optional extras: just config-set email-from 'You <hello@your.domain>' | email-domain | mail-from-domain | cert-arn | apple-secret-id"
+    @echo "Next: cdk bootstrap (once), then cdk deploy VegifyVpc VegifyServer && cdk deploy VegifyWebStart VegifyClientLogs"
+
+# Show the recorded deploy decisions.
+config:
+    aws ssm get-parameters-by-path --path /vegify/deploy/ --query 'Parameters[].{key:Name,value:Value}' --output table
+
+# Set one deploy decision, e.g. `just config-set signups-open 1` (takes effect on the next release).
+config-set key value:
+    aws ssm put-parameter --name /vegify/deploy/{{key}} --type String --overwrite --value "{{value}}"

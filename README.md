@@ -61,20 +61,11 @@ A recipe carries an `as_ingredient_id` row (name, creator, serving/batch amounts
 
 ## Deploy
 
-Production ships only through CI, AWS-only via CDK: merging release-please's PR cuts a tag and runs the ordered deploy (server → clients). The infra carries no account-specific values; CI injects them from repository secrets. To deploy your own:
+Production ships only through CI, AWS-only via CDK: merging release-please's PR cuts a tag and runs the ordered deploy (server → clients). The tree carries no account-specific values and there are no env files: deploy decisions live in **your account's** SSM Parameter Store (`just init <domains>` records them; `just config` shows them), and everything else is derived (zone lookup, DNS-validated cert), wired cross-stack (backend + ingest origins), or generated in-account (the origin-verify secret). See `docs/self-host.md` for the full path.
 
-| Secret | Purpose |
-|--------|---------|
-| `AWS_DEPLOY_ROLE_ARN` | OIDC role assumed to run `cdk deploy`. |
-| `AWS_RELEASE_SIGNING_ROLE_ARN` | OIDC role to read the Apple signing secret (notarized desktop). |
-| `APPLE_SIGNING_SECRET_ID` | Secrets Manager id of the Developer ID cert + ASC API key. |
-| `VEGIFY_DOMAIN_NAMES` | Comma-separated custom domains (apex,www). The hosted zone is looked up from the first domain; the backend + ingest origins are wired cross-stack. |
-| `VEGIFY_API_URL` | Backend origin baked into desktop builds (the web derives it from the server stack). |
-| `VEGIFY_CERT_ARN` | Optional bring-your-own us-east-1 ACM cert; unset, the web stack creates a DNS-validated one. |
+GitHub-side config shrinks to two repository **variables** — `AWS_ACCOUNT_ID` (the workflows construct the fixed-name OIDC role ARNs from it) and `RELEASE_APP_CLIENT_ID` — plus the `RELEASE_APP_PRIVATE_KEY` secret for the release train, and `VEGIFY_APPLE_TEAM_ID`/`VEGIFY_PROVISION_PROFILE_B64` only if you publish the desktop app.
 
-The origin-verify secret that restricts the Lambda Function URLs to CloudFront is not a repository secret: it is generated in-account (SSM SecureString) on first deploy and wired in at deploy time.
-
-CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `VegifyCi`. Without the secrets, `cdk synth` still succeeds against inert placeholders.
+CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `VegifyCi`. With nothing configured at all, `cdk synth` still succeeds against inert placeholders.
 
 ## Design
 

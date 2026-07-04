@@ -82,6 +82,19 @@ export class CiStack extends Stack {
         resources: [`arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`],
       }),
     );
+    // publish-desktop resolves its two non-secret inputs from Parameter Store instead of repository
+    // secrets: the backend origin the binary bakes in (written by VegifyServer) and the Apple signing
+    // secret's id. Both live in the deploy region (us-east-1 for vegify).
+    releaseRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadDeployParameters",
+        actions: ["ssm:GetParameter"],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/api-url`,
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/apple-secret-id`,
+        ],
+      }),
+    );
     new CfnOutput(this, "ReleaseSigningRoleArn", { value: releaseRole.roleArn });
   }
 }
