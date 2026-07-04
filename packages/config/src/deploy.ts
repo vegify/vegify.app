@@ -5,8 +5,13 @@
 // open-source tree carries no account-specific value. See .env.example + docs/self-host.md.
 //
 // Derivations beat inputs: everything computable from the domain list (public URL, email domain,
-// MAIL FROM, the From address) is derived here rather than asked for, so a real deploy configures the
-// minimum and a fork can't end up with another site's values.
+// MAIL FROM, the From address) is derived here rather than asked for, and everything knowable from
+// the CDK app itself (the backend origin, the ingest Function URL, the hosted zone, the certificate)
+// is wired cross-stack / looked up / created in infra — the env vars for those are OVERRIDES now,
+// not required inputs.
+
+/** Zone id used on the unconfigured placeholder path (fresh-clone synth never touches AWS). */
+export const PLACEHOLDER_ZONE_ID = 'ZEXAMPLE00000000'
 
 export interface DeployConfig {
   /** CDK env — from the ambient credentials (CDK_DEFAULT_ACCOUNT/REGION). */
@@ -14,23 +19,30 @@ export interface DeployConfig {
   region: string
   /** "owner/repo" pinned into the CI OIDC role trust. Auto-set inside GitHub Actions. */
   githubRepo: string
-  /** Origin-verify secret CloudFront injects + the web/ingest Lambdas require. Empty = hardening off
-   *  at synth (no header injected); the web Lambda itself fails closed when deployed without it. */
+  /** Origin-verify secret CloudFront injects + the web/ingest Lambdas require. Empty = no header at synth
+   *  (the deployed Lambdas fail closed without it). */
   originSecret: string
-  /** The standing Axum backend's public origin, baked into the web Lambda's env. */
-  apiUrl: string
-  /** The browser-log Lambda's Function URL host (VegifyClientLogs) for the /__ingest forward. */
-  ingestOrigin: string
-  /** The web shell's domains; the first is primary and drives every derivation below. */
+  /** OVERRIDE for the backend origin the web SSR calls. Default (unset) = the VegifyServer stack's own
+   *  CloudFront URL, wired cross-stack in bin/vegify.ts. (Desktop CI builds still bake VEGIFY_API_URL
+   *  directly at cargo-build time — that consumer doesn't flow through here.) */
+  apiUrlOverride: string | undefined
+  /** The web shell's domains (first is primary — it drives every derivation below). */
   domainNames: string[]
-  /** Route53 hosted zone for the domains. */
-  hostedZoneId: string
-  /** us-east-1 ACM cert for the domains (CloudFront requirement). */
-  certificateArn: string
+  /** True when VEGIFY_DOMAIN_NAMES was actually set: real domains may be zone-LOOKED-UP against live
+   *  AWS; the placeholder default must never be (fresh-clone `cdk synth` needs no credentials). */
+  domainsConfigured: boolean
+  /** OVERRIDE for the Route53 hosted zone id. Default (unset) = looked up by the primary domain name. */
+  hostedZoneIdOverride: string | undefined
+  /** OVERRIDE: bring-your-own us-east-1 ACM cert ARN. Default (unset) = the web stack creates a
+   *  DNS-validated certificate for the domains in its own zone. */
+  certificateArnOverride: string | undefined
   /** Canonical public origin — derived: https://<first domain>. */
   publicUrl: string
   /** SES identity domain — VEGIFY_EMAIL_DOMAIN, else the first domain. */
   emailDomain: string
+  /** True when either VEGIFY_EMAIL_DOMAIN or VEGIFY_DOMAIN_NAMES was set (gates the email zone lookup,
+   *  same rule as domainsConfigured). */
+  emailConfigured: boolean
   /** From: header for transactional mail — VEGIFY_EMAIL_FROM, else derived from the email domain. */
   emailFrom: string
   /** Custom MAIL FROM subdomain — VEGIFY_MAIL_FROM_DOMAIN, else mail.<email domain>. */
@@ -42,25 +54,26 @@ export interface DeployConfig {
 }
 
 export function deployConfig(): DeployConfig {
-  const domainNames = (process.env.VEGIFY_DOMAIN_NAMES ?? 'example.com,www.example.com')
+  const rawDomains = (process.env.VEGIFY_DOMAIN_NAMES ?? '')
     .split(',')
     .map((d) => d.trim())
     .filter(Boolean)
+  const domainsConfigured = rawDomains.length > 0
+  const domainNames = domainsConfigured ? rawDomains : ['example.com', 'www.example.com']
   const emailDomain = process.env.VEGIFY_EMAIL_DOMAIN ?? domainNames[0]
   return {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
     githubRepo: process.env.GITHUB_REPOSITORY ?? 'vegify/vegify.app',
     originSecret: process.env.ORIGIN_VERIFY_SECRET ?? '',
-    apiUrl: process.env.VEGIFY_API_URL ?? 'https://api.example.com',
-    ingestOrigin: process.env.VEGIFY_INGEST_ORIGIN ?? 'ingest.example.com',
+    apiUrlOverride: process.env.VEGIFY_API_URL || undefined,
     domainNames,
-    hostedZoneId: process.env.VEGIFY_HOSTED_ZONE_ID ?? 'ZEXAMPLE00000000',
-    certificateArn:
-      process.env.VEGIFY_CERT_ARN ??
-      'arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000',
+    domainsConfigured,
+    hostedZoneIdOverride: process.env.VEGIFY_HOSTED_ZONE_ID || undefined,
+    certificateArnOverride: process.env.VEGIFY_CERT_ARN || undefined,
     publicUrl: `https://${domainNames[0]}`,
     emailDomain,
+    emailConfigured: Boolean(process.env.VEGIFY_EMAIL_DOMAIN) || domainsConfigured,
     emailFrom: process.env.VEGIFY_EMAIL_FROM ?? `Vegify <hello@${emailDomain}>`,
     mailFromDomain: process.env.VEGIFY_MAIL_FROM_DOMAIN ?? `mail.${emailDomain}`,
     manageEmailDns: (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? '1') !== '0',

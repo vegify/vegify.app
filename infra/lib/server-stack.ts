@@ -52,6 +52,10 @@ interface ServerStackProps extends StackProps {
  * (brief downtime; Litestream preserves the data via S3). SSM (no SSH) is on for debugging.
  */
 export class ServerStack extends Stack {
+  /** The backend's public origin (its CloudFront URL) — wired cross-stack into the web shell, so the
+   *  web ↔ backend coupling is never hand-carried through env/secrets. */
+  readonly apiUrl: string;
+
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
     const { vpc, publicUrl, emailFrom, emailDomain } = props;
@@ -230,7 +234,9 @@ export class ServerStack extends Stack {
       },
     });
 
-    new CfnOutput(this, "Url", { value: `https://${distribution.distributionDomainName}` });
+    this.apiUrl = `https://${distribution.distributionDomainName}`;
+
+    new CfnOutput(this, "Url", { value: this.apiUrl });
     new CfnOutput(this, "EipAddress", { value: eip.attrPublicIp });
     new CfnOutput(this, "ReplicaBucket", { value: replica.bucketName });
     new CfnOutput(this, "InstanceId", { value: instance.instanceId });

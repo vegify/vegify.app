@@ -1,7 +1,7 @@
 import { CfnDeletionPolicy, CfnOutput, Stack, type StackProps } from "aws-cdk-lib";
-import * as route53 from "aws-cdk-lib/aws-route53";
 import * as ses from "aws-cdk-lib/aws-ses";
 import type { Construct } from "constructs";
+import { resolveZone } from "./zone.js";
 
 // VegifyEmail — the transactional-email sending identity for the app's domain: an SES domain identity with
 // Easy DKIM and a custom MAIL FROM, all DNS-published through the app's Route53 hosted zone. The server
@@ -23,8 +23,10 @@ import type { Construct } from "constructs";
 export interface EmailStackProps extends StackProps {
   /** Domain for the SES identity (VEGIFY_EMAIL_DOMAIN, defaulting to the first web domain). */
   domain: string;
-  /** Route53 hosted zone the DKIM/MAIL FROM records are written into (managed-DNS mode). */
-  hostedZoneId: string;
+  /** Whether the domain came from real configuration (gates the zone lookup — see resolveZone). */
+  domainConfigured: boolean;
+  /** Explicit zone id override; default = lookup by the domain name (managed-DNS mode only). */
+  hostedZoneIdOverride?: string;
   /** Custom MAIL FROM subdomain (default mail.<domain>). */
   mailFromDomain: string;
   /** false = identity-only (DNS managed elsewhere — vegify's records live in VegifyDns). */
@@ -34,13 +36,17 @@ export interface EmailStackProps extends StackProps {
 export class EmailStack extends Stack {
   constructor(scope: Construct, id: string, props: EmailStackProps) {
     super(scope, id, props);
-    const { domain, hostedZoneId, mailFromDomain, manageDns } = props;
+    const { domain, mailFromDomain, manageDns } = props;
 
     // Managed-DNS publishes the DKIM CNAMEs + MAIL FROM records through the zone (self-host turnkey).
     // Identity-only just declares the SES identity and leaves DNS to its existing owner (vegify: VegifyDns).
     const identitySource = manageDns
       ? ses.Identity.publicHostedZone(
-          route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId, zoneName: domain }),
+          resolveZone(this, "Zone", {
+            zoneName: domain,
+            configured: props.domainConfigured,
+            overrideZoneId: props.hostedZoneIdOverride,
+          }),
         )
       : ses.Identity.domain(domain);
 
