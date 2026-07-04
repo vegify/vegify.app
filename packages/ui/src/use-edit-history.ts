@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 
 /**
- * Per-page undo/redo for inline editing (design/inline-edit.md). Every inline commit is a
+ * Per-page undo/redo for inline editing (docs/design/inline-edit.md). Every inline commit is a
  * whole-object save, so history is just a stack of prior edit states: undo re-saves the previous
  * state, redo re-saves the one undone. The hook is shell-agnostic — it's handed the same async
  * `commit(state)` the per-field edits use, so web (server-fn) and desktop (IPC) get identical

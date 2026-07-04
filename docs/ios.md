@@ -40,4 +40,4 @@ Prereqs (all present on this machine): full Xcode with an iOS runtime, CocoaPods
 
 ## Icons
 
-Brand master `design/brand/app-icon.png` → `pnpm exec tauri icon ../../design/brand/app-icon.png` fills `gen/apple/Assets.xcassets/AppIcon.appiconset` (and `icons/android/` for later). Never hand-edit the generated sets.
+Brand master `packages/ui/brand/app-icon.png` → `pnpm exec tauri icon ../../packages/ui/brand/app-icon.png` fills `gen/apple/Assets.xcassets/AppIcon.appiconset` (and `icons/android/` for later). Never hand-edit the generated sets.

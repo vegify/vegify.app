@@ -8,7 +8,7 @@ import { NutrientByGroupChart, NutrientRangeChart } from "./blog-charts";
  * BLOG — the public, unauthenticated writing surface (vegify.app/blog), the GEO/SEO layer's citable
  * content. Renders bare (no AppShell), extends the brand system (serif display + tokens), web-only.
  *
- * Posts are DATA, served from the DB (`crates/vegify-server` `posts` table) over the content API — NOT
+ * Posts are DATA, served from the DB (`services/api` `posts` table) over the content API — NOT
  * authored in code, so publishing a post never bumps the app version or triggers a deploy. A body is a
  * list of blocks: `prose` (markdown) + `figure` (a blog chart + caption + markdown note). These views
  * are pure: they take the fetched data + the `LinkComponent` nav port; the web routes do the fetching.

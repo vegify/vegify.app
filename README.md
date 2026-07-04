@@ -8,7 +8,7 @@ Two clients over one backend, rendering one shared set of screens: each client i
 
 - **`apps/web`**: a stateless TanStack Start (React) SSR shell. Holds no database: it calls `vegify-server` over HTTP for all auth and content. Deploys as a scale-to-zero Lambda behind CloudFront with client assets on S3.
 - **`apps/desktop`**: a local-first Tauri 2 (Rust) app. Full offline CRUD against a local libSQL cache through the shared `vegify-core` DAL, syncing to the server when online. The local store is a cache; the server is the authority.
-- **`crates/vegify-server`**: an Axum service that is the standing source of truth (libSQL on EBS). Owns authentication (self-hosted opaque sessions) and the content API.
+- **`services/api`**: an Axum service that is the standing source of truth (libSQL on EBS). Owns authentication (self-hosted opaque sessions) and the content API.
 
 vegify began as a framework bake-off (Next.js vs TanStack Start, plus two Rust SSR spikes). TanStack Start on Bun won the web slot; the retired shells live only in history. Full methodology and numbers: [`docs/benchmark.md`](docs/benchmark.md).
 
@@ -18,13 +18,13 @@ vegify began as a framework bake-off (Next.js vs TanStack Start, plus two Rust S
 |------|------|
 | `apps/web` | TanStack Start SSR shell (Vite). Stateless; calls the backend over HTTP. |
 | `apps/desktop` | Tauri 2 desktop. Local-first; offline CRUD via `vegify-core`, syncs to the server. |
-| `crates/vegify-server` | Axum backend, the source of truth. Auth + content API over libSQL. |
+| `services/api` | Axum backend, the source of truth. Auth + content API over libSQL. |
 | `crates/vegify-core` | Shared Rust DAL, consumed by both the desktop and the server. |
 | `packages/db` | Drizzle schema + seed (libSQL/SQLite). Schema stays portable to Postgres. |
 | `packages/ui` | Shared components and the one set of screens both clients render. |
 | `packages/tokens` | Design tokens → Tailwind v4 `@theme` CSS. |
 | `infra` | AWS CDK. AWS only: no Vercel, no Cloudflare. |
-| `design/` | Diffable design source: tokens, personas, site map, Figma import reference. |
+| `docs/design` | Personas, site map (the app's IA), inline-edit contract, Figma import reference. |
 
 ## Quickstart
 
@@ -71,10 +71,10 @@ CDK stacks: `VegifyVpc`, `VegifyServer`, `VegifyWebStart`, `VegifyClientLogs`, `
 
 The living design is a private Figma file; binary archives stay out of the repo (`.sketch`/`.fig`/`.psd` are gitignored by policy). What's diffable lives here:
 
-- **Design tokens:** [`design/tokens/`](design/tokens/), W3C DTCG JSON, the seed for the Tailwind theme.
-- **Personas:** [`design/personas/`](design/personas/).
-- **Site map:** [`design/site-map.md`](design/site-map.md), the app's information architecture.
-- **Figma import reference:** [`design/figma-import/`](design/figma-import/), text-override inventory from the Sketch → Figma migration.
+- **Design tokens:** [`packages/tokens/tokens/`](packages/tokens/tokens/), W3C DTCG JSON, the seed for the Tailwind theme.
+- **Personas:** [`docs/design/personas/`](docs/design/personas/).
+- **Site map:** [`docs/design/site-map.md`](docs/design/site-map.md), the app's information architecture.
+- **Figma import reference:** [`docs/design/figma-import/`](docs/design/figma-import/), text-override inventory from the Sketch → Figma migration.
 
 ## License
 

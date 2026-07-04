@@ -39,3 +39,6 @@ CLAUDE.local.md
 
 # CI-generated tauri version override (deploy.yml injects the tag-derived version)
 tauri.version.json
+
+# Local SEO audit output (seo-kit) — reports are generated, not source
+seo-reports/

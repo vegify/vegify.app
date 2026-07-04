@@ -10,7 +10,7 @@ Why apex, not a subdomain: on a user-generated recipe site the SEO and GEO value
 
 Because `<username>` is the first path segment, it competes with every app route (`/login`, `/recipes`, `/api`, ...), and a handle once claimed can never be safely reclaimed. So the reserved set is locked **before** usernames launch.
 
-- Authoritative list + validator: **`crates/vegify-server/src/handles.rs`** (`RESERVED`, `validate_username`, `is_reserved`). Server-side because that is where signup enforces it.
+- Authoritative list + validator: **`services/api/src/handles.rs`** (`RESERVED`, `validate_username`, `is_reserved`). Server-side because that is where signup enforces it.
 - The web keeps **no copy**. A client-side "is this handle free?" check must reach the server anyway (uniqueness is server-only), so availability will go through a server `check-handle` endpoint. Nothing to mirror, nothing to drift.
 - A unit test (`every_current_route_segment_is_reserved`) fails CI if a current top-level route stops being reserved. **When you add a new top-level route, add its segment to `RESERVED` and to that test.**
 - The list covers: current route segments, planned route segments (meal plans, social, settings from the site map), system/security/impersonation words, brand/infra/email words, and generic placeholders. It deliberately does **not** include a profanity/abuse blocklist; that is a separate content-moderation concern.

@@ -24,7 +24,7 @@ pnpm dev                     # web + desktop, against that backend
 
 ## How the codebase fits together
 
-vegify runs two clients over one backend, all rendering **one shared set of screens** in `packages/ui`. The web (`apps/web`) and desktop (`apps/desktop`) are thin data/routing adapters; the backend (`crates/vegify-server`) is the source of truth. A feature almost always lands in the shared screen plus *both* adapters — please don't re-implement a screen per client. The README's Architecture section has the full picture.
+vegify runs two clients over one backend, all rendering **one shared set of screens** in `packages/ui`. The web (`apps/web`) and desktop (`apps/desktop`) are thin data/routing adapters; the backend (`services/api`) is the source of truth. A feature almost always lands in the shared screen plus *both* adapters — please don't re-implement a screen per client. The README's Architecture section has the full picture.
 
 ## Commits and pull requests
 

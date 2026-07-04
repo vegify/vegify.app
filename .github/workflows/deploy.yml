@@ -20,6 +20,7 @@ on:
     paths:
       - "apps/**"
       - "crates/**"
+      - "services/**"
       - "packages/**"
       - "infra/**"
       - "Cargo.toml"
@@ -27,6 +28,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/deploy.yml"
+      - ".scripts/**"
   workflow_dispatch:
     inputs:
       bump:
@@ -108,7 +110,7 @@ jobs:
             echo "::error::refusing to cut a release from '$GITHUB_REF_NAME' — fresh versions come from main (redeploys use the tag input)"
             exit 1
           fi
-          next=$(scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
+          next=$(.scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
           echo "cutting $next"
           # Annotated tags need a committer identity, which runners don't have (exit 128 without it).
           git config user.name "github-actions[bot]"
@@ -147,11 +149,12 @@ jobs:
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$before" 2>/dev/null; then
             deploy_all "no usable before-sha (first push / force-push)"; exit 0
           fi
-          # Server-relevant: the Rust crates (the binary), packages/db (the baked seed), packages/config
-          # (deployConfig shapes the server template's env/grants), the server+VPC stacks and app wiring,
-          # and the Cargo manifests. Deliberately NOT web-start/client-logs stacks — that's web infra.
+          # Server-relevant: the server crate (services/api) + shared crates (the binary), packages/db
+          # (the baked seed), packages/config (deployConfig shapes the server template's env/grants),
+          # the server+VPC stacks and app wiring, and the Cargo manifests. Deliberately NOT
+          # web-start/client-logs stacks — that's web infra.
           if git diff --quiet "$before" "$GITHUB_SHA" -- \
-            crates/ packages/db/ packages/config/ \
+            services/api/ crates/ packages/db/ packages/config/ \
             infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/bin/ \
             Cargo.toml Cargo.lock; then
             echo "server=false" >> "$GITHUB_OUTPUT"; echo "→ server unchanged (no instance replacement)"

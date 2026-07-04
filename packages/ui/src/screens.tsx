@@ -111,7 +111,7 @@ export type RecipeEditRow = {
 };
 
 /**
- * The inline-edit adapter (design/inline-edit.md). When present on RecipeDetailView, the detail page
+ * The inline-edit adapter (docs/design/inline-edit.md). When present on RecipeDetailView, the detail page
  * BECOMES the editor: each field edits in place and commits one change through these callbacks (the
  * shell composes it into the existing whole-object save). Absent ⇒ today's read-only render, so a
  * logged-out or non-owner view is byte-identical to before inline editing existed.
@@ -148,7 +148,7 @@ export type IngredientDetailVM = {
 };
 
 /**
- * Inline-edit adapter for the ingredient detail page (design/inline-edit.md P2). Same shape/contract
+ * Inline-edit adapter for the ingredient detail page (docs/design/inline-edit.md P2). Same shape/contract
  * as RecipeEditAdapter: present ⇒ the page edits in place, absent ⇒ read-only render unchanged. Name,
  * description, and visibility edit inline; the numeric nutrient panel stays on the form for now (a
  * dense per-serving grid — inline-editing it is future work), so this carries only the metadata
