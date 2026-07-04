@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "./cn";
 
 /**
- * INLINE EDITING PRIMITIVES — the Linear-like edit-in-place contract (design/inline-edit.md).
+ * INLINE EDITING PRIMITIVES — the Linear-like edit-in-place contract (docs/design/inline-edit.md).
  *
  * Each primitive renders as static content (identical typography to the read-only view) until
  * activated by click or keyboard, then becomes its own editor in place. The commit contract is

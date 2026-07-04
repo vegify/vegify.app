@@ -1,6 +1,6 @@
 //! Vegify shared DAL — the SQLite-backed content model (recipes / ingredients / nutrition / UGC
 //! visibility), consumed by BOTH the desktop shell (apps/desktop/src-tauri) and the standing server
-//! (crates/vegify-server). The @vegify/db analogue for the Rust side.
+//! (services/api). The @vegify/db analogue for the Rust side.
 //!
 //! Connection-agnostic: every function takes a `&Connection` / `&mut Connection`, so each consumer
 //! owns its connection lifecycle — the desktop a single mutexed connection, the server an r2d2 WAL

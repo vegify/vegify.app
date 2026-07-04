@@ -1,4 +1,4 @@
-// Generates dist/theme.css (Tailwind v4) from design/tokens/*.json (DTCG).
+// Generates dist/theme.css (Tailwind v4) from tokens/*.json (DTCG).
 // Output has three concerns:
 //   1. the brand ramp + type scale as Tailwind @theme tokens (the design source of truth);
 //   2. the shadcn / Base UI semantic token contract (`--primary`, `--muted`, `--ring`, …)
@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const tokensDir = join(here, "..", "..", "design", "tokens");
+const tokensDir = join(here, "tokens");
 
 const color = JSON.parse(readFileSync(join(tokensDir, "color.json"), "utf8")).color;
 const typography = JSON.parse(
@@ -17,7 +17,7 @@ const typography = JSON.parse(
 ).typography;
 
 const lines = [
-  "/* Generated from design/tokens — do not edit by hand. `pnpm --filter @vegify/tokens build` */",
+  "/* Generated from packages/tokens/tokens — do not edit by hand. `pnpm --filter @vegify/tokens build` */",
   "",
   "/* 0. Shipped brand faces. Bitter (OFL, @fontsource) is the brand serif EVERYWHERE — bundled",
   "   into web, desktop, and iOS so headings render one real face instead of whatever the platform",

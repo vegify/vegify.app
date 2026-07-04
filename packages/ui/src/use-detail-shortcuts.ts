@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { anyInlineEditing } from "./inline";
 
 /**
- * Linear-grade single-key shortcuts for an owner-editable detail page (design/inline-edit.md).
+ * Linear-grade single-key shortcuts for an owner-editable detail page (docs/design/inline-edit.md).
  * One shared hook so web + desktop can't drift on the key map. Handlers are optional — a page
  * wires only what it has. Shortcuts suspend whenever an inline field is open (anyInlineEditing)
  * or focus is in any other input/textarea/select/contenteditable, so typing never triggers them;

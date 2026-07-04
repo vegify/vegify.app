@@ -5,7 +5,7 @@ import { resolveZone } from "./zone.js";
 
 // VegifyEmail — the transactional-email sending identity for the app's domain: an SES domain identity with
 // Easy DKIM and a custom MAIL FROM, all DNS-published through the app's Route53 hosted zone. The server
-// (crates/vegify-server/src/email.rs) sends password-reset + verification mail through it using the
+// (services/api/src/email.rs) sends password-reset + verification mail through it using the
 // instance's AWS credential chain; its SES region is VEGIFY_SES_REGION (default us-east-1) and MUST match
 // this stack's region.
 //
