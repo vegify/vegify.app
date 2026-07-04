@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/vegify/vegify.app/compare/v0.18.1...v0.18.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* **infra:** break the VegifyCi bootstrap deadlock; server path filter covers packages/config ([#72](https://github.com/vegify/vegify.app/issues/72)) ([ae1bcca](https://github.com/vegify/vegify.app/commit/ae1bcca1931b57ab62ef41c8d3a782c5bcea927f))
+
 ## [0.18.1](https://github.com/vegify/vegify.app/compare/v0.18.0...v0.18.1) (2026-07-04)
 
 
