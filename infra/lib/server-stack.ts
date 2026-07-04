@@ -20,6 +20,15 @@ const LITESTREAM = "v0.3.13";
 
 interface ServerStackProps extends StackProps {
   vpc: ec2.Vpc;
+  /** Public site origin (https://<primary domain>) — the base of links in transactional email. The
+   *  server REFUSES email sends without it (no fallback: a wrong default would silently mail links
+   *  pointing at another site), so it lands in the instance's systemd env. */
+  publicUrl: string;
+  /** From: header for transactional mail (default derived: `Vegify <hello@<email domain>>`). Required
+   *  to send, same fail-closed rule as publicUrl. */
+  emailFrom: string;
+  /** SES identity domain the instance may send as (scopes the ses:SendEmail grant). */
+  emailDomain: string;
 }
 
 /**
@@ -45,7 +54,7 @@ interface ServerStackProps extends StackProps {
 export class ServerStack extends Stack {
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc } = props;
+    const { vpc, publicUrl, emailFrom, emailDomain } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     const replica = new s3.Bucket(this, "Replica", {
@@ -72,12 +81,12 @@ export class ServerStack extends Stack {
     role.addToPolicy(
       new iam.PolicyStatement({ actions: ["ec2:AttachVolume", "ec2:DetachVolume"], resources: ["*"] }),
     );
-    // Transactional email (password reset, A5) via SES — send-only, scoped to the already-verified
-    // vegify.app domain identity (covers the no-reply@vegify.app from-address).
+    // Transactional email (password reset, A5) via SES — send-only, scoped to the deployment's own
+    // verified domain identity (VegifyEmail). Parameterized: a self-host's grant follows ITS domain.
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/vegify.app`],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${emailDomain}`],
       }),
     );
 
@@ -155,6 +164,11 @@ export class ServerStack extends Stack {
       "[Service]",
       "Environment=DATABASE_PATH=/data/vegify.db",
       `Environment=PORT=${APP_PORT}`,
+      // Email config — REQUIRED by the server's fail-closed send path (vegify-config has no fallback
+      // for either: a default domain would silently mail links pointing at someone else's site).
+      `Environment=VEGIFY_PUBLIC_URL=${publicUrl}`,
+      `Environment="VEGIFY_EMAIL_FROM=${emailFrom}"`,
+      `Environment=VEGIFY_SES_REGION=${this.region}`,
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",

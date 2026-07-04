@@ -14,36 +14,41 @@ import type { Construct } from "constructs";
 // a few minutes; the deploy itself returns immediately). Apex SPF + DMARC are deliberately NOT managed here
 // (the apex TXT usually carries other records too) — see docs/self-host.md for the two lines to add.
 //
-// Two modes (VEGIFY_EMAIL_MANAGE_DNS): managed-DNS (default "1") is the turnkey self-host path — CDK writes
-// the records. Identity-only ("0") manages just the SES identity and leaves DNS to another owner. vegify
-// runs identity-only and ADOPTS its existing live identity via `cdk import` (its DKIM + MAIL FROM records
-// already live in VegifyDns), so the adoption rotates no keys and touches no DNS. See docs/self-host.md.
+// Two modes (manageDns, from VEGIFY_EMAIL_MANAGE_DNS): managed-DNS (default) is the turnkey self-host
+// path — CDK writes the records. Identity-only manages just the SES identity and leaves DNS to another
+// owner. vegify runs identity-only and ADOPTS its existing live identity via `cdk import` (its DKIM +
+// MAIL FROM records already live in VegifyDns), so the adoption rotates no keys and touches no DNS. See
+// docs/self-host.md. Values arrive as props from bin/vegify.ts's deployConfig() (@vegify/config/deploy).
 
-const DOMAIN =
-  process.env.VEGIFY_EMAIL_DOMAIN ??
-  process.env.VEGIFY_DOMAIN_NAMES?.split(",")[0]?.trim() ??
-  "example.com";
-const ZONE_ID = process.env.VEGIFY_HOSTED_ZONE_ID ?? "ZEXAMPLE00000000";
-const MAIL_FROM_DOMAIN = process.env.VEGIFY_MAIL_FROM_DOMAIN ?? `mail.${DOMAIN}`;
-const MANAGE_DNS = (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? "1") !== "0";
+export interface EmailStackProps extends StackProps {
+  /** Domain for the SES identity (VEGIFY_EMAIL_DOMAIN, defaulting to the first web domain). */
+  domain: string;
+  /** Route53 hosted zone the DKIM/MAIL FROM records are written into (managed-DNS mode). */
+  hostedZoneId: string;
+  /** Custom MAIL FROM subdomain (default mail.<domain>). */
+  mailFromDomain: string;
+  /** false = identity-only (DNS managed elsewhere — vegify's records live in VegifyDns). */
+  manageDns: boolean;
+}
 
 export class EmailStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: EmailStackProps) {
     super(scope, id, props);
+    const { domain, hostedZoneId, mailFromDomain, manageDns } = props;
 
     // Managed-DNS publishes the DKIM CNAMEs + MAIL FROM records through the zone (self-host turnkey).
     // Identity-only just declares the SES identity and leaves DNS to its existing owner (vegify: VegifyDns).
-    const identitySource = MANAGE_DNS
+    const identitySource = manageDns
       ? ses.Identity.publicHostedZone(
-          route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId: ZONE_ID, zoneName: DOMAIN }),
+          route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId, zoneName: domain }),
         )
-      : ses.Identity.domain(DOMAIN);
+      : ses.Identity.domain(domain);
 
     // Easy DKIM is on by default; pin the MAIL FROM MX-failure behavior to SES's default so an adopted
     // (cdk import) identity matches live exactly and the post-import diff is empty.
     const identity = new ses.EmailIdentity(this, "Identity", {
       identity: identitySource,
-      mailFromDomain: MAIL_FROM_DOMAIN,
+      mailFromDomain,
       mailFromBehaviorOnMxFailure: ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE,
     });
 
@@ -54,6 +59,6 @@ export class EmailStack extends Stack {
     cfnIdentity.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN;
 
     new CfnOutput(this, "EmailIdentityName", { value: identity.emailIdentityName });
-    new CfnOutput(this, "EmailDomain", { value: DOMAIN });
+    new CfnOutput(this, "EmailDomain", { value: domain });
   }
 }

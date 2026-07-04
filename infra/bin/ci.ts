@@ -9,15 +9,14 @@
 // by deploy-ci.yml and by a local `VEGIFY_CI_ONLY`-style bootstrap; the app's
 // routine cascade still owns VegifyCi through bin/vegify.ts for whole-app synths.
 import { App } from "aws-cdk-lib";
+import { deployConfig } from "@vegify/config/deploy";
 import { CiStack } from "../lib/ci-stack.js";
 
 const app = new App();
-const env = {
-  account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION ?? "us-east-1",
-};
+const cfg = deployConfig();
 
 new CiStack(app, "VegifyCi", {
-  env,
-  githubRepo: process.env.GITHUB_REPOSITORY ?? "vegify/vegify.app",
+  env: { account: cfg.account, region: cfg.region },
+  githubRepo: cfg.githubRepo,
+  appleSecretId: cfg.appleSecretId,
 });

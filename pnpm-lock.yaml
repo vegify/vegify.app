@@ -102,6 +102,9 @@ importers:
       '@tanstack/router-plugin':
         specifier: ^1.132.0
         version: 1.168.18(@tanstack/react-router@1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.16.9)(tsx@4.22.4)(yaml@2.9.0))
+      '@vegify/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@vegify/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -177,6 +180,10 @@ importers:
         version: 4.1.9(@types/node@22.19.21)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.16.9)(tsx@4.22.4)(yaml@2.9.0))
 
   infra:
+    dependencies:
+      '@vegify/config':
+        specifier: workspace:*
+        version: link:../packages/config
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -197,11 +204,23 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/config:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.3
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/db:
     dependencies:
       '@libsql/client':
         specifier: ^0.17.3
         version: 0.17.3
+      '@vegify/config':
+        specifier: workspace:*
+        version: link:../config
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@libsql/client@0.17.3)

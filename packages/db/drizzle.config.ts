@@ -1,3 +1,4 @@
+import { databaseUrl } from "@vegify/config";
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
@@ -5,6 +6,6 @@ export default defineConfig({
   schema: "./src/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "file:../../.data/vegify.db",
+    url: databaseUrl(),
   },
 });

@@ -5,6 +5,8 @@ import type { Construct } from "constructs";
 interface CiStackProps extends StackProps {
   /** "owner/repo" allowed to assume the deploy role via OIDC. */
   githubRepo: string;
+  /** Secrets Manager id of the shared Apple signing secret the release-signing role may read. */
+  appleSecretId: string;
 }
 
 /**
@@ -58,9 +60,8 @@ export class CiStack extends Stack {
 
     // Release-signing role: assumed by release.yml's publish-desktop job (OIDC) to read the Apple
     // signing secret (Developer ID cert + App Store Connect API key). Least-privilege — it can ONLY
-    // GetSecretValue on that one secret, in us-west-1. The secret's name comes from
-    // $APPLE_SIGNING_SECRET_ID (kept out of the tree). (One-time bootstrap: `cdk deploy VegifyCi`.)
-    const appleSecretId = process.env.APPLE_SIGNING_SECRET_ID ?? "your-org/apple-signing";
+    // GetSecretValue on that one secret, in us-west-1. The secret's name comes in as a prop
+    // (props.appleSecretId — kept out of the tree). (One-time bootstrap: `cdk deploy VegifyCi`.)
     const releaseRole = new iam.Role(this, "ReleaseSigningRole", {
       roleName: "vegify-release-signing",
       description:
@@ -78,7 +79,7 @@ export class CiStack extends Stack {
         sid: "ReadSharedAppleSigningSecret",
         actions: ["secretsmanager:GetSecretValue"],
         // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard.
-        resources: [`arn:aws:secretsmanager:us-west-1:${this.account}:secret:${appleSecretId}-*`],
+        resources: [`arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`],
       }),
     );
     new CfnOutput(this, "ReleaseSigningRoleArn", { value: releaseRole.roleArn });

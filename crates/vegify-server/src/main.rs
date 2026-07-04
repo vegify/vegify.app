@@ -116,7 +116,7 @@ struct SignupBody {
 async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> Result<Json<Value>, AppError> {
     // Signups are disabled by default (invite-only while the app isn't open to the public). The server
     // is the authority — set VEGIFY_SIGNUPS_OPEN=1 to re-open (and flip SIGNUPS_ENABLED in @vegify/ui).
-    if std::env::var("VEGIFY_SIGNUPS_OPEN").as_deref() != Ok("1") {
+    if !vegify_config::server::signups_open() {
         return Err(AppError::Forbidden("Signups are disabled.".into()));
     }
     let name = body.name.unwrap_or_default().trim().to_string();
@@ -765,8 +765,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,vegify_server=debug"));
     tracing_subscriber::fmt().with_env_filter(filter).with_target(true).init();
 
-    let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "vegify.db".to_string());
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8787);
+    let db_path = vegify_config::server::database_path();
+    let port = vegify_config::server::port();
 
     // WAL on EBS-class storage: concurrent readers + a serialized writer (no NFS, no reserved
     // concurrency). busy_timeout lets a waiting writer retry instead of erroring under contention.

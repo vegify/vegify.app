@@ -9,30 +9,11 @@ pub mod data;
 
 use std::path::PathBuf;
 
-/// Path to the on-device SQLite DB. `DATABASE_PATH` overrides. Debug builds use the repo's seeded
-/// .data/vegify.db (sample content without a running server); release (shipped) builds use the
-/// per-user OS app-data dir — `<data_dir>/app.vegify.desktop/vegify.db`, matching Tauri's
-/// app_data_dir — created by `open_db` on first run, then filled from the server on sign-in.
+/// Path to the on-device SQLite DB — created by `open_db` on first run, then filled from the server
+/// on sign-in. Resolution (`DATABASE_PATH` override → debug: the repo's seeded .data/vegify.db →
+/// release: the per-user OS app-data dir) lives in vegify-config.
 pub fn db_path() -> String {
-    if let Ok(p) = std::env::var("DATABASE_PATH") {
-        return p;
-    }
-    #[cfg(debug_assertions)]
-    {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../.data/vegify.db")
-            .to_string_lossy()
-            .into_owned()
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        dirs::data_dir()
-            .expect("resolve OS data dir")
-            .join("app.vegify.desktop")
-            .join("vegify.db")
-            .to_string_lossy()
-            .into_owned()
-    }
+    vegify_config::desktop::db_path()
 }
 
 /// Open the on-device DB (SQLite at `db_path`): the local content cache + the `_outbox` push queue.
