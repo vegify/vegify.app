@@ -96,9 +96,17 @@ export interface DeployConfig {
   appleSecretId: string
 }
 
-export async function deployConfig(): Promise<DeployConfig> {
+export interface DeployConfigOptions {
+  /** false = resolve from env + placeholders ONLY, never touching SSM. This exists for the VegifyCi
+   *  bootstrap (bin/ci.ts): the deploy role's permission to read /vegify/deploy/* is itself granted
+   *  BY VegifyCi, so the stack that creates the grant must be able to synth without it — otherwise
+   *  a broken/missing grant can never be redeployed (the v0.18.1 chicken-and-egg). */
+  ssm?: boolean
+}
+
+export async function deployConfig(opts: DeployConfigOptions = {}): Promise<DeployConfig> {
   const region = process.env.CDK_DEFAULT_REGION ?? 'us-east-1'
-  const ssm = await ssmDecisions(region)
+  const ssm = opts.ssm === false ? {} : await ssmDecisions(region)
   /** env override → SSM decision → undefined. Empty strings count as unset. */
   const pick = (envKey: string, ssmKey: string): string | undefined =>
     process.env[envKey] || ssm[ssmKey] || undefined

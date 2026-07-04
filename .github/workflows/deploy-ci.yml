@@ -13,6 +13,8 @@ on:
     paths:
       - infra/lib/ci-stack.ts
       - infra/bin/ci.ts
+      # deployConfig shapes the VegifyCi synth (bin/ci.ts imports it), so config changes redeploy too.
+      - packages/config/**
       - .github/workflows/deploy-ci.yml
   workflow_dispatch:
 
@@ -41,6 +43,10 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Deploy VegifyCi
-        # No env: the Apple secret id is the /vegify/deploy/apple-secret-id SSM decision, read by
-        # deployConfig at synth (the step above provided the credentials).
+        # Bootstrap is env-driven ON PURPOSE (bin/ci.ts synths with ssm:false): this deploy creates
+        # the very grant that lets the deploy role read /vegify/deploy/*, so it must never depend on
+        # that grant existing. The Apple secret id rides a repository VARIABLE here (it's an id, not
+        # a secret); everything downstream reads the SSM decision instead.
+        env:
+          APPLE_SIGNING_SECRET_ID: ${{ vars.APPLE_SIGNING_SECRET_ID }}
         run: pnpm --filter @vegify/infra exec cdk --app 'tsx bin/ci.ts' deploy VegifyCi --require-approval never
