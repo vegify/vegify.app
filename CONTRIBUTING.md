@@ -28,7 +28,7 @@ vegify runs two clients over one backend, all rendering **one shared set of scre
 
 ## Commits and pull requests
 
-- **Conventional Commits are required.** Releases are automated by release-please, which parses commit messages — use `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, and so on. `feat:` and `fix:` are what land in the changelog and move the version.
+- **Write clear PR titles — they ARE the changelog.** Merging to main ships and auto-cuts a patch release whose notes are generated from PR titles (grouped by label — see `.github/release.yml`). Conventional-commit prefixes (`feat:`, `fix:`, …) remain welcome as style, but nothing parses them anymore; put `[skip release]` in the PR title to ship without cutting a version.
 - **Keep each PR to one logical change** — it is far easier to review and to revert.
 - **Verify before you push:** `pnpm build` (both apps build), `cargo test` (server + core), `cargo clippy --all-targets`, and `cargo fmt --check`. For a web change, smoke the built app, not just the dev server.
 

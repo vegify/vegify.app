@@ -1,5 +1,7 @@
 # Changelog
 
+> **Frozen as of v0.18.2 (2026-07-04).** The changelog now lives in [GitHub Releases](https://github.com/vegify/vegify.app/releases) — release notes are generated from PR titles, grouped by label (.github/release.yml). Entries below are the release-please-era record.
+
 ## [0.18.2](https://github.com/vegify/vegify.app/compare/v0.18.1...v0.18.2) (2026-07-04)
 
 

@@ -87,19 +87,18 @@ Two records the stack deliberately does **not** manage (because the apex TXT usu
 
 ## 7. CI/CD (optional, GitHub Actions)
 
-Pushing conventional commits drives release-please, which cuts a release and runs the deploy cascade. To enable it, set these repository **secrets** (the deploy role from §3 is assumed via OIDC — no static AWS keys):
+Merging to main ships: the deploy workflow cuts a patch release in-job (no release PRs, no bots on main) and runs the ordered cascade. `[skip release]` in a PR title ships without a version; `just release minor|major` dispatches a bigger bump. To enable CI deploys, set the following (the deploy role from §3 is assumed via OIDC — no static AWS keys):
 
 Repository **variables** (none are sensitive):
 
 - `AWS_ACCOUNT_ID` — your 12-digit account id; the workflows construct the two fixed-name role ARNs (`vegify-github-deploy`, `vegify-release-signing`) from it.
 - `AWS_REGION` — your deploy region if not `us-east-1`.
-- `RELEASE_APP_CLIENT_ID` — the GitHub App's client id (see below).
+- `APPLE_SIGNING_SECRET_ID` — only for the one-time `VegifyCi` bootstrap via deploy-ci (the release flow reads the SSM decision instead).
 - `VEGIFY_APPLE_TEAM_ID` — only for desktop publishing; public by construction (it's served in the AASA).
 
-Repository **secrets** (the irreducible GitHub-side credentials):
+Repository **secrets**:
 
-- `RELEASE_APP_PRIVATE_KEY` — a GitHub App that lets release-please open/label its release PRs and lets the merge trigger the deploy cascade. Create a minimal App (Contents + Pull requests read/write), install it on the repo, and store its private key here + its client id in the variable above.
-- `VEGIFY_PROVISION_PROFILE_B64` — only for desktop publishing (the embedded provisioning profile).
+- `VEGIFY_PROVISION_PROFILE_B64` — only for desktop publishing (the embedded provisioning profile). If you skip the desktop app, CI needs **zero secrets**.
 
 Everything else CI needs comes from your account at run time: the domain list and Apple secret id from the `/vegify/deploy/*` decisions, the backend origin from the parameter `VegifyServer` publishes, and the origin-verify secret generated in-account.
 

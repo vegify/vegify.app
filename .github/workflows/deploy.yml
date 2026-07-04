@@ -1,0 +1,493 @@
+name: deploy
+
+# Production ships on push to main (stormdeck model, adopted 2026-07-04 — replaces the
+# release-please → auto-merge train; see docs/deploys.md). Nothing lands on main but human merges:
+# releases are SIDE-EFFECTS, not causes — the `release` job tags vX.Y.Z (patch by default) and cuts
+# the GitHub Release IN-JOB, with GITHUB_TOKEN (whose pushes deliberately trigger nothing), before
+# anything deploys, so publish-desktop always has a Release to attach the signed .dmg to. Then the
+# proven ordered cascade runs unchanged:
+#
+#   release ──▶ changes + build-server ──▶ build-web ∥ build-desktop ──(all green)──▶
+#       deploy-server (path-gated) ──(/health 200)──▶ publish-web (path-gated) ∥ publish-desktop
+#
+# Human levers: `[skip release]` in the merge subject (= the squash-merged PR title) ships
+# server/web without cutting a version (and thus without a desktop artifact); `just release
+# minor|major` dispatches a bigger bump from main HEAD; `just redeploy vX.Y.Z` re-runs an existing
+# tag (the recovery path). Docs-only merges never get here (workflow-level paths filter).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "crates/**"
+      - "packages/**"
+      - "infra/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump for a fresh release from HEAD (patch|minor|major)"
+        required: false
+        default: patch
+      tag:
+        description: "OR: existing tag to (re)deploy, e.g. v0.18.2 — overrides bump"
+        required: false
+
+permissions: {}
+
+# One deploy at a time, queued not cancelled — cascades against a shared account must serialize
+# (this also removes the workflow-vs-workflow race class the old two-workflow layout had).
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  # ── Cut (or resolve) the release BEFORE anything builds ──────────────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the tag + create the Release
+    outputs:
+      # The git ref every downstream job checks out: the release tag when one exists for this run,
+      # else the pushed sha ([skip release]).
+      ref: ${{ steps.decide.outputs.ref }}
+      # X.Y.Z (no leading v) — injected as the desktop bundle version at build time.
+      version: ${{ steps.decide.outputs.version }}
+      # "true" when a GitHub Release exists for this run — gates publish-desktop (a .dmg is an
+      # artifact of a version; [skip release] pushes deploy without one).
+      released: ${{ steps.decide.outputs.released }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history + tags: next-version.sh reads the latest v* tag
+      - id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          out() { { echo "ref=$1"; echo "version=${2#v}"; echo "released=$3"; } >> "$GITHUB_OUTPUT"; echo "→ ref=$1 version=${2#v} released=$3"; }
+
+          # Recovery path: (re)deploy an existing tag — no new release is cut.
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+            git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "::error::tag $tag not found"; exit 1; }
+            out "$tag" "$tag" "true"
+            exit 0
+          fi
+
+          # [skip release] in the merge subject (= the squash-merged PR title): ship without a version.
+          subject=$(git log -1 --pretty=%s)
+          if [ "${{ github.event_name }}" = "push" ]; then
+            case "$subject" in
+              *"[skip release]"*)
+                latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+                echo "[skip release] — deploying ${GITHUB_SHA:0:7} without cutting a version (label stays $latest)"
+                out "$GITHUB_SHA" "${latest:-v0.0.0}" "false"
+                exit 0
+                ;;
+            esac
+          fi
+
+          # Idempotent: a re-run of an already-tagged push reuses its tag + Release.
+          if existing=$(git describe --tags --exact-match HEAD 2>/dev/null); then
+            echo "HEAD already tagged $existing — reusing"
+            gh release view "$existing" >/dev/null 2>&1 || gh release create "$existing" --verify-tag --generate-notes --title "$existing"
+            out "$existing" "$existing" "true"
+            exit 0
+          fi
+
+          # The normal path: cut the next version (patch per shipping merge; dispatch may bump higher),
+          # tag with GITHUB_TOKEN (triggers nothing), and create the Release with generated notes
+          # (grouped by PR label via .github/release.yml; PR titles are the changelog). Fresh versions
+          # are only ever cut from main — a dispatch pointed at another ref must not tag it.
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::refusing to cut a release from '$GITHUB_REF_NAME' — fresh versions come from main (redeploys use the tag input)"
+            exit 1
+          fi
+          next=$(scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
+          echo "cutting $next"
+          git tag -a "$next" -m "$next" HEAD
+          git push origin "refs/tags/$next"
+          gh release create "$next" --verify-tag --generate-notes --title "$next"
+          out "$next" "$next" "true"
+
+  # ── What did this push actually change? ──────────────────────────────────────────────────────────
+  # The web SSR calls the backend on every page, and deploying the backend REPLACES the single
+  # t4g.nano instance (a brief 504 window). Deploy each surface only when its inputs changed; a
+  # dispatch is explicit and deploys everything (the recovery path). Diff basis: the push event's
+  # before..sha — exactly this push, no tag arithmetic, no bump commits to exclude (none exist).
+  changes:
+    needs: release
+    if: ${{ always() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      server: ${{ steps.diff.outputs.server }}
+      web: ${{ steps.diff.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          set -euo pipefail
+          deploy_all() { echo "server=true" >> "$GITHUB_OUTPUT"; echo "web=true" >> "$GITHUB_OUTPUT"; echo "→ $1: deploying everything"; }
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            deploy_all "manual dispatch"; exit 0
+          fi
+          before="${{ github.event.before }}"
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$before" 2>/dev/null; then
+            deploy_all "no usable before-sha (first push / force-push)"; exit 0
+          fi
+          # Server-relevant: the Rust crates (the binary), packages/db (the baked seed), packages/config
+          # (deployConfig shapes the server template's env/grants), the server+VPC stacks and app wiring,
+          # and the Cargo manifests. Deliberately NOT web-start/client-logs stacks — that's web infra.
+          if git diff --quiet "$before" "$GITHUB_SHA" -- \
+            crates/ packages/db/ packages/config/ \
+            infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/bin/ \
+            Cargo.toml Cargo.lock; then
+            echo "server=false" >> "$GITHUB_OUTPUT"; echo "→ server unchanged (no instance replacement)"
+          else
+            echo "server=true" >> "$GITHUB_OUTPUT"; echo "→ server changed"
+          fi
+          # Web-relevant: the web app, every shared package, the web-side stacks/lambdas + app wiring.
+          if git diff --quiet "$before" "$GITHUB_SHA" -- \
+            apps/web/ packages/ \
+            infra/lib/web-start-stack.ts infra/lib/client-logs-stack.ts infra/lib/zone.ts \
+            infra/lambda/ infra/bin/ pnpm-lock.yaml; then
+            echo "web=false" >> "$GITHUB_OUTPUT"; echo "→ web unchanged"
+          else
+            echo "web=true" >> "$GITHUB_OUTPUT"; echo "→ web changed"
+          fi
+
+  # ── Build + test gate (all-or-nothing: every surface must build before anything deploys) ─────────
+  build-server:
+    needs: release
+    if: ${{ always() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-musl
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      # sccache wraps the native cargo test below. The `cross build` step is NOT wrapped: cross compiles
+      # inside a container that has neither the sccache binary nor the GHA cache creds, and feeding both
+      # in is fragile + only testable in a live release — that step stays on rust-cache.
+      - name: Test the server + shared core
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
+          CARGO_INCREMENTAL: "0"
+        run: cargo test -p vegify-server -p vegify-core
+      - name: Cross-build the aarch64-musl binary + stage the seed
+        run: |
+          cross build --release --target aarch64-unknown-linux-musl -p vegify-server
+          pnpm db:push && pnpm db:seed
+          mkdir -p infra/assets
+          cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
+          cp .data/vegify.db infra/assets/seed.db
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+          retention-days: 1
+
+  build-web:
+    needs: [release, build-server]
+    # build-server runs under always() — GitHub propagates a skipped ancestor transitively and
+    # auto-skips descendants UNLESS their own `if` contains a status function; the always() prefix
+    # forces evaluation, the result checks enforce the real ordering. Every downstream job needs
+    # this shape.
+    if: ${{ always() && needs.build-server.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - name: Typecheck + unit tests
+        run: |
+          pnpm typecheck
+          pnpm --filter web test
+      - name: Build the deployable web bundle (validates against the just-built server)
+        env:
+          VITE_CLIENT_LOG_URL: /__ingest
+          # A repository VARIABLE, not a secret — the team id is public by construction (it is served
+          # verbatim in the AASA at /.well-known/apple-app-site-association).
+          VEGIFY_APPLE_TEAM_ID: ${{ vars.VEGIFY_APPLE_TEAM_ID }}
+        run: pnpm --filter web build:aws
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          # BOTH assets WebStartStack references: the SSR Lambda bundle (.aws-lambda/) and the static
+          # client assets (dist/client/) the S3 BucketDeployment ships. Their common ancestor is
+          # apps/web, so the artifact is rooted there and consumers download it back into apps/web/.
+          path: |
+            apps/web/.aws-lambda/
+            apps/web/dist/client/
+          # .aws-lambda is a dotfile dir; upload-artifact@v4 excludes hidden paths by default, so
+          # without this it uploads NOTHING (just a warning) and deploy-server can't find the bundle.
+          include-hidden-files: true
+          retention-days: 1
+
+  build-desktop:
+    needs: [release, build-server]
+    if: ${{ always() && needs.build-server.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Tauri Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
+        run: |
+          pnpm --filter desktop gen:bindings
+          git diff --quiet -- apps/desktop/src/bindings.ts \
+            || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
+      - name: Typecheck + build the desktop frontend
+        run: |
+          pnpm --filter desktop exec tsc --noEmit
+          pnpm --filter desktop build
+
+  # ── Deploy: server first, then wait for it to be live ───────────────────────────────────────────
+  deploy-server:
+    needs: [release, changes, build-server, build-web, build-desktop]
+    # Build gate unchanged (all three green before we touch prod) PLUS the server actually changed. The
+    # check is `!= 'false'` (not `== 'true'`) so a failed/empty detection biases to deploy: a needless blip
+    # is far cheaper than leaving the backend out of sync with a push that did change it.
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && needs.changes.outputs.server != 'false' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # AWS OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # cdk synth is whole-app, so every stack's asset must exist even though we deploy only the
+      # server here: restore the server binary + the web bundle the upstream jobs already built.
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          # Rooted at apps/web (the upload's LCA) → restores apps/web/.aws-lambda/ + apps/web/dist/client/.
+          path: apps/web
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          # Constructed, not stored: the role name is fixed by ci-stack.ts, so the only GitHub-side
+          # fact is the account id (a repository VARIABLE — role ARNs aren't secrets).
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Deploy the server
+        # No env: the domain list + email derivations come from the account's own SSM decisions
+        # (/vegify/deploy/*, written once by `just init`) — deployConfig reads them at synth.
+        run: |
+          # Absolute path: `pnpm --filter … exec` runs cdk with CWD=infra/, so a bare cdk-out.json
+          # would land in infra/ where the next step (CWD=repo root) can't find it.
+          pnpm --filter @vegify/infra exec cdk deploy VegifyVpc VegifyServer \
+            --require-approval never --outputs-file "$GITHUB_WORKSPACE/cdk-out.json"
+      - name: Wait for the server to be live (/health → 200)
+        run: |
+          set -euo pipefail
+          url=$(jq -r '.VegifyServer.Url' "$GITHUB_WORKSPACE/cdk-out.json")
+          echo "Polling $url/health"
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/health" || echo 000)
+            echo "[$i] $code"
+            [ "$code" = "200" ] && { echo "server live"; exit 0; }
+            sleep 10
+          done
+          echo "::error::server /health did not return 200 within ~10 min"; exit 1
+
+  # ── Publish the clients in parallel, now that the server they depend on is live ──────────────────
+  publish-web:
+    needs: [release, changes, build-server, build-web, build-desktop, deploy-server]
+    # All builds green AND the server is current: deploy-server SUCCEEDED (server changed + deployed)
+    # OR was SKIPPED (no server change — the existing backend is already current). A failed/cancelled
+    # deploy-server blocks the web publish. Web itself is path-gated (same bias-to-deploy rule).
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') && needs.changes.outputs.web != 'false' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-asset
+          path: infra/assets/
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: apps/web
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Publish the web shell
+        # No env: the domain list, cert override, backend origin, ingest origin, hosted zone, and
+        # origin-verify secret are all either SSM decisions (/vegify/deploy/*), cross-stack wiring,
+        # lookups, or generated in-account — nothing GitHub-side remains.
+        run: |
+          # --exclusively: VegifyWebStart imports from VegifyServer (deployed earlier in the cascade) —
+          # without it, cdk would "helpfully" redeploy the server here too, breaking the path-filter
+          # promise that web-only pushes never replace the backend instance.
+          pnpm --filter @vegify/infra exec cdk deploy VegifyWebStart VegifyClientLogs \
+            --exclusively --require-approval never
+
+  publish-desktop:
+    needs: [release, changes, build-server, build-web, build-desktop, deploy-server]
+    # Same gate as publish-web, PLUS a Release must exist for this run — the signed .dmg is an
+    # artifact of a version, so [skip release] pushes ship no desktop build.
+    if: ${{ always() && needs.release.outputs.released == 'true' && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') }}
+    runs-on: macos-latest
+    permissions:
+      contents: write # attach the signed .dmg to the GitHub Release
+      id-token: write # AWS OIDC, to read the shared Apple signing secret
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
+          aws-region: us-west-1
+      - name: Resolve deploy parameters (backend origin, Apple secret id)
+        # Both come from the account, not GitHub: VegifyServer publishes its origin to
+        # /vegify/deploy/api-url (baked into the binary below via option_env!), and the Apple signing
+        # secret's id is the /vegify/deploy/apple-secret-id decision. The params live in the deploy
+        # region; the job's own region (us-west-1) is where the shared Apple secret lives.
+        run: |
+          set -euo pipefail
+          region="${{ vars.AWS_REGION || 'us-east-1' }}"
+          # Assign-then-echo: a failure inside `echo "$(cmd)"` is invisible to set -e (the echo still
+          # exits 0). A plain assignment propagates the substitution's exit status, so a missing
+          # parameter fails HERE, not two steps later with an empty value.
+          api_url=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/api-url --query Parameter.Value --output text)
+          apple_secret_id=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/apple-secret-id --query Parameter.Value --output text)
+          echo "VEGIFY_API_URL=$api_url" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id" >> "$GITHUB_ENV"
+      - name: Load the Apple signing secret
+        # Secrets Manager JSON {certificate (.p12 b64), certificate_password, signing_identity, team_id,
+        # api_key (.p8), api_key_id, api_issuer_id} -> tauri-action's APPLE_* env. The Developer ID cert
+        # + ASC API key are Apple-account-wide; the secret's id was resolved from SSM above.
+        run: |
+          set -euo pipefail
+          s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
+          echo "::add-mask::$(printf '%s' "$s" | jq -r '.certificate_password')"
+          {
+            echo "APPLE_CERTIFICATE=$(printf '%s' "$s" | jq -r '.certificate')"
+            echo "APPLE_CERTIFICATE_PASSWORD=$(printf '%s' "$s" | jq -r '.certificate_password')"
+            echo "APPLE_SIGNING_IDENTITY=$(printf '%s' "$s" | jq -r '.signing_identity')"
+            echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')"
+            echo "APPLE_API_ISSUER=$(printf '%s' "$s" | jq -r '.api_issuer_id')"
+            echo "APPLE_API_KEY=$(printf '%s' "$s" | jq -r '.api_key_id')"
+          } >> "$GITHUB_ENV"
+          printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
+      - name: Inject the Developer ID provisioning profile (authorizes associated-domains at launch)
+        # The restricted associated-domains entitlement needs an embedded provisioning profile or amfid
+        # refuses to spawn the app. tauri's bundle.macOS.files copies it into Contents/ before signing.
+        env:
+          VEGIFY_PROVISION_PROFILE_B64: ${{ secrets.VEGIFY_PROVISION_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$VEGIFY_PROVISION_PROFILE_B64" | openssl base64 -d -A > apps/desktop/src-tauri/embedded.provisionprofile
+          echo "provisioning profile: $(wc -c < apps/desktop/src-tauri/embedded.provisionprofile) bytes"
+      - name: Inject the tag-derived bundle version
+        # The committed tauri.conf.json version is vestigial ("0.0.0") — the shipped bundle's version
+        # comes from the release tag via a --config merge file, so no version-bump commit ever exists.
+        run: printf '{"version":"%s"}\n' "${{ needs.release.outputs.version }}" > apps/desktop/src-tauri/tauri.version.json
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # VEGIFY_API_URL rides in from the resolve step (GITHUB_ENV) and is baked into the binary
+          # via option_env! so the shipped app points at the real backend without the host living in
+          # the source tree or a repository secret.
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ needs.release.outputs.ref }}
+          args: --target universal-apple-darwin --config src-tauri/tauri.version.json

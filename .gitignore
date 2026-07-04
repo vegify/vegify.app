@@ -36,3 +36,6 @@ cdk.context.json
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+
+# CI-generated tauri version override (deploy.yml injects the tag-derived version)
+tauri.version.json

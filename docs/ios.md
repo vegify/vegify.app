@@ -29,7 +29,7 @@ Prereqs (all present on this machine): full Xcode with an iOS runtime, CocoaPods
 
 ## Versioning
 
-`gen/apple/vegify_iOS/Info.plist` bakes the version at scaffold time; both version lines carry an `x-release-please-version` comment and the file is a release-please `extra-files` entry, so releases keep it current.
+`gen/apple/vegify_iOS/Info.plist` bakes the version at scaffold time; the release-please `extra-files` sync that used to keep it current is retired (versions are git-tag-derived now), so its value is frozen — inject the real version at archive time when device/App Store builds become real (the desktop already does this via `deploy.yml`'s `tauri.version.json`).
 
 ## Known gaps (deliberate, scaffold-scope)
 

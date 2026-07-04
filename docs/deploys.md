@@ -1,5 +1,11 @@
 # Deploys and zero-downtime
 
+## Trigger + release model (2026-07-04 — the stormdeck cutover)
+
+**Merging to main is what ships.** The single `deploy.yml` workflow (`concurrency: deploy`, queued not cancelled) first cuts the release in-job — a `vX.Y.Z` tag (patch by default; `just release minor|major` dispatches bigger bumps) pushed with `GITHUB_TOKEN` so it triggers nothing, plus a GitHub Release whose notes are generated from PR titles (`.github/release.yml`) — then runs the ordered cascade: build gate (server + web + desktop, all-or-nothing) → `deploy-server` (path-gated, `/health`-gated) → `publish-web` (path-gated) ∥ `publish-desktop` (only when a release was cut; the signed `.dmg` attaches to it, with the bundle version injected from the tag via `tauri.version.json`). `[skip release]` in the merged PR's title ships server/web without cutting a version. Versions are git-tag-derived; every committed version field is a vestigial `0.0.0`.
+ 
+This replaced the release-please → auto-merge train (2026-06-26 → 2026-07-04): the train's bot-authored release PR sat in every deploy's critical path and produced a steady tax of automation side-effects (auto-merge races, token migrations, stacked-PR closures, workflow-vs-workflow races). The stormdeck model keeps everything the train proved — the ordered cascade, the health gate, path filters, signed desktop artifacts — and removes every bot decision: nothing lands on main but human merges, and a release is a side-effect of shipping, not a PR a bot must land.
+
 ## Current model
 
 The backend is a single `t4g.nano` EC2 instance (the locked lowest-cost standing compute). It runs `vegify-server` (Axum) under systemd, supervised by litestream, with the libSQL database on a dedicated GP3 EBS volume at `/data/vegify.db`. A stable Elastic IP fronts it; the web (CloudFront + SSR Lambda) and the desktop app call it over HTTPS.
@@ -15,7 +21,7 @@ The web SSR calls the backend on **every page** (the auth gate in `apps/web/src/
 Zero-downtime for the common case *without* breaking the single-nano / no-ALB / self-hosted-DB locks:
 
 1. **Graceful degradation (web). DONE** (commit `c1e962b`). A backend failure (anything but a clean 401) renders the public pages (landing, auth forms) anonymously instead of erroring; only gated pages fall through to the retry boundary. The landing is now immune to a backend blip.
-2. **Pipeline path-filter. TODO.** Skip `build-server` + `deploy-server` when no server-relevant files changed (`crates/**`, `infra/lib/server-stack.ts`, the Cargo manifests). Most releases are web/desktop-only and would then never touch the backend, so there is no blip at all.
+2. **Pipeline path-filter. DONE** (and carried into the 2026-07-04 trigger model below). `deploy-server` is skipped when no server-relevant files changed (`crates/**`, `packages/db/**`, `packages/config/**`, the server/VPC stacks + app wiring, the Cargo manifests) — web/desktop-only pushes never touch the backend, so there is no blip at all. The builds still run as the all-or-nothing gate.
 3. **In-place server restart. TODO (optional).** For genuine server changes, swap the binary and `systemctl restart` (~1s, the DB volume stays attached) via SSM, instead of replacing the instance (minutes). Requires decoupling the binary from the user-data text so a binary change no longer forces a CloudFormation replacement. Path-filter + graceful degradation already cover ~all practical cases, so this is the lowest-priority piece.
 
 ## Future: true blue-green (option 2, deferred but specced)

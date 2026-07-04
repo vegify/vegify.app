@@ -1,6 +1,6 @@
 [package]
 name = "vegify"
-version = "0.18.2" # x-release-please-version
+version = "0.0.0" # vestigial - the version is git-tag-derived (see .github/workflows/deploy.yml)
 description = "Vegify desktop (local-first)"
 authors = ["you"]
 edition = "2021"
