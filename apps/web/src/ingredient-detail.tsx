@@ -2,7 +2,7 @@
 // (owned ingredients, browsable under their creator) and /ingredients/$segment (the communal catalog,
 // plus slug-history/legacy-id 301s). Mirrors recipe-detail.tsx's shape: server-fns + query + the page
 // component with its inline-edit adapter live here; the route files only resolve/redirect.
-import { redirect, useRouter } from '@tanstack/react-router'
+import { redirect, useRouteContext, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import {
@@ -79,6 +79,13 @@ const deleteFn = createServerFn({ method: 'POST' })
     await deleteIngredient(data)
   })
 
+const reportIngredientFn = createServerFn({ method: 'POST' })
+  .validator((d: { id: string; reason: string; note: string }) => d)
+  .handler(async ({ data }) => {
+    const { reportContent } = await import('./content')
+    await reportContent({ targetType: 'ingredient', targetId: data.id, reason: data.reason as never, note: data.note })
+  })
+
 export const ingredientQuery = (id: string) =>
   queryOptions({ queryKey: ['ingredient', id], queryFn: () => getIngredient({ data: id }) })
 
@@ -116,6 +123,7 @@ const toInput = (d: IngredientEditData): IngredientFormInput => ({
 })
 
 export function IngredientDetailPage({ ingredientId }: { ingredientId: string }) {
+  const { user } = useRouteContext({ from: '__root__' })
   const { data } = useSuspenseQuery(ingredientQuery(ingredientId))
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -155,5 +163,17 @@ export function IngredientDetailPage({ ingredientId }: { ingredientId: string })
       }
     : undefined
 
-  return <IngredientDetailView ingredient={data.vm} LinkComponent={LinkAdapter} edit={edit} />
+  const onReportContent =
+    user && !edit
+      ? (reason: string, note: string) => reportIngredientFn({ data: { id: ingredientId, reason, note } })
+      : undefined
+
+  return (
+    <IngredientDetailView
+      ingredient={data.vm}
+      LinkComponent={LinkAdapter}
+      edit={edit}
+      onReportContent={onReportContent}
+    />
+  )
 }

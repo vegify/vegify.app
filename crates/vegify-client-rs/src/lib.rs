@@ -507,6 +507,48 @@ impl VegifyClient {
             .map_err(err)?;
         Ok(())
     }
+
+    // ---- UGC safety (App Review 1.2) + account deletion (5.1.1(v)) ----
+
+    /// Report content or a user. `target_type` ∈ {ingredient, recipe, user, message}.
+    pub fn report(
+        &self,
+        token: &str,
+        target_type: &str,
+        target_id: &str,
+        reason: &str,
+        note: &str,
+    ) -> Result<(), Error> {
+        Self::bearer(ureq::post(&self.content_url("report")), token)
+            .send_json(serde_json::json!({
+                "targetType": target_type, "targetId": target_id, "reason": reason,
+                "note": if note.is_empty() { serde_json::Value::Null } else { serde_json::json!(note) },
+            }))
+            .map_err(err)?;
+        Ok(())
+    }
+
+    pub fn block_user(&self, token: &str, username: &str) -> Result<(), Error> {
+        Self::bearer(ureq::post(&format!("{}/api/users/block", self.base)), token)
+            .send_json(serde_json::json!({ "username": username }))
+            .map_err(err)?;
+        Ok(())
+    }
+
+    pub fn unblock_user(&self, token: &str, username: &str) -> Result<(), Error> {
+        Self::bearer(ureq::post(&format!("{}/api/users/unblock", self.base)), token)
+            .send_json(serde_json::json!({ "username": username }))
+            .map_err(err)?;
+        Ok(())
+    }
+
+    /// Delete the signed-in account (password-reconfirmed). Irreversible.
+    pub fn delete_account(&self, token: &str, password: &str) -> Result<(), Error> {
+        Self::bearer(ureq::post(&format!("{}/api/auth/delete-account", self.base)), token)
+            .send_json(serde_json::json!({ "password": password }))
+            .map_err(err)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ export const BARE_PATHS = new Set(['/login', '/signup', '/forgot', '/reset', '/v
 // blog carries its own header/footer (like the landing at "/", which is special-cased on `user` in
 // __root). Without this, a signed-in visitor gets double chrome: the AppShell sidebar + search bar
 // wrapped around the blog's header — two logos on screen (caught on the live page, 2026-07-01).
-export const BARE_PREFIXES: readonly string[] = ['/blog']
+export const BARE_PREFIXES: readonly string[] = ['/blog', '/terms', '/privacy']
 export const isBarePath = (pathname: string): boolean =>
   BARE_PATHS.has(pathname) ||
   BARE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
@@ -18,7 +18,7 @@ export const isBarePath = (pathname: string): boolean =>
 // Pages reachable without a session. "/" is the public marketing landing for logged-out visitors (and
 // crawlers) AND the app home for signed-in users — the index route branches on `user` — so it is public
 // but never redirected in either direction. Every other STATIC route is gated (see STATIC_TOP_LEVEL).
-export const PUBLIC_PATHS = new Set(['/', ...BARE_PATHS])
+export const PUBLIC_PATHS = new Set(['/', '/terms', '/privacy', '/download', ...BARE_PATHS])
 
 // Auth FORMS a signed-in user has no use for → bounce them to "/". Deliberately NOT /verify or /reset:
 // those consume a one-time token from an email link and must work even while signed in. (A signed-in user

@@ -267,6 +267,26 @@ export const vegifyData = {
   notificationsMarkRead(): Promise<null> {
     return invoke("notifications_mark_read");
   },
+
+  /** @throws {DataError} */
+  reportContent(targetType: string, targetId: string, reason: string, note: string): Promise<null> {
+    return invoke("report_content", { target_type: targetType, target_id: targetId, reason, note });
+  },
+
+  /** @throws {DataError} */
+  blockUser(username: string): Promise<null> {
+    return invoke("block_user", { username });
+  },
+
+  /** @throws {DataError} */
+  unblockUser(username: string): Promise<null> {
+    return invoke("unblock_user", { username });
+  },
+
+  /** @throws {DataError} */
+  deleteAccount(password: string): Promise<null> {
+    return invoke("delete_account", { password });
+  },
 };
 
 export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };

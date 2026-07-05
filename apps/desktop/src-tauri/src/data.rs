@@ -526,6 +526,12 @@ pub trait VegifyData {
     fn notifications(&self) -> Result<Vec<DmNotification>, DataError>;
     fn notifications_unread(&self) -> Result<f64, DataError>;
     fn notifications_mark_read(&self) -> Result<(), DataError>;
+    /// UGC safety (App Review 1.2): report content/users, block/unblock a user.
+    fn report_content(&self, target_type: String, target_id: String, reason: String, note: String) -> Result<(), DataError>;
+    fn block_user(&self, username: String) -> Result<(), DataError>;
+    fn unblock_user(&self, username: String) -> Result<(), DataError>;
+    /// Delete the signed-in account (App Review 5.1.1(v)); password-reconfirmed, then signs out locally.
+    fn delete_account(&self, password: String) -> Result<(), DataError>;
 }
 
 // The trait methods are thin desktop adapters: derive the viewer from the cached session, lock the
@@ -743,6 +749,32 @@ impl VegifyData for Db {
     fn notifications_mark_read(&self) -> Result<(), DataError> {
         let token = self.require_token()?;
         Ok(client().notifications_mark_all_read(&token)?)
+    }
+
+    fn report_content(&self, target_type: String, target_id: String, reason: String, note: String) -> Result<(), DataError> {
+        let token = self.require_token()?;
+        Ok(client().report(&token, &target_type, &target_id, &reason, &note)?)
+    }
+
+    fn block_user(&self, username: String) -> Result<(), DataError> {
+        let token = self.require_token()?;
+        client().block_user(&token, &username)?;
+        self.pull() // reads change (blocked user's content drops out) — rebuild the local cache
+    }
+
+    fn unblock_user(&self, username: String) -> Result<(), DataError> {
+        let token = self.require_token()?;
+        client().unblock_user(&token, &username)?;
+        self.pull() // rebuild with the unblocked user's content back
+    }
+
+    fn delete_account(&self, password: String) -> Result<(), DataError> {
+        let token = self.require_token()?;
+        client().delete_account(&token, &password)?;
+        // The account is gone — sign out locally (clear the keychain + cached session).
+        session_store().clear();
+        *self.auth.lock().unwrap() = None;
+        Ok(())
     }
 }
 

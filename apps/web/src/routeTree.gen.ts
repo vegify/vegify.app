@@ -10,9 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetRouteImport } from './routes/reset'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
@@ -39,6 +41,11 @@ const VerifyRoute = VerifyRouteImport.update({
   path: '/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
@@ -52,6 +59,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ResetRoute = ResetRouteImport.update({
   id: '/reset',
   path: '/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -163,9 +175,11 @@ export interface FileRoutesByFullPath {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -189,9 +203,11 @@ export interface FileRoutesByTo {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -216,9 +232,11 @@ export interface FileRoutesById {
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -244,9 +262,11 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/notifications'
+    | '/privacy'
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
     | '/blog/$slug'
@@ -270,9 +290,11 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/notifications'
+    | '/privacy'
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
     | '/blog/$slug'
@@ -296,9 +318,11 @@ export interface FileRouteTypes {
     | '/forgot'
     | '/login'
     | '/notifications'
+    | '/privacy'
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
     | '/blog/$slug'
@@ -323,9 +347,11 @@ export interface RootRouteChildren {
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
+  PrivacyRoute: typeof PrivacyRoute
   ResetRoute: typeof ResetRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  TermsRoute: typeof TermsRoute
   VerifyRoute: typeof VerifyRoute
   UsernameRecipeSlugRoute: typeof UsernameRecipeSlugRoute
   BlogSlugRoute: typeof BlogSlugRoute
@@ -353,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
@@ -372,6 +405,13 @@ declare module '@tanstack/react-router' {
       path: '/reset'
       fullPath: '/reset'
       preLoaderRoute: typeof ResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -523,9 +563,11 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,
+  PrivacyRoute: PrivacyRoute,
   ResetRoute: ResetRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  TermsRoute: TermsRoute,
   VerifyRoute: VerifyRoute,
   UsernameRecipeSlugRoute: UsernameRecipeSlugRoute,
   BlogSlugRoute: BlogSlugRoute,
