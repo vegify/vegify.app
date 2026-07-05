@@ -381,6 +381,21 @@ export function ProfileView({
         ) : null}
       </header>
 
+      {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
+      <section className="mb-10 grid gap-3 sm:grid-cols-3">
+        {["Meal plans", "Followers", "Following"].map((label) => (
+          <div
+            key={label}
+            className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
+          >
+            <span className="text-sm font-medium text-muted-foreground">{label}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+              soon
+            </span>
+          </div>
+        ))}
+      </section>
+
       <section className="mb-10">
         <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
           Recipes <span className="font-normal text-muted-foreground">· {profile.recipes.length}</span>
@@ -430,21 +445,6 @@ export function ProfileView({
             ))}
           </div>
         )}
-      </section>
-
-      {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        {["Meal plans", "Followers", "Following"].map((label) => (
-          <div
-            key={label}
-            className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
-          >
-            <span className="text-sm font-medium text-muted-foreground">{label}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-              soon
-            </span>
-          </div>
-        ))}
       </section>
     </div>
   );

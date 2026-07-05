@@ -164,7 +164,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               await logoutFn()
               queryClient.clear() // drop the prior session's cached content before the gate flips
               await router.invalidate()
-              await router.navigate({ to: '/login' })
+              // Stay HOME after sign-out (public browsing is the default experience) — bouncing to
+              // /login read as an eviction.
+              await router.navigate({ to: '/' })
             }}
           >
             {user && !user.email_verified ? (
