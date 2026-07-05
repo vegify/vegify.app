@@ -10,6 +10,7 @@ mod blog;
 mod content;
 mod email;
 mod error;
+mod messages;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
 // now (a claimed handle can't be reclaimed); not yet called — signups are invite-only and `users` has
 // no handle column. `signup` will call `handles::validate_username` when usernames launch.
@@ -391,6 +392,82 @@ async fn profile(
     Ok(Json(out))
 }
 
+// ---- messages routes (1:1 DMs; all authed; addressing by public handle — see messages.rs) ----
+
+#[derive(Deserialize)]
+struct ThreadQuery {
+    with: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SendMessageBody {
+    to: Option<String>,
+    body: Option<String>,
+}
+
+async fn message_conversations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<messages::ConversationSummary>>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let out = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        messages::list_conversations(conn, &me.id)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
+async fn message_thread(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ThreadQuery>,
+) -> Result<Json<messages::Thread>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let with = q.with.unwrap_or_default();
+    if with.is_empty() {
+        return Err(AppError::BadRequest("A username is required.".into()));
+    }
+    let out = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        messages::thread(conn, &me.id, &with)
+    })
+    .await?;
+    // Opening a thread consumes unread state — nudge the viewer's OTHER clients so badges drop.
+    state.notify_change("message");
+    Ok(Json(out))
+}
+
+async fn message_send(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SendMessageBody>,
+) -> Result<Json<messages::Message>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let to = body.to.unwrap_or_default();
+    let text = body.body.unwrap_or_default();
+    let out = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        messages::send(conn, &me.id, &to, &text)
+    })
+    .await?;
+    state.notify_change("message");
+    Ok(Json(out))
+}
+
+async fn message_unread(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let count = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        messages::unread_count(conn, &me.id)
+    })
+    .await?;
+    Ok(Json(json!({ "count": count })))
+}
+
 async fn save_recipe(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -661,6 +738,8 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS posts_status_published_idx ON posts(status, published_at);",
     )?;
+    // 1:1 direct messages (server-owned, like posts — online-only, never in the shared content schema).
+    messages::ensure_tables(conn)?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -801,6 +880,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/password-reset/confirm", post(confirm_password_reset))
         .route("/api/auth/email-verification/request", post(request_email_verification))
         .route("/api/auth/email-verification/confirm", post(confirm_email_verification))
+        .route("/api/messages/conversations", get(message_conversations))
+        .route("/api/messages/thread", get(message_thread))
+        .route("/api/messages/send", post(message_send))
+        .route("/api/messages/unread", get(message_unread))
         .route(
             "/api/content/recipes",
             get(list_recipes).post(save_recipe).delete(delete_recipe),
