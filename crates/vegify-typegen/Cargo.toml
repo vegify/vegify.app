@@ -1,0 +1,13 @@
+[package]
+name = "vegify-typegen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Generates packages/api-types/index.ts (the web's wire contract) from vegify-api-types' TypeCollection. Dev-time tool - never part of a shipped build. The desktop's bindings.ts is NOT generated here: applications are leaves, never dependencies - the desktop crate polices its own bindings with ttipc's in-crate check()/export_to test pattern."
+
+[dependencies]
+# The wire contract crate - its api_types() is the full HTTP contract, without the server's heft.
+vegify-api-types = { path = "../../services/api/types" }
+# Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
+specta-typescript = "=0.0.12"
+specta-serde = "=0.0.12"

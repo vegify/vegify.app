@@ -14,8 +14,8 @@ mod messages;
 mod notifications;
 mod usda;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
-// now (a claimed handle can't be reclaimed); not yet called — signups are invite-only and `users` has
-// no handle column. `signup` will call `handles::validate_username` when usernames launch.
+// now (a claimed handle can't be reclaimed); not yet called — signups are invite-only. `signup` will
+// call `handles::validate_username` when usernames launch.
 #[allow(dead_code)]
 mod handles;
 

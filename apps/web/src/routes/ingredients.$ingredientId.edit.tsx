@@ -61,7 +61,7 @@ function EditIngredient() {
       ingredient.caloriesPer100g != null ? ingredient.caloriesPer100g * scale : null,
     nutrients: ingredient.nutrients.map((n) => ({
       name: n.name,
-      amountPerServing: n.amountPer100g * scale,
+      amountPerServing: (n.amountPer100g ?? 0) * scale,
       unit: n.unit,
     })),
   }

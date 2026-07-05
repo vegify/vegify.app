@@ -11,10 +11,10 @@
 //! read and then re-triggered notifies again — you saw the old edit, this is a new one. The read
 //! model is bell-standard: opening the notifications page reads everything ([`mark_all_read`]).
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::AppError;
+pub use vegify_api_types::{Notification};
 
 /// Bell dropdown depth — the page shows the recent window, not an infinite archive.
 const LIST_LIMIT: i64 = 50;
@@ -42,16 +42,6 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Notification {
-    pub id: String,
-    pub kind: String,
-    /// Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`).
-    pub payload: Value,
-    pub created_at: i64,
-    pub read: bool,
-}
 
 /// Record an event for `user_id`. Callers pass a serializable payload. The generic producer —
 /// future event kinds enter here (today only tests use it directly; the ingredient producer below

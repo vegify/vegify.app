@@ -4,8 +4,9 @@
 //! fires the deploy cascade (the reason we moved off in-code BLOG_POSTS). Body is an opaque JSON block
 //! list: the server stores + serves it verbatim; the web owns the block schema (prose / figure).
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
+pub use vegify_api_types::{PostSummary, PostFull};
 
 /// The bundled migration seed (the two originally-in-code posts). One-time: `seed_if_empty` inserts it
 /// only into an empty table, so it never clobbers posts authored later.
@@ -23,28 +24,7 @@ struct SeedPost {
     body: Value,
 }
 
-/// Index-card shape (no body).
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostSummary {
-    pub slug: String,
-    pub title: String,
-    pub description: String,
-    pub date_published: String,
-    pub date_display: String,
-}
 
-/// Full post — `body` is the parsed JSON block list the web renders.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostFull {
-    pub slug: String,
-    pub title: String,
-    pub description: String,
-    pub date_published: String,
-    pub date_display: String,
-    pub body: Value,
-}
 
 /// Migrate the bundled posts into an EMPTY table (idempotent: no-op once any post exists).
 pub fn seed_if_empty(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {

@@ -8,9 +8,9 @@
 //! stable public identifier ([[docs/usernames.md]]). Sends fan out over the existing WS push as
 //! `{"changed":"message"}` — a content-free nudge; clients refetch their own auth-scoped state.
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
 
 use crate::error::AppError;
+pub use vegify_api_types::{Party, ConversationSummary, Message, Thread};
 
 /// Body cap — generous for a DM, small enough that a hostile client can't stuff megabytes a row.
 const MAX_BODY_CHARS: usize = 5_000;
@@ -47,45 +47,9 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// The other party, as the conversation list + thread header shows them.
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Party {
-    pub id: String,
-    pub name: String,
-    pub username: String,
-}
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationSummary {
-    pub id: String,
-    pub with: Party,
-    pub last_body: String,
-    pub last_at: i64,
-    /// True when the last message is the viewer's own (the list renders "You: …").
-    pub last_is_mine: bool,
-    pub unread: i64,
-}
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Message {
-    pub id: String,
-    pub body: String,
-    pub created_at: i64,
-    /// True when the viewer sent it (clients render alignment off this, not off raw ids).
-    pub mine: bool,
-}
 
-/// A thread as the thread screen consumes it: the other party (resolved even before any message
-/// exists, so a profile's "Message" button lands on an empty composer) + the messages, oldest first.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Thread {
-    pub with: Party,
-    pub messages: Vec<Message>,
-}
 
 fn party_by_username(conn: &Connection, username: &str) -> Result<Party, AppError> {
     conn.query_row(

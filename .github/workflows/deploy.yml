@@ -236,11 +236,11 @@ jobs:
           retention-days: 1
 
   build-types:
-    # The generated-types gate, every push: regenerate the desktop IPC bindings from the Rust source
-    # of truth, fail on drift, and typecheck the desktop frontend against them. build-web and
-    # build-desktop both branch off THIS (types before clients); the web's own wire types are still
-    # hand-mirrored TS (apps/web/src/content.ts) — exporting the core's serde shapes to a shared TS
-    # package the web imports is the follow-up that gives the web→types edge real payload.
+    # The generated-types gate, every push: regenerate BOTH generated artifacts from the Rust source
+    # of truth — the desktop IPC bindings AND @vegify/api-types (the web's wire types) — fail on
+    # drift, and typecheck the desktop frontend. build-web and build-desktop both branch off THIS:
+    # types before clients, and the web→types edge carries real payload (content.ts imports the
+    # generated contract; nothing is hand-mirrored).
     needs: release
     if: ${{ always() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
@@ -270,11 +270,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: mozilla-actions/sccache-action@v0.0.10
-      - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
+      - name: Regenerate generated types + fail on drift (the up-to-date-types gate)
         run: |
-          pnpm --filter desktop gen:bindings
-          git diff --quiet -- apps/desktop/src/bindings.ts \
-            || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
+          VEGIFY_REGEN_BINDINGS=1 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib bindings_ts_is_current
+          cargo run -p vegify-typegen
+          git diff --quiet -- apps/desktop/src/bindings.ts packages/api-types \
+            || { echo "::error::generated types are stale — run 'just bindings' and commit the result."; exit 1; }
       - name: Typecheck the desktop frontend against the fresh types
         run: pnpm --filter desktop exec tsc --noEmit
 

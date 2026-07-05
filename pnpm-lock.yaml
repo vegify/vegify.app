@@ -105,6 +105,9 @@ importers:
       '@tanstack/router-plugin':
         specifier: ^1.132.0
         version: 1.168.18(@tanstack/react-router@1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.16.9)(tsx@4.22.4)(yaml@2.9.0))
+      '@vegify/api-types':
+        specifier: workspace:*
+        version: link:../../packages/api-types
       '@vegify/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -206,6 +209,8 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/api-types: {}
 
   packages/config:
     dependencies:

@@ -6,9 +6,9 @@ description = "Vegify standing backend — Axum over SQLite-WAL, serving the SAM
 
 [dependencies]
 # The shared DAL — the same content model + viewer-scoped reads the desktop uses.
-vegify-core = { path = "../../crates/vegify-core" }
+vegify-core = { path = "../../../crates/vegify-core" }
 # Central env-sourced settings (db path, port, signups gate, SES region, email link base/From).
-vegify-config = { path = "../../crates/vegify-config", features = ["server"] }
+vegify-config = { path = "../../../crates/vegify-config", features = ["server"] }
 axum = { version = "0.8", features = ["ws"] }
 # `sync` = the broadcast channel that fans content-change signals to /ws clients; `time` = the keepalive ping interval.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
@@ -18,6 +18,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
 serde = { version = "1", features = ["derive"] }
+# The wire contract lives in its own crate (../types) — the shapes these modules construct.
+vegify-api-types = { path = "../types" }
 serde_json = "1"
 # Auth port: argon2id (PHC strings cross-compatible with hash-wasm) + sha256-hashed opaque tokens.
 argon2 = "0.5"

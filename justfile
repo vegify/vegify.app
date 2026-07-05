@@ -51,9 +51,12 @@ rust-desktop:
     # unused PathBuf import only the release build could see). Check, not build — types + lints only.
     cargo check --release --manifest-path apps/desktop/src-tauri/Cargo.toml
 
-# Regenerate the desktop TS bindings after changing Rust procedures/types.
+# Regenerate ALL generated type artifacts from the Rust source of truth: the desktop's IPC bindings
+# (in-crate, ttipc's test pattern — the app is a leaf, never a dependency) + @vegify/api-types
+# (crates/vegify-typegen, from the server's wire-contract crate).
 bindings:
-    pnpm --filter desktop gen:bindings
+    VEGIFY_REGEN_BINDINGS=1 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib bindings_ts_is_current -- --nocapture
+    cargo run -p vegify-typegen
 
 # Rebuild the USDA catalog artifact from the raw FDC downloads (.data/import/usda/) → .data/build/.
 usda-data:

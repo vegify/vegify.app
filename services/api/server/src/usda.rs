@@ -141,7 +141,7 @@ mod tests {
 
     /// The REAL client schema (the desktop ships it; its drift test pins it to the drizzle source),
     /// so this fixture can't silently diverge from production tables.
-    const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+    const CLIENT_SCHEMA: &str = include_str!("../../../../apps/desktop/src-tauri/schema.sql");
 
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

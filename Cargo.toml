@@ -5,11 +5,13 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/vegify-typegen",
   "crates/usda-importer",
   "crates/vegify-admin",
   "crates/vegify-config",
   "crates/vegify-core",
-  "services/api",
+  "services/api/server",
+  "services/api/types",
   "apps/desktop/src-tauri",
 ]
 
