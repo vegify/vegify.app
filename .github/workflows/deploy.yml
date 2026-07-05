@@ -9,8 +9,9 @@ name: deploy
 # publish-desktop only FLIPS the draft live once everything landed — a failed deploy never leaves
 # a published release behind.
 #
-#   release(draft) ──▶ changes + build-server ──▶ build-web ∥ build-desktop(.dmg → draft)
-#       ──(all green)──▶ deploy-server (path-gated) ──(/health 200)──▶
+#   release(draft) ──▶ changes ∥ build-server ∥ build-types(bindings drift + tsc)
+#       build-types ──▶ build-web ∥ build-desktop(.dmg → draft; released pushes only)
+#       all builds green ──▶ deploy-server (path-gated) ──(/health 200)──▶
 #       publish-web (path-gated) ∥ publish-desktop (flip draft → published)
 #
 # Human levers: `[skip release]` in the merge subject (= the squash-merged PR title) ships
@@ -234,13 +235,56 @@ jobs:
           path: infra/assets/
           retention-days: 1
 
+  build-types:
+    # The generated-types gate, every push: regenerate the desktop IPC bindings from the Rust source
+    # of truth, fail on drift, and typecheck the desktop frontend against them. build-web and
+    # build-desktop both branch off THIS (types before clients); the web's own wire types are still
+    # hand-mirrored TS (apps/web/src/content.ts) — exporting the core's serde shapes to a shared TS
+    # package the web imports is the follow-up that gives the web→types edge real payload.
+    needs: release
+    if: ${{ always() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Tauri Linux build deps (the bindings generator compiles the desktop crate)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vegify/tokens build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
+        run: |
+          pnpm --filter desktop gen:bindings
+          git diff --quiet -- apps/desktop/src/bindings.ts \
+            || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
+      - name: Typecheck the desktop frontend against the fresh types
+        run: pnpm --filter desktop exec tsc --noEmit
+
   build-web:
-    needs: [release, build-server]
+    needs: [release, build-types]
     # build-server runs under always() — GitHub propagates a skipped ancestor transitively and
     # auto-skips descendants UNLESS their own `if` contains a status function; the always() prefix
     # forces evaluation, the result checks enforce the real ordering. Every downstream job needs
     # this shape.
-    if: ${{ always() && needs.build-server.result == 'success' }}
+    if: ${{ always() && needs.build-types.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -285,8 +329,8 @@ jobs:
     # gate on drift, then tauri-action builds/signs/notarizes the universal .dmg and attaches it to
     # the DRAFT release — in parallel with deploy-server. publish-desktop only flips the draft live.
     # [skip release] pushes have no release to attach to → the job skips (PR CI gates the compile).
-    needs: [release, build-server]
-    if: ${{ always() && needs.release.outputs.released == 'true' && needs.build-server.result == 'success' }}
+    needs: [release, build-types]
+    if: ${{ always() && needs.release.outputs.released == 'true' && needs.build-types.result == 'success' }}
     runs-on: macos-latest
     permissions:
       contents: write # upload the signed .dmg to the draft Release
@@ -316,13 +360,6 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
-      - name: Regenerate IPC bindings + fail on drift (the up-to-date-types gate)
-        run: |
-          pnpm --filter desktop gen:bindings
-          git diff --quiet -- apps/desktop/src/bindings.ts \
-            || { echo "::error::bindings.ts is stale — run 'pnpm --filter desktop gen:bindings' and commit it."; exit 1; }
-      - name: Typecheck the desktop frontend
-        run: pnpm --filter desktop exec tsc --noEmit
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
@@ -386,11 +423,13 @@ jobs:
 
   # ── Deploy: server first, then wait for it to be live ───────────────────────────────────────────
   deploy-server:
+    # Gated on ALL THREE build jobs: nothing touches prod unless every artifact of this push built
+    # (build-desktop counts as satisfied when skipped — [skip release] pushes have no .dmg to build).
     needs: [release, changes, build-server, build-web, build-desktop]
     # Build gate unchanged (all three green before we touch prod) PLUS the server actually changed. The
     # check is `!= 'false'` (not `== 'true'`) so a failed/empty detection biases to deploy: a needless blip
     # is far cheaper than leaving the backend out of sync with a push that did change it.
-    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && needs.changes.outputs.server != 'false' }}
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') && needs.changes.outputs.server != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # AWS OIDC
@@ -449,7 +488,7 @@ jobs:
     # All builds green AND the server is current: deploy-server SUCCEEDED (server changed + deployed)
     # OR was SKIPPED (no server change — the existing backend is already current). A failed/cancelled
     # deploy-server blocks the web publish. Web itself is path-gated (same bias-to-deploy rule).
-    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') && needs.changes.outputs.web != 'false' }}
+    if: ${{ always() && needs.build-server.result == 'success' && needs.build-web.result == 'success' && (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') && needs.changes.outputs.web != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
