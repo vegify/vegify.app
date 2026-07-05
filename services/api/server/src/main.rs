@@ -155,6 +155,48 @@ async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> 
     Ok(Json(out))
 }
 
+#[derive(Deserialize)]
+struct InviteBody {
+    name: Option<String>,
+    email: Option<String>,
+    password: Option<String>,
+}
+
+/// Invite (create) a new account while public signups stay CLOSED — admin-only (the caller's session
+/// must resolve to an email in VEGIFY_ADMIN_EMAILS). This is how invite-only onboarding works: the
+/// operator (vegify-admin invite) calls it. Bypasses the signups gate BY DESIGN — the admin check is
+/// the gate. Returns the created user + its handle.
+async fn invite_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<InviteBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let name = body.name.unwrap_or_default().trim().to_string();
+    let email = body.email.unwrap_or_default().trim().to_string();
+    let password = body.password.unwrap_or_default();
+    if name.is_empty() || email.is_empty() {
+        return Err(AppError::BadRequest("Name and email are required.".into()));
+    }
+    if password.chars().count() < 8 {
+        return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
+    }
+    let out = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        if !auth::is_admin(&me) {
+            return Err(AppError::Forbidden("Admins only.".into()));
+        }
+        if auth::email_exists(conn, &email)? {
+            return Err(AppError::Conflict("An account with that email already exists.".into()));
+        }
+        let user = auth::create_user(conn, &name, &email, &password)?;
+        tracing::info!(by = %me.id, new_user = %user.id, "account invited");
+        Ok(json!({ "user": user }))
+    })
+    .await?;
+    Ok(Json(out))
+}
+
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     if let Some(token) = bearer_token(&headers) {
         db(&state, move |conn| auth::invalidate_session(conn, &token)).await?;
@@ -1209,6 +1251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/users/block", post(block_user))
         .route("/api/users/unblock", post(unblock_user))
         .route("/api/auth/delete-account", post(delete_account))
+        .route("/api/auth/invite", post(invite_account))
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))

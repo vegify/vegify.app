@@ -44,6 +44,7 @@ const server = new ServerStack(app, "VegifyServer", {
   emailFrom: cfg.emailFrom,
   emailDomain: cfg.emailDomain,
   signupsOpen: cfg.signupsOpen,
+  adminEmails: cfg.adminEmails,
   domainNames: cfg.domainNames,
   domainsConfigured: cfg.domainsConfigured,
   hostedZoneIdOverride: cfg.hostedZoneIdOverride,
