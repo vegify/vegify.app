@@ -205,6 +205,12 @@ pub fn invalidate_session(conn: &Connection, token: &str) -> Result<(), AppError
 }
 
 /// Whether an account already exists for this email (normalized) — for signup's 409.
+/// Whether this user is an admin (email in the VEGIFY_ADMIN_EMAILS allowlist) — the gate for
+/// inviting new accounts while public signups are closed.
+pub fn is_admin(user: &User) -> bool {
+    vegify_config::server::admin_emails().contains(&user.email.trim().to_lowercase())
+}
+
 pub fn email_exists(conn: &Connection, email: &str) -> Result<bool, AppError> {
     Ok(conn
         .query_row("SELECT 1 FROM users WHERE email = ?1", [normalize_email(email)], |_| Ok(()))

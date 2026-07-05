@@ -176,15 +176,80 @@ fn purge(execute: bool) {
     );
 }
 
+/// `invite <email> [name]` — create an account while public signups stay closed. Authenticates as an
+/// admin (VEGIFY_EMAIL/VEGIFY_PASSWORD in the allowlist), generates a strong password, and prints the
+/// credentials to hand over (e.g. an App Review demo account).
+fn invite(args: &[String]) {
+    let email = match args.get(2) {
+        Some(e) if e.contains('@') => e.clone(),
+        _ => {
+            eprintln!("usage: vegify-admin invite <email> [display name]");
+            std::process::exit(2);
+        }
+    };
+    let name = args.get(3).cloned().unwrap_or_else(|| email.split('@').next().unwrap_or("Guest").to_string());
+    let session = match login() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("login failed (admin creds in VEGIFY_EMAIL/VEGIFY_PASSWORD?): {e}");
+            std::process::exit(1);
+        }
+    };
+    // A strong, human-typable generated password (the invitee can change it).
+    let password = generate_password();
+    #[derive(serde::Deserialize)]
+    struct Invited {
+        user: InvitedUser,
+    }
+    #[derive(serde::Deserialize)]
+    struct InvitedUser {
+        username: String,
+    }
+    match ureq::post(&format!("{}/api/auth/invite", base_url()))
+        .set("authorization", &format!("Bearer {}", session.token))
+        .send_json(serde_json::json!({ "name": name, "email": email, "password": password }))
+    {
+        Ok(resp) => {
+            let username = resp.into_json::<Invited>().map(|i| i.user.username).unwrap_or_default();
+            println!("invited @{username}\n");
+            println!("  email:    {email}");
+            println!("  password: {password}");
+            println!("\nHand these to the invitee (or App Review). Public signups stay disabled.");
+        }
+        Err(e) => {
+            eprintln!("invite failed: {}", err_msg(e));
+            std::process::exit(1);
+        }
+    }
+}
+
+/// A strong, unambiguous, typable password: 4 words-ish blocks of base32-safe chars + digits.
+fn generate_password() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    const CH: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
+    let mut seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    seed ^= std::process::id() as u128;
+    let mut out = String::new();
+    for i in 0..20 {
+        if i > 0 && i % 5 == 0 {
+            out.push('-');
+        }
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        out.push(CH[(seed >> 64) as usize % CH.len()] as char);
+    }
+    out
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let execute = args.iter().any(|a| a == "--yes");
     match args.get(1).map(String::as_str) {
         Some("purge-content") => purge(execute),
         Some("import-completefoods") => completefoods::run(execute),
+        Some("invite") => invite(&args),
         _ => {
             eprintln!(
-                "usage: vegify-admin <purge-content|import-completefoods> [--yes]   (env: VEGIFY_API_URL, VEGIFY_EMAIL, VEGIFY_PASSWORD)"
+                "usage: vegify-admin <purge-content|import-completefoods|invite <email> [name]> [--yes]   (env: VEGIFY_API_URL, VEGIFY_EMAIL, VEGIFY_PASSWORD)"
             );
             std::process::exit(2);
         }
