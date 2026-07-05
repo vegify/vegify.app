@@ -1860,6 +1860,8 @@ mod tests {
         };
         do_save_ingredient(&conn, &ing("Tofu", Visibility::Public), None).unwrap();
         do_save_ingredient(&conn, &ing("Secret Sauce", Visibility::Private), None).unwrap();
+        // An OWNED leaf — canonical under its creator (/<username>/ingredients/<slug>).
+        do_save_ingredient(&conn, &ing("Chef Paste", Visibility::Public), Some("u1")).unwrap();
 
         let rec = |name: &str, vis: Visibility| SaveRecipeInput {
             id: None,
@@ -1882,7 +1884,11 @@ mod tests {
         assert!(ings.contains(&"tofu"), "public leaf ingredient listed");
         assert!(!ings.contains(&"secret-sauce"), "private ingredient excluded");
         assert!(
-            sm.ingredients.iter().any(|i| i.slug == "tofu" && i.username.as_deref() == Some("chef")),
+            sm.ingredients.iter().any(|i| i.slug == "tofu" && i.username.is_none()),
+            "unowned leaf = the catalog namespace (/ingredients/<slug>)"
+        );
+        assert!(
+            sm.ingredients.iter().any(|i| i.slug == "chef-paste" && i.username.as_deref() == Some("chef")),
             "owned leaf carries its owner handle (canonical /<username>/ingredients/<slug>)"
         );
 
