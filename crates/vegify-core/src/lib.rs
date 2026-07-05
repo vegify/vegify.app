@@ -626,6 +626,27 @@ pub fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) 
     if !is_owner(owner.as_deref(), user_id) {
         return Err(Error::Db("You can only delete your own ingredients.".into()));
     }
+    // A recipe's as-ingredient card must go through do_delete_recipe: recipes.as_ingredient_id
+    // CASCADES, so a raw delete here would silently take the whole recipe with it.
+    let backs_recipe: Option<String> = conn
+        .query_row("SELECT id FROM recipes WHERE as_ingredient_id = ?1", [id], |r| r.get(0))
+        .optional()?;
+    if backs_recipe.is_some() {
+        return Err(Error::Db("This is a recipe's ingredient card — delete the recipe instead.".into()));
+    }
+    // ingredient_in_recipe RESTRICTS on purpose (a recipe must never dangle) — surface the situation
+    // as a friendly refusal instead of letting SQLite's raw FOREIGN KEY error escape as a 500.
+    let used_by: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT recipe_id) FROM ingredient_in_recipe WHERE ingredient_id = ?1",
+        [id],
+        |r| r.get(0),
+    )?;
+    if used_by > 0 {
+        let plural = if used_by == 1 { "recipe uses" } else { "recipes use" };
+        return Err(Error::Db(format!(
+            "Can't delete this ingredient: {used_by} {plural} it. Remove it from them first."
+        )));
+    }
     conn.execute("DELETE FROM ingredients WHERE id = ?1", [id])?;
     delete_amounts(conn, &[serving, batch])
 }
@@ -1406,4 +1427,101 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
         items,
         nutrition,
     }))
+}
+
+#[cfg(test)]
+mod delete_guard_tests {
+    use super::*;
+
+    /// The REAL client schema (drift-test-pinned to the drizzle source in the desktop crate).
+    const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        c.execute("INSERT INTO users (id, name, email) VALUES ('u1', 'Ada', 'a@x')", []).unwrap();
+        c
+    }
+
+    fn save_leaf(c: &Connection, name: &str) -> String {
+        do_save_ingredient(
+            c,
+            &SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Public),
+                name: name.into(),
+                description: None,
+                price: None,
+                calories_per_100g: None,
+                serving_grams: None,
+                package_grams: None,
+                nutrients: vec![],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn deleting_an_in_use_ingredient_refuses_with_a_friendly_message_not_a_raw_fk_error() {
+        let c = conn();
+        let flour = save_leaf(&c, "Flour");
+        let recipe = do_save_recipe(
+            &c,
+            &SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: "Bread".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![RecipeItemInput { ingredient_id: flour.clone(), grams: 500.0, unit: None }],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+        let err = do_delete_ingredient(&c, &flour, Some("u1")).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("1 recipe uses it"), "friendly in-use message, got: {msg}");
+        assert!(!msg.contains("FOREIGN KEY"), "raw FK text must never surface");
+        // Removing the recipe frees the ingredient for deletion.
+        do_delete_recipe(&c, &recipe, Some("u1")).unwrap();
+        do_delete_ingredient(&c, &flour, Some("u1")).unwrap();
+        let left: i64 = c.query_row("SELECT COUNT(*) FROM ingredients", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn deleting_a_recipes_ingredient_card_directly_is_refused_it_would_cascade_the_recipe() {
+        let c = conn();
+        let recipe = do_save_recipe(
+            &c,
+            &SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: "Soup".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+        let card: String = c
+            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&recipe], |r| r.get(0))
+            .unwrap();
+        let err = do_delete_ingredient(&c, &card, Some("u1")).unwrap_err();
+        assert!(format!("{err:?}").contains("delete the recipe instead"));
+        let recipes_left: i64 = c.query_row("SELECT COUNT(*) FROM recipes", [], |r| r.get(0)).unwrap();
+        assert_eq!(recipes_left, 1, "the recipe must survive the refused card delete");
+    }
 }

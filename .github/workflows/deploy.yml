@@ -208,7 +208,9 @@ jobs:
       - name: Cross-build the aarch64-musl binary + stage the seed
         run: |
           cross build --release --target aarch64-unknown-linux-musl -p vegify-server
-          pnpm db:push && pnpm db:seed
+          # The shipped seed DB is SCHEMA-ONLY: fresh installs start with an empty content catalog
+          # (the USDA ingest fills it at boot) — demo/sample content is a LOCAL dev concern (just db).
+          pnpm db:push
           mkdir -p infra/assets
           cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
           cp .data/vegify.db infra/assets/seed.db

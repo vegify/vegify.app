@@ -6,6 +6,7 @@
 resolver = "2"
 members = [
   "crates/usda-importer",
+  "crates/vegify-admin",
   "crates/vegify-config",
   "crates/vegify-core",
   "services/api",
