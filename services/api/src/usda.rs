@@ -1,6 +1,7 @@
 //! The USDA plant catalog — boot-time ingest of the embedded, processed FoodData Central dataset
-//! (`data/usda-plants.json.gz`, built by `.scripts/usda-process.mjs`; Foundation + SR Legacy,
-//! plants only, public domain). Entries become COMMUNAL REFERENCE ingredients: unowned (user_id
+//! (`data/usda-plants.json.gz`, built by `cargo run -p vegify-server --example usda_process`
+//! — the gen_bindings pattern, so builds never ship it; Foundation + SR Legacy, plants only,
+//! public domain). Entries become COMMUNAL REFERENCE ingredients: unowned (user_id
 //! NULL — no user can edit them, per the DAL's owner gate), public, slugged like any other
 //! ingredient, and stamped with provenance (`source` = "USDA FoodData Central") per
 //! docs/usernames.md — never a fabricated user.
