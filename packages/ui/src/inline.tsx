@@ -307,6 +307,7 @@ const fmt = (n: number) => String(Number(n.toFixed(3)));
 export function InlineNumber({
   value,
   onCommit,
+  onPreview,
   suffix,
   group,
   min = 0,
@@ -315,6 +316,10 @@ export function InlineNumber({
 }: {
   value: number;
   onCommit?: (next: number) => Promise<void>;
+  /** Fires on EVERY intermediate value — each keystroke, each scrub step — WITHOUT persisting, so a
+   *  consumer (e.g. the nutrition panel) can update live as you type or drag. `onCommit` still fires
+   *  once at the end. A `null` argument means "editing ended, drop the preview" (revert to committed). */
+  onPreview?: (next: number | null) => void;
   /** Unit label rendered after the number ("g"). */
   suffix?: string;
   /** Tab-chain group: Tab commits and opens the next chip with the same group name. */
@@ -327,6 +332,8 @@ export function InlineNumber({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const hostRef = React.useRef<HTMLButtonElement>(null);
   useEditingMarker(editing);
+  // preview() is fire-and-forget live feedback; the committed prop landing clears it (null).
+  const preview = onPreview ?? (() => {});
 
   React.useEffect(() => {
     if (!editing) return;
@@ -370,6 +377,11 @@ export function InlineNumber({
           aria-label={ariaLabel}
           size={Math.max(fmt(display).length, 3)}
           className="w-[5ch] border-none bg-transparent p-0 text-right outline-none focus:ring-0 tabular-nums"
+          onInput={(e) => {
+            // LIVE: every keystroke feeds the preview (the nutrition panel updates as you type).
+            const n = parse(e.currentTarget.value);
+            if (n != null) preview(n);
+          }}
           onKeyDown={(e) => {
             const input = e.currentTarget;
             if (e.key === "Enter") {
@@ -379,6 +391,7 @@ export function InlineNumber({
               void commit(n, n === value);
             } else if (e.key === "Escape") {
               e.preventDefault();
+              preview(null); // drop the live preview, revert to committed
               setEditing(false);
             } else if (e.key === "Tab") {
               e.preventDefault();
@@ -393,6 +406,7 @@ export function InlineNumber({
               const next = Math.max(min, cur + (e.key === "ArrowUp" ? base : -base));
               input.value = fmt(next);
               input.select();
+              preview(next); // live on ↑/↓ too
             }
           }}
           onBlur={(e) => {
@@ -407,18 +421,114 @@ export function InlineNumber({
   }
 
   return (
+    <ScrubButton
+      hostRef={hostRef}
+      group={group}
+      ariaLabel={ariaLabel}
+      className={cn(className, error && ERROR_FLASH)}
+      display={display}
+      suffix={suffix}
+      min={min}
+      base={value}
+      error={error}
+      onScrub={preview}
+      onScrubCommit={(n) => void commit(n, n === value)}
+      onOpen={() => setEditing(true)}
+    />
+  );
+}
+
+/** The closed-state number: a SCRUBBABLE handle (Figma/Blender-style). Hover shows the ↔ resize
+ *  cursor. Press-drag horizontally changes the value by smart steps (right = up, left = down),
+ *  previewing live and committing on release. A press WITHOUT a drag (< 4px) is a click → opens the
+ *  text input with digits pre-selected. Keyboard: Enter/Space opens the input (full a11y kept). */
+function ScrubButton({
+  hostRef,
+  group,
+  ariaLabel,
+  className,
+  display,
+  suffix,
+  min,
+  base,
+  error,
+  onScrub,
+  onScrubCommit,
+  onOpen,
+}: {
+  hostRef: React.RefObject<HTMLButtonElement | null>;
+  group?: string;
+  ariaLabel?: string;
+  className?: string;
+  display: number;
+  suffix?: string;
+  min: number;
+  base: number;
+  error: boolean;
+  onScrub: (next: number | null) => void;
+  onScrubCommit: (next: number) => void;
+  onOpen: () => void;
+}) {
+  // Drag bookkeeping in a ref so the pointer handlers don't re-render mid-scrub.
+  const drag = React.useRef<{ startX: number; startVal: number; last: number; moved: boolean } | null>(null);
+  const [scrubbing, setScrubbing] = React.useState(false);
+
+  // ~6 horizontal px per step, stepped smart to the value's scale — so a small number nudges by 1s
+  // and a large one by 25s, matching the keyboard ↑/↓ feel. Sub-min is clamped.
+  const valueAt = (dx: number, from: number) => {
+    const steps = Math.round(dx / 6);
+    return Math.max(min, from + steps * stepFor(from));
+  };
+
+  return (
     <button
       ref={hostRef}
       type="button"
       data-inline-group={group}
       data-inline-field={ariaLabel}
-      aria-label={ariaLabel ? `Edit ${ariaLabel}` : "Edit amount"}
+      aria-label={ariaLabel ? `Edit ${ariaLabel} (drag to adjust, click to type)` : "Edit amount"}
+      style={{ cursor: "ew-resize", touchAction: "none" }}
       className={cn(
         className,
-        "rounded-sm px-0.5 -mx-0.5 tabular-nums transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
-        error && ERROR_FLASH,
+        "select-none rounded-sm px-0.5 -mx-0.5 tabular-nums transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
+        scrubbing && "bg-primary/15",
       )}
-      onClick={() => setEditing(true)}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { startX: e.clientX, startVal: base, last: base, moved: false };
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        const dx = e.clientX - d.startX;
+        if (!d.moved && Math.abs(dx) < 4) return; // dead zone: distinguishes click from drag
+        d.moved = true;
+        if (!scrubbing) setScrubbing(true);
+        const next = valueAt(dx, d.startVal);
+        if (next !== d.last) {
+          d.last = next;
+          onScrub(next); // LIVE preview as you drag
+        }
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current;
+        drag.current = null;
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        if (!d) return;
+        if (d.moved) {
+          setScrubbing(false);
+          onScrubCommit(d.last); // persist the scrubbed value
+        } else {
+          onOpen(); // a click, not a drag → type mode
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       {fmt(display)}
       {suffix ? ` ${suffix}` : null}

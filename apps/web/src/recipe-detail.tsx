@@ -89,6 +89,9 @@ const getRecipe = createServerFn({ method: 'GET' })
             name: i.name,
             grams: i.grams ?? 0,
             href: hrefById.get(i.ingredientId) ?? `/ingredients/${i.ingredientId}`,
+            // Per-item readings feed the LIVE nutrition recompute while an amount is scrubbed/typed.
+            caloriesPer100g: i.caloriesPer100g,
+            readings: i.readings.map((r) => ({ ...r, amountPer100g: r.amountPer100g ?? 0 })),
           })),
         }
       }
