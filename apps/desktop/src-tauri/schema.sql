@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS `ingredients` (
 	`serving_size_id` text,
 	`batch_size_id` text,
 	`created_at` integer,
-	`updated_at` integer, visibility text NOT NULL DEFAULT 'public', slug text, source text,
+	`updated_at` integer, visibility text NOT NULL DEFAULT 'public', slug text, source text, deleted_at integer,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`serving_size_id`) REFERENCES `amounts`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`batch_size_id`) REFERENCES `amounts`(`id`) ON UPDATE no action ON DELETE cascade

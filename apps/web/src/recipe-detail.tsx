@@ -57,6 +57,8 @@ const getRecipe = createServerFn({ method: 'GET' })
         key: `${item.id}-${i}`,
         label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
         href: href(item),
+        ingredientId: item.id,
+        deleted: item.deleted,
       })),
       nutrition,
     }
@@ -110,6 +112,13 @@ const deleteFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { deleteRecipe } = await import('./content')
     await deleteRecipe(data)
+  })
+
+const restoreIngredientFn = createServerFn({ method: 'POST' })
+  .validator((id: string) => id)
+  .handler(async ({ data }) => {
+    const { restoreIngredient } = await import('./content')
+    await restoreIngredient(data)
   })
 
 export const recipeQuery = (id: string) =>
@@ -170,5 +179,22 @@ export function RecipeDetailPage({ recipeId }: { recipeId: string }) {
         }
       : undefined
 
-  return <RecipeDetailView recipe={data.vm} LinkComponent={LinkAdapter} edit={edit} />
+  // Restore is owner-scoped like edit: a tombstoned row only ever flags in the deleter's own
+  // recipes, and only the owner gets the affordance (edit presence = ownership).
+  const onRestoreIngredient = edit
+    ? async (ingredientId: string) => {
+        await restoreIngredientFn({ data: ingredientId })
+        await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
+        await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+      }
+    : undefined
+
+  return (
+    <RecipeDetailView
+      recipe={data.vm}
+      LinkComponent={LinkAdapter}
+      edit={edit}
+      onRestoreIngredient={onRestoreIngredient}
+    />
+  )
 }

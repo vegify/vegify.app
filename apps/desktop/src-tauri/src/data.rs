@@ -384,6 +384,9 @@ mod content_client {
         pub nutrients: Vec<PullReading>,
         #[serde(default)]
         pub slug: Option<String>,
+        /// Soft-delete tombstone (ms) — mirrored verbatim so local list/search filtering matches the server.
+        #[serde(default)]
+        pub deleted_at: Option<i64>,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -449,6 +452,15 @@ mod content_client {
         tracing::debug!(collection, id, "DELETE content");
         bearer(ureq::delete(&format!("{}?id={id}", url(collection))), token)
             .call()
+            .map_err(err)?;
+        Ok(())
+    }
+
+    /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
+    pub fn restore_ingredient(token: &str, id: &str) -> Result<(), DataError> {
+        tracing::debug!(id, "POST ingredient-restore");
+        bearer(ureq::post(&format!("{}?id={id}", url("ingredient-restore"))), token)
+            .send_json(serde_json::json!({}))
             .map_err(err)?;
         Ok(())
     }
@@ -631,6 +643,11 @@ fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> R
             slug: ing.slug.clone(), // server-authoritative; store verbatim, don't regenerate
         };
         do_save_ingredient(&tx, &input, ing.user_id.as_deref())?;
+        // The tombstone rides OUTSIDE the mutation shape (user edits must never touch it) — stamp it
+        // after the save, exactly as the server pull reported it.
+        if let Some(ts) = ing.deleted_at {
+            tx.execute("UPDATE ingredients SET deleted_at = ?1 WHERE id = ?2", params![ts, ing.id])?;
+        }
     }
     for r in &payload.recipes {
         let input = SaveRecipeInput {
@@ -690,6 +707,21 @@ fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     )?;
     if has_username == 0 {
         conn.execute("ALTER TABLE users ADD COLUMN username TEXT", [])?;
+    }
+    // Same story for the two ingredient columns that postdate shipped caches: provenance (`source`)
+    // and the soft-delete tombstone (`deleted_at`). Fresh DBs get them from schema.sql's CREATE.
+    for (col, ddl) in [
+        ("source", "ALTER TABLE ingredients ADD COLUMN source TEXT"),
+        ("deleted_at", "ALTER TABLE ingredients ADD COLUMN deleted_at INTEGER"),
+    ] {
+        let present: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = ?1",
+            [col],
+            |r| r.get(0),
+        )?;
+        if present == 0 {
+            conn.execute(ddl, [])?;
+        }
     }
     // `ingredients.slug` (SEO URL segment) postdates the original cache schema too. schema.sql adds it
     // to fresh caches + creates slug_history; for an existing cache add the column idempotently here.
@@ -798,6 +830,7 @@ impl Db {
                 "saveIngredient" => content_client::post(&token, "ingredients", &payload)?,
                 "deleteRecipe" => content_client::delete(&token, "recipes", payload_id(&payload)?)?,
                 "deleteIngredient" => content_client::delete(&token, "ingredients", payload_id(&payload)?)?,
+                "restoreIngredient" => content_client::restore_ingredient(&token, payload_id(&payload)?)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
             self.conn.lock().unwrap().execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
@@ -878,6 +911,8 @@ pub trait VegifyData {
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
+    /// Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated in the DAL.
+    fn restore_ingredient(&self, id: String) -> Result<(), DataError>;
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
@@ -990,6 +1025,13 @@ impl VegifyData for Db {
         let uid = self.require_uid()?;
         self.with_conn(|conn| do_delete_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("deleteIngredient", serde_json::json!({ "id": id }))?;
+        Ok(())
+    }
+
+    fn restore_ingredient(&self, id: String) -> Result<(), DataError> {
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| do_restore_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
+        self.enqueue("restoreIngredient", serde_json::json!({ "id": id }))?;
         Ok(())
     }
 

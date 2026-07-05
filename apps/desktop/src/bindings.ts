@@ -96,6 +96,11 @@ export const vegifyData = {
 	 *  anonymous + non-owner viewers). The real guard stays server-side.
 	 */
 	canEdit: boolean,
+	/**
+	 *  Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the
+	 *  recipes that use it. Detail renders a badge; lists never surface it.
+	 */
+	deleted: boolean,
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient", { id });
@@ -119,6 +124,11 @@ export const vegifyData = {
 	 *  anonymous + non-owner viewers). The real guard stays server-side.
 	 */
 	canEdit: boolean,
+	/**
+	 *  Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the
+	 *  recipes that use it. Detail renders a badge; lists never surface it.
+	 */
+	deleted: boolean,
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient_for_edit", { id });
@@ -137,6 +147,11 @@ export const vegifyData = {
   /** @throws {DataError} */
   deleteIngredient(id: string): Promise<null> {
     return invoke("delete_ingredient", { id });
+  },
+
+  /** @throws {DataError} */
+  restoreIngredient(id: string): Promise<null> {
+    return invoke("restore_ingredient", { id });
   },
 
   /** @throws {DataError} */
@@ -333,6 +348,11 @@ export type IngredientEditData = {
 	 *  anonymous + non-owner viewers). The real guard stays server-side.
 	 */
 	canEdit: boolean,
+	/**
+	 *  Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the
+	 *  recipes that use it. Detail renders a badge; lists never surface it.
+	 */
+	deleted: boolean,
 	nutrients: Reading[],
 };
 
@@ -422,6 +442,13 @@ export type RecipeItem = {
 	 *  so the UI links to that recipe's page instead of a (sparse) ingredient page.
 	 */
 	recipeId: string | null,
+	/**
+	 *  True only in the DELETER's own recipes: the ingredient is soft-deleted (tombstoned) AND its
+	 *  owner owns this recipe. Other users' recipes render the same ingredient normally — a soft
+	 *  delete disowns from the catalog without breaking anyone's recipe. Drives the greyed row +
+	 *  the "restore?" affordance.
+	 */
+	deleted: boolean,
 };
 
 export type RecipeItemInput = {

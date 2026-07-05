@@ -118,6 +118,11 @@ export const ingredients = sqliteTable(
     // catalog imports stamp their source (e.g. "USDA FoodData Central"). Unowned (user_id NULL) +
     // sourced rows are the communal reference catalog — uneditable by users, listed for everyone.
     source: text("source"),
+    // Soft-delete tombstone (ms epoch). Set when the owner deletes an ingredient that recipes still
+    // use: the row and its readings survive so every referencing recipe keeps working; browse/search
+    // and the sitemap exclude it; the owner's own recipes grey it out with a restore affordance.
+    // NULL = live. Unreferenced deletes stay hard (row removed).
+    deletedAt: integer("deleted_at"),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),
     price: integer("price"), // cents (USD)

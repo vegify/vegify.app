@@ -78,7 +78,16 @@ export function ingredientHref(i: { id: string; slug?: string | null }): string 
   return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
 }
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
-export type RecipeDetailItem = { key: string; label: string; href: string };
+export type RecipeDetailItem = {
+  key: string;
+  label: string;
+  href: string;
+  /** The ingredient id — the restore target when this row is a tombstone. */
+  ingredientId?: string;
+  /** Soft-deleted by its owner AND this is the owner's own recipe: grey the row and (when the
+   *  viewer can edit) offer "restore?" on hover. Other users' recipes never set this. */
+  deleted?: boolean;
+};
 export type RecipeDetailVM = {
   id: string;
   name: string;
@@ -144,6 +153,9 @@ export type IngredientDetailVM = {
   description?: string | null;
   /** Whether the viewer owns this ingredient — shows the edit affordance. Omitted/false ⇒ read-only. */
   canEdit?: boolean;
+  /** Soft-deleted by its owner: delisted from browse/search, preserved for the recipes that use it.
+   *  Renders a "Deleted" badge so a direct link tells the truth. */
+  deleted?: boolean;
   nutrition: NutritionFactsData;
 };
 
@@ -472,11 +484,15 @@ export function RecipeDetailView({
   recipe,
   LinkComponent,
   edit,
+  onRestoreIngredient,
 }: {
   recipe: RecipeDetailVM;
   LinkComponent: NavLink;
   /** Present ⇒ the page edits in place (owner). Absent ⇒ read-only, unchanged from before. */
   edit?: RecipeEditAdapter;
+  /** Un-deletes a tombstoned ingredient (the greyed row's hover affordance). Only meaningful for
+   *  the owner — shells pass it alongside `edit`. */
+  onRestoreIngredient?: (ingredientId: string) => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -602,14 +618,36 @@ export function RecipeDetailView({
                     </button>
                   </li>
                 ))
-              : recipe.items.map((item) => (
-                  <li key={item.key} className="flex items-start gap-2">
-                    <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
-                    <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
-                      {item.label}
-                    </LinkComponent>
-                  </li>
-                ))}
+              : recipe.items.map((item) =>
+                  item.deleted ? (
+                    // Tombstoned by its owner (this recipe is theirs): greyed, with a hover
+                    // "restore?" — the ingredient itself still computes into nutrition as always.
+                    <li
+                      key={item.key}
+                      className="group flex items-start gap-2"
+                      title="Ingredient was deleted — restore?"
+                    >
+                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+                      <span className="text-left text-muted-foreground/60 line-through">{item.label}</span>
+                      {onRestoreIngredient && item.ingredientId ? (
+                        <button
+                          type="button"
+                          onClick={() => onRestoreIngredient(item.ingredientId!)}
+                          className="rounded px-1.5 py-0.5 text-xs font-medium text-primary opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover:opacity-100"
+                        >
+                          Restore
+                        </button>
+                      ) : null}
+                    </li>
+                  ) : (
+                    <li key={item.key} className="flex items-start gap-2">
+                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
+                      <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
+                        {item.label}
+                      </LinkComponent>
+                    </li>
+                  ),
+                )}
             {edit ? (
               <li className="col-span-full">
                 <AddIngredientRow open={addOpen} onOpenChange={setAddOpen} edit={edit} />
@@ -941,6 +979,14 @@ export function IngredientDetailView({
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
+            {ingredient.deleted ? (
+              <span
+                title="Deleted by its creator — recipes that already use it keep working."
+                className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+              >
+                Deleted
+              </span>
+            ) : null}
             {edit ? (
               <div className="flex shrink-0 items-center gap-2">
                 <InlinePillSelect

@@ -131,6 +131,11 @@ pub struct RecipeItem {
     /// Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),
     /// so the UI links to that recipe's page instead of a (sparse) ingredient page.
     pub recipe_id: Option<String>,
+    /// True only in the DELETER's own recipes: the ingredient is soft-deleted (tombstoned) AND its
+    /// owner owns this recipe. Other users' recipes render the same ingredient normally — a soft
+    /// delete disowns from the catalog without breaking anyone's recipe. Drives the greyed row +
+    /// the "restore?" affordance.
+    pub deleted: bool,
 }
 
 #[derive(Serialize, Type)]
@@ -237,6 +242,9 @@ pub struct IngredientEditData {
     /// true on the owner-only edit-load path; on the detail path it reflects ownership (false for
     /// anonymous + non-owner viewers). The real guard stays server-side.
     pub can_edit: bool,
+    /// Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the
+    /// recipes that use it. Detail renders a badge; lists never surface it.
+    pub deleted: bool,
     pub nutrients: Vec<Reading>,
 }
 
@@ -634,21 +642,38 @@ pub fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) 
     if backs_recipe.is_some() {
         return Err(Error::Db("This is a recipe's ingredient card — delete the recipe instead.".into()));
     }
-    // ingredient_in_recipe RESTRICTS on purpose (a recipe must never dangle) — surface the situation
-    // as a friendly refusal instead of letting SQLite's raw FOREIGN KEY error escape as a 500.
+    // In use by any recipe → SOFT delete (tombstone). The row, amounts, and readings all survive so
+    // every recipe that references it keeps working at full fidelity; it just leaves browse/search
+    // (list/search/sitemap filter the tombstone) and greys out in the owner's own recipes with a
+    // restore affordance (do_restore_ingredient). Unreferenced → hard delete, as before.
     let used_by: i64 = conn.query_row(
         "SELECT COUNT(DISTINCT recipe_id) FROM ingredient_in_recipe WHERE ingredient_id = ?1",
         [id],
         |r| r.get(0),
     )?;
     if used_by > 0 {
-        let plural = if used_by == 1 { "recipe uses" } else { "recipes use" };
-        return Err(Error::Db(format!(
-            "Can't delete this ingredient: {used_by} {plural} it. Remove it from them first."
-        )));
+        conn.execute(
+            "UPDATE ingredients SET deleted_at = strftime('%s','now') * 1000 WHERE id = ?1 AND deleted_at IS NULL",
+            [id],
+        )?;
+        return Ok(());
     }
     conn.execute("DELETE FROM ingredients WHERE id = ?1", [id])?;
     delete_amounts(conn, &[serving, batch])
+}
+
+/// Undo a soft delete (the greyed row's "restore?" affordance). Owner-gated like every mutation; a
+/// row that isn't tombstoned is a no-op.
+pub fn do_restore_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), Error> {
+    let owner: Option<Option<String>> = conn
+        .query_row("SELECT user_id FROM ingredients WHERE id = ?1", [id], |r| r.get(0))
+        .optional()?;
+    let Some(owner) = owner else { return Ok(()) };
+    if !is_owner(owner.as_deref(), user_id) {
+        return Err(Error::Db("You can only restore your own ingredients.".into()));
+    }
+    conn.execute("UPDATE ingredients SET deleted_at = NULL WHERE id = ?1", [id])?;
+    Ok(())
 }
 
 pub fn do_save_recipe(
@@ -834,7 +859,7 @@ fn load_ingredient_edit(
     let meta = conn
         .query_row(
             "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
-                    i.visibility, i.user_id, i.slug
+                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
@@ -851,11 +876,12 @@ fn load_ingredient_edit(
                     row.get::<_, String>(6)?,
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<String>>(8)?,
+                    row.get::<_, bool>(9)?,
                 ))
             },
         )
         .optional()?;
-    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug)) =
+    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug, deleted)) =
         meta
     else {
         return Ok(None);
@@ -886,6 +912,7 @@ fn load_ingredient_edit(
             visibility: Visibility::from_db(&visibility),
             slug,
             can_edit: false,
+            deleted,
             nutrients,
         },
         owner,
@@ -1163,6 +1190,7 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
         let mut stmt = conn.prepare(
             "SELECT i.slug FROM ingredients i
              WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+               AND i.deleted_at IS NULL
                AND i.visibility = 'public' AND i.slug IS NOT NULL
              ORDER BY i.slug",
         )?;
@@ -1186,7 +1214,8 @@ pub fn search_ingredients(
             "SELECT i.id, i.name, sa.grams
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
-             WHERE i.name LIKE ?1 AND (i.visibility = 'public' OR i.user_id = ?2)
+             WHERE i.name LIKE ?1 AND i.deleted_at IS NULL
+               AND (i.visibility = 'public' OR i.user_id = ?2)
              ORDER BY i.name LIMIT 20",
         )?;
         let v = stmt
@@ -1295,6 +1324,7 @@ pub fn list_ingredients(
         "SELECT i.id, i.name, i.calories_per_100g, i.slug
          FROM ingredients i
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+           AND i.deleted_at IS NULL
            AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
          ORDER BY {order}
          LIMIT ?4"
@@ -1389,15 +1419,19 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
     let can_edit = is_owner(owner.as_deref(), viewer);
 
     let mut istmt = conn.prepare(
-        "SELECT i.id, i.name, a.amount, a.unit, a.grams, r2.id AS recipe_id
+        "SELECT i.id, i.name, a.amount, a.unit, a.grams, r2.id AS recipe_id,
+                i.deleted_at IS NOT NULL, i.user_id
          FROM ingredient_in_recipe iir
          JOIN ingredients i ON i.id = iir.ingredient_id
          JOIN amounts a ON a.id = iir.amount_id
          LEFT JOIN recipes r2 ON r2.as_ingredient_id = i.id
          WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
     )?;
+    let recipe_owner = owner.clone();
     let items = istmt
         .query_map([&id], |row| {
+            let tombstoned: bool = row.get(6)?;
+            let ing_owner: Option<String> = row.get(7)?;
             Ok(RecipeItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -1407,6 +1441,9 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
                     grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
                 },
                 recipe_id: row.get(5)?,
+                // Greyed ONLY in the deleter's own recipes (ingredient owner == recipe owner);
+                // everyone else's recipes render it untouched.
+                deleted: tombstoned && ing_owner.is_some() && ing_owner == recipe_owner,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1440,7 +1477,9 @@ mod delete_guard_tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
-        c.execute("INSERT INTO users (id, name, email) VALUES ('u1', 'Ada', 'a@x')", []).unwrap();
+        // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it.
+        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;").unwrap();
+        c.execute("INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')", []).unwrap();
         c
     }
 
@@ -1465,35 +1504,76 @@ mod delete_guard_tests {
     }
 
     #[test]
-    fn deleting_an_in_use_ingredient_refuses_with_a_friendly_message_not_a_raw_fk_error() {
+    fn deleting_an_in_use_ingredient_soft_deletes_scoped_to_the_deleters_own_recipes() {
         let c = conn();
+        c.execute("INSERT INTO users (id, name, email) VALUES ('u2', 'Bob', 'b@x')", []).unwrap();
         let flour = save_leaf(&c, "Flour");
-        let recipe = do_save_recipe(
-            &c,
+        // u1's own recipe uses it, and so does u2's.
+        let mine = save_recipe_with(&c, "My Bread", &flour, "u1");
+        let theirs = save_recipe_with(&c, "Their Bread", &flour, "u2");
+
+        // Soft delete: Ok, row survives tombstoned, readings intact.
+        do_delete_ingredient(&c, &flour, Some("u1")).unwrap();
+        let (alive, tombstoned): (i64, bool) = c
+            .query_row(
+                "SELECT COUNT(*), MAX(deleted_at IS NOT NULL) FROM ingredients WHERE id = ?1",
+                [&flour],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((alive, tombstoned), (1, true), "tombstoned, not destroyed");
+
+        // Delisted everywhere public: browse, search, sitemap.
+        let listed = list_ingredients(&c, Some("u1"), &Page::default()).unwrap();
+        assert!(listed.iter().all(|i| i.id != flour), "browse must exclude the tombstone");
+        let found = search_ingredients(&c, "Flour".into(), Some("u1")).unwrap();
+        assert!(found.iter().all(|i| i.id != flour), "search must exclude the tombstone");
+
+        // Greyed ONLY in the deleter's own recipe; the other user's recipe renders it untouched.
+        let my_view = recipe(&c, mine.clone(), Some("u1")).unwrap().unwrap();
+        assert!(my_view.items[0].deleted, "deleter's own recipe shows the tombstone");
+        let their_view = recipe(&c, theirs.clone(), Some("u2")).unwrap().unwrap();
+        assert!(!their_view.items[0].deleted, "other users' recipes are untouched");
+        assert_eq!(their_view.items[0].name, "Flour", "full fidelity preserved");
+
+        // Restore (owner-gated) brings it back to life everywhere.
+        assert!(do_restore_ingredient(&c, &flour, Some("u2")).is_err(), "only the owner restores");
+        do_restore_ingredient(&c, &flour, Some("u1")).unwrap();
+        let my_view = recipe(&c, mine, Some("u1")).unwrap().unwrap();
+        assert!(!my_view.items[0].deleted);
+        let found = search_ingredients(&c, "Flour".into(), None).unwrap();
+        assert!(found.iter().any(|i| i.id == flour), "restored = searchable again");
+
+        // Unreferenced deletes stay HARD: drop both recipes, delete again, row is gone.
+        do_delete_recipe(&c, &theirs, Some("u2")).unwrap();
+        // (u2 owns "Their Bread" — its delete already freed one reference.)
+        let my2: String = c.query_row("SELECT id FROM recipes LIMIT 1", [], |r| r.get(0)).unwrap();
+        do_delete_recipe(&c, &my2, Some("u1")).unwrap();
+        do_delete_ingredient(&c, &flour, Some("u1")).unwrap();
+        let left: i64 = c
+            .query_row("SELECT COUNT(*) FROM ingredients WHERE id = ?1", [&flour], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "unreferenced delete removes the row");
+    }
+
+    fn save_recipe_with(c: &Connection, name: &str, ingredient_id: &str, user: &str) -> String {
+        do_save_recipe(
+            c,
             &SaveRecipeInput {
                 id: None,
                 as_ingredient_id: None,
                 visibility: Some(Visibility::Public),
-                name: "Bread".into(),
+                name: name.into(),
                 subtitle: None,
                 directions: None,
                 serving_grams: None,
                 batch_grams: None,
-                items: vec![RecipeItemInput { ingredient_id: flour.clone(), grams: 500.0, unit: None }],
+                items: vec![RecipeItemInput { ingredient_id: ingredient_id.to_string(), grams: 500.0, unit: None }],
                 slug: None,
             },
-            Some("u1"),
+            Some(user),
         )
-        .unwrap();
-        let err = do_delete_ingredient(&c, &flour, Some("u1")).unwrap_err();
-        let msg = format!("{err:?}");
-        assert!(msg.contains("1 recipe uses it"), "friendly in-use message, got: {msg}");
-        assert!(!msg.contains("FOREIGN KEY"), "raw FK text must never surface");
-        // Removing the recipe frees the ingredient for deletion.
-        do_delete_recipe(&c, &recipe, Some("u1")).unwrap();
-        do_delete_ingredient(&c, &flour, Some("u1")).unwrap();
-        let left: i64 = c.query_row("SELECT COUNT(*) FROM ingredients", [], |r| r.get(0)).unwrap();
-        assert_eq!(left, 0);
+        .unwrap()
     }
 
     #[test]
