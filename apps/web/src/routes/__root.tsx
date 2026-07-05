@@ -64,6 +64,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           type: 'image/x-icon',
           href: faviconUrl,
         },
+        // Root static icons (served from S3 via the CloudFront behaviors below) — the apple-touch-icon
+        // is what iOS home-screen AND 1Password's icon crawler use; the manifest makes it installable.
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+        { rel: 'manifest', href: '/manifest.json' },
       ],
     }),
     beforeLoad: async ({ location }) => {
