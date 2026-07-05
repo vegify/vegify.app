@@ -63,18 +63,19 @@ jobs:
           echo "VEGIFY_API_URL=$api_url" >> "$GITHUB_ENV"
           echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id" >> "$GITHUB_ENV"
       - name: Load the Apple ASC API key (cloud signing + upload)
+        id: apple-asc-key
         # Same Secrets Manager JSON the desktop uses; iOS App Store signing needs only the ASC API key
         # + the team id (Xcode's automatic/cloud signing mints the distribution cert & profile).
         run: |
           set -euo pipefail
           s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
-          {
-            echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')"
-            echo "APPLE_API_ISSUER=$(printf '%s' "$s" | jq -r '.api_issuer_id')"
-            echo "APPLE_API_KEY=$(printf '%s' "$s" | jq -r '.api_key_id')"
-          } >> "$GITHUB_ENV"
+          # {
+          #   echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')"
+          #   echo "APPLE_API_ISSUER=$(printf '%s' "$s" | jq -r '.api_issuer_id')"
+          #   echo "APPLE_API_KEY=$(printf '%s' "$s" | jq -r '.api_key_id')"
+          # } >> "$GITHUB_ENV"
           printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
-          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_OUTPUT"
       - name: Inject the version + signing team (via a --config merge, so the team stays out of the repo)
         # The committed tauri.conf.json version is vestigial (0.0.0) and it has NO iOS bundle config, so
         # the Xcode project signs as the placeholder team "Tauri (unset)". Both are supplied here via a
@@ -109,6 +110,7 @@ jobs:
           # profile for app.vegify.ios on the fly, so there's no cert/profile to manage in the repo.
           APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ steps.apple-asc-key.outputs.APPLE_API_KEY_PATH }}
         run: |
           set -euo pipefail
           cd apps/desktop
