@@ -112,11 +112,21 @@ jobs:
         run: |
           set -euo pipefail
           cd apps/desktop
-          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_DEVELOPMENT_TEAM + the ASC
-          # API key, then --export-method app-store-connect produces + uploads the TestFlight build.
+          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_DEVELOPMENT_TEAM + the
+          # ASC API key, then --export-method app-store-connect EXPORTS an App Store IPA. It does NOT
+          # upload — tauri leaves that to altool (below), which is why Tauri's App Store docs show a
+          # separate upload command. Skipping it is why a "successful" run left TestFlight with No Builds.
           # The version override (if injected above) rides in as an extra --config arg.
           if [ -f src-tauri/tauri.version.json ]; then
             pnpm exec tauri ios build --export-method app-store-connect --config src-tauri/tauri.version.json
           else
             pnpm exec tauri ios build --export-method app-store-connect
           fi
+          # Push the exported IPA to App Store Connect → TestFlight. altool authenticates with the ASC
+          # API key, which it discovers as AuthKey_<keyid>.p8 under ~/.appstoreconnect/private_keys.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$APPLE_API_KEY_PATH" "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          ipa=$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)
+          test -n "$ipa" || { echo "::error::tauri ios build produced no .ipa"; exit 1; }
+          echo "uploading $ipa to App Store Connect"
+          xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
