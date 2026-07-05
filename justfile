@@ -2,6 +2,10 @@
 # `just check` locally is exactly what the pipeline enforces. No more "passed locally, red in CI".
 # Install just with `brew install just`. Run `just check` before every push.
 
+# Warnings are errors in every cargo run these recipes make — locally and in CI (ci.yml runs
+# these same recipes). Dev iteration outside `just` (bare cargo, rust-analyzer) stays lenient.
+export RUSTFLAGS := "-Dwarnings"
+
 # Show the recipes.
 default:
     @just --list
@@ -40,6 +44,10 @@ rust-core:
 # schema-parity test.
 rust-desktop:
     cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+    # Release-mode check: `cfg(debug_assertions)` branches compile OUT in release, so a warning can
+    # hide from every debug build and first appear in the shipped desktop build (it happened: an
+    # unused PathBuf import only the release build could see). Check, not build — types + lints only.
+    cargo check --release --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Regenerate the desktop TS bindings after changing Rust procedures/types.
 bindings:

@@ -176,6 +176,10 @@ jobs:
     needs: release
     if: ${{ always() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
+    env:
+      # Warnings are errors on every compile this job does (test + cross release build) — the same
+      # rule the justfile exports for local/CI test runs.
+      RUSTFLAGS: -Dwarnings
     permissions:
       contents: read
     steps:
@@ -276,6 +280,7 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: -Dwarnings
     steps:
       - uses: actions/checkout@v7
         with:
@@ -421,6 +426,9 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       CARGO_INCREMENTAL: "0"
+      # The release desktop build is where cfg(debug_assertions) blind spots surface (an unused
+      # import only this build could see once shipped a warning) — deny here too.
+      RUSTFLAGS: -Dwarnings
     steps:
       - uses: actions/checkout@v7
         with:

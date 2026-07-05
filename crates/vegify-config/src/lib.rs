@@ -66,7 +66,6 @@ pub mod server {
 #[cfg(feature = "desktop")]
 pub mod desktop {
     use super::non_empty;
-    use std::path::PathBuf;
 
     /// Base URL of the standing backend that owns auth + the content API. Runtime VEGIFY_AUTH_URL
     /// wins (dev → a local `bun serve-bun.mjs` or a local `vegify-server`); otherwise the release
@@ -88,7 +87,10 @@ pub mod desktop {
         }
         #[cfg(debug_assertions)]
         {
-            // This crate lives at crates/vegify-config, two levels below the repo root.
+            // This crate lives at crates/vegify-config, two levels below the repo root. (The import
+            // lives here too: release builds compile this block out, and a module-level `use` would
+            // be an unused-import warning = a broken build under -Dwarnings.)
+            use std::path::PathBuf;
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../.data/vegify.db")
                 .to_string_lossy()
