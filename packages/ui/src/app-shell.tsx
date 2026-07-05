@@ -25,6 +25,8 @@ export type AppShellNavItem = {
   href?: string;
   /** Appears in the mobile bottom tab bar (icon-only). */
   inMobileBar?: boolean;
+  /** Unread count — rendered as an orange pill in place of the "soon" badge slot. */
+  badge?: number;
 };
 
 /**
@@ -38,7 +40,7 @@ export const APP_NAV: AppShellNavItem[] = [
   { key: "add", label: "Add Food", icon: Carrot, href: "/ingredients/new", inMobileBar: true },
   { key: "notifications", label: "Notifications", icon: Bell, inMobileBar: true },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
-  { key: "inbox", label: "Inbox", icon: Mail },
+  { key: "inbox", label: "Inbox", icon: Mail, href: "/messages" },
   { key: "settings", label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -57,6 +59,7 @@ export function AppShell({
   onSearchChange,
   user,
   onSignOut,
+  unreadMessages = 0,
 }: {
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
@@ -69,6 +72,8 @@ export function AppShell({
   /** The signed-in user — renders an account block + sign-out in the sidebar and mobile bar. */
   user?: { name: string; email: string; username?: string } | null;
   onSignOut?: () => void;
+  /** Unread DM count — badges the Inbox nav item (sidebar) and the mobile header's Mail link. */
+  unreadMessages?: number;
 }) {
   // The Profile destination is per-user (/<username>): filled in from the signed-in user. Logged
   // out it points at /login instead of sitting disabled — every tap on the person icon has a
@@ -76,7 +81,11 @@ export function AppShell({
   // Applied to the sidebar + the mobile bar.
   const profileHref = user?.username ? `/${user.username}` : "/login";
   const withProfile = (items: AppShellNavItem[]) =>
-    items.map((it) => (it.key === "profile" ? { ...it, href: profileHref } : it));
+    items.map((it) => {
+      if (it.key === "profile") return { ...it, href: profileHref };
+      if (it.key === "inbox") return { ...it, badge: unreadMessages };
+      return it;
+    });
   const navItems = withProfile(
     ingredientsNav
       ? [
@@ -139,9 +148,19 @@ export function AppShell({
 
       {/* ===== Mobile top bar ===== */}
       <header className="flex h-14 shrink-0 items-center justify-between bg-green-dark px-4 text-white lg:hidden">
-        <LinkComponent href="/settings" aria-label="Settings">
-          <Settings className="size-6" />
-        </LinkComponent>
+        <div className="flex items-center gap-4">
+          <LinkComponent href="/settings" aria-label="Settings">
+            <Settings className="size-6" />
+          </LinkComponent>
+          <LinkComponent href="/messages" aria-label="Messages" className="relative">
+            <Mail className="size-6" />
+            {unreadMessages > 0 ? (
+              <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none">
+                {unreadMessages > 99 ? "99+" : unreadMessages}
+              </span>
+            ) : null}
+          </LinkComponent>
+        </div>
         <VegifyLogo className="h-6 w-auto" />
         {user ? (
           <button type="button" onClick={onSignOut} aria-label="Sign out">
@@ -206,11 +225,15 @@ function NavRow({
     <>
       <Icon className="size-6 shrink-0" strokeWidth={2} />
       <span>{item.label}</span>
-      {!item.href && (
+      {(item.badge ?? 0) > 0 ? (
+        <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-orange px-1.5 text-sm font-bold leading-none text-white">
+          {item.badge! > 99 ? "99+" : item.badge}
+        </span>
+      ) : !item.href ? (
         <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">
           soon
         </span>
-      )}
+      ) : null}
     </>
   );
   if (!item.href) {

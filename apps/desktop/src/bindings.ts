@@ -197,6 +197,26 @@ export const vegifyData = {
   requestEmailVerification(input: ResetRequestInput): Promise<null> {
     return invoke("request_email_verification", { input });
   },
+
+  /** @throws {DataError} */
+  messageConversations(): Promise<DmConversation[]> {
+    return invoke("message_conversations");
+  },
+
+  /** @throws {DataError} */
+  messageThread(username: string): Promise<DmThread> {
+    return invoke("message_thread", { username });
+  },
+
+  /** @throws {DataError} */
+  sendMessage(input: SendMessageInput): Promise<DmMessage> {
+    return invoke("send_message", { input });
+  },
+
+  /** @throws {DataError} */
+  messagesUnread(): Promise<number | null> {
+    return invoke("messages_unread");
+  },
 };
 
 export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };
@@ -230,6 +250,33 @@ export type AuthUser = {
 	 *  `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
 	 */
 	emailVerified: boolean,
+};
+
+export type DmConversation = {
+	id: string,
+	with: DmParty,
+	lastBody: string,
+	lastAt: number | null,
+	lastIsMine: boolean,
+	unread: number | null,
+};
+
+export type DmMessage = {
+	id: string,
+	body: string,
+	createdAt: number | null,
+	mine: boolean,
+};
+
+export type DmParty = {
+	id: string,
+	name: string,
+	username: string,
+};
+
+export type DmThread = {
+	with: DmParty,
+	messages: DmMessage[],
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
@@ -427,6 +474,11 @@ export type SaveRecipeInput = {
 	 *  server's slug verbatim.
 	 */
 	slug?: string | null,
+};
+
+export type SendMessageInput = {
+	to: string,
+	body: string,
 };
 
 export type SignInInput = {

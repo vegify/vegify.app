@@ -17,10 +17,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesIndexRouteImport } from './routes/recipes.index'
+import { Route as MessagesIndexRouteImport } from './routes/messages.index'
 import { Route as IngredientsIndexRouteImport } from './routes/ingredients.index'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as UsernameIndexRouteImport } from './routes/$username.index'
 import { Route as RecipesNewRouteImport } from './routes/recipes.new'
+import { Route as MessagesUsernameRouteImport } from './routes/messages.$username'
 import { Route as IngredientsNewRouteImport } from './routes/ingredients.new'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
 import { Route as UsernameRecipeSlugRouteImport } from './routes/$username.$recipeSlug'
@@ -69,6 +71,11 @@ const RecipesIndexRoute = RecipesIndexRouteImport.update({
   path: '/recipes/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MessagesIndexRoute = MessagesIndexRouteImport.update({
+  id: '/messages/',
+  path: '/messages/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IngredientsIndexRoute = IngredientsIndexRouteImport.update({
   id: '/ingredients/',
   path: '/ingredients/',
@@ -87,6 +94,11 @@ const UsernameIndexRoute = UsernameIndexRouteImport.update({
 const RecipesNewRoute = RecipesNewRouteImport.update({
   id: '/recipes/new',
   path: '/recipes/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesUsernameRoute = MessagesUsernameRouteImport.update({
+  id: '/messages/$username',
+  path: '/messages/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IngredientsNewRoute = IngredientsNewRouteImport.update({
@@ -138,10 +150,12 @@ export interface FileRoutesByFullPath {
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/messages/$username': typeof MessagesUsernameRoute
   '/recipes/new': typeof RecipesNewRoute
   '/$username/': typeof UsernameIndexRoute
   '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
+  '/messages/': typeof MessagesIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -159,10 +173,12 @@ export interface FileRoutesByTo {
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/messages/$username': typeof MessagesUsernameRoute
   '/recipes/new': typeof RecipesNewRoute
   '/$username': typeof UsernameIndexRoute
   '/blog': typeof BlogIndexRoute
   '/ingredients': typeof IngredientsIndexRoute
+  '/messages': typeof MessagesIndexRoute
   '/recipes': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -181,10 +197,12 @@ export interface FileRoutesById {
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/ingredients/new': typeof IngredientsNewRoute
+  '/messages/$username': typeof MessagesUsernameRoute
   '/recipes/new': typeof RecipesNewRoute
   '/$username/': typeof UsernameIndexRoute
   '/blog/': typeof BlogIndexRoute
   '/ingredients/': typeof IngredientsIndexRoute
+  '/messages/': typeof MessagesIndexRoute
   '/recipes/': typeof RecipesIndexRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
@@ -204,10 +222,12 @@ export interface FileRouteTypes {
     | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
+    | '/messages/$username'
     | '/recipes/new'
     | '/$username/'
     | '/blog/'
     | '/ingredients/'
+    | '/messages/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -225,10 +245,12 @@ export interface FileRouteTypes {
     | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
+    | '/messages/$username'
     | '/recipes/new'
     | '/$username'
     | '/blog'
     | '/ingredients'
+    | '/messages'
     | '/recipes'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -246,10 +268,12 @@ export interface FileRouteTypes {
     | '/$username/$recipeSlug'
     | '/blog/$slug'
     | '/ingredients/new'
+    | '/messages/$username'
     | '/recipes/new'
     | '/$username/'
     | '/blog/'
     | '/ingredients/'
+    | '/messages/'
     | '/recipes/'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
@@ -268,10 +292,12 @@ export interface RootRouteChildren {
   UsernameRecipeSlugRoute: typeof UsernameRecipeSlugRoute
   BlogSlugRoute: typeof BlogSlugRoute
   IngredientsNewRoute: typeof IngredientsNewRoute
+  MessagesUsernameRoute: typeof MessagesUsernameRoute
   RecipesNewRoute: typeof RecipesNewRoute
   UsernameIndexRoute: typeof UsernameIndexRoute
   BlogIndexRoute: typeof BlogIndexRoute
   IngredientsIndexRoute: typeof IngredientsIndexRoute
+  MessagesIndexRoute: typeof MessagesIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
   RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
@@ -337,6 +363,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecipesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/messages/': {
+      id: '/messages/'
+      path: '/messages'
+      fullPath: '/messages/'
+      preLoaderRoute: typeof MessagesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ingredients/': {
       id: '/ingredients/'
       path: '/ingredients'
@@ -363,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/recipes/new'
       fullPath: '/recipes/new'
       preLoaderRoute: typeof RecipesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages/$username': {
+      id: '/messages/$username'
+      path: '/messages/$username'
+      fullPath: '/messages/$username'
+      preLoaderRoute: typeof MessagesUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ingredients/new': {
@@ -428,10 +468,12 @@ const rootRouteChildren: RootRouteChildren = {
   UsernameRecipeSlugRoute: UsernameRecipeSlugRoute,
   BlogSlugRoute: BlogSlugRoute,
   IngredientsNewRoute: IngredientsNewRoute,
+  MessagesUsernameRoute: MessagesUsernameRoute,
   RecipesNewRoute: RecipesNewRoute,
   UsernameIndexRoute: UsernameIndexRoute,
   BlogIndexRoute: BlogIndexRoute,
   IngredientsIndexRoute: IngredientsIndexRoute,
+  MessagesIndexRoute: MessagesIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
   RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,

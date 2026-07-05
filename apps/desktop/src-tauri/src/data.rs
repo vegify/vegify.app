@@ -92,6 +92,50 @@ pub struct ResetRequestInput {
     pub email: String,
 }
 
+// ---- messages (1:1 DMs — ONLINE-ONLY: the desktop proxies /api/messages/*; no local cache/sync,
+// matching auth. The shapes mirror the server's JSON verbatim, viewer-relative flags included, and
+// are structurally identical to @vegify/ui/messages' VM types, so App.tsx passes them straight to
+// the shared screens.) Timestamps/counts are f64 so specta emits `number`, not bigint.
+
+#[derive(Serialize, Deserialize, Type, Clone)]
+pub struct DmParty {
+    pub id: String,
+    pub name: String,
+    pub username: String,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DmConversation {
+    pub id: String,
+    pub with: DmParty,
+    pub last_body: String,
+    pub last_at: f64,
+    pub last_is_mine: bool,
+    pub unread: f64,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DmMessage {
+    pub id: String,
+    pub body: String,
+    pub created_at: f64,
+    pub mine: bool,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct DmThread {
+    pub with: DmParty,
+    pub messages: Vec<DmMessage>,
+}
+
+#[derive(Deserialize, Type)]
+pub struct SendMessageInput {
+    pub to: String,
+    pub body: String,
+}
+
 /// What the OS keychain holds: the opaque session token + the user profile. The token authorizes
 /// the content API (Bearer) + server-side logout; the cached profile lets `current_user` work offline.
 #[derive(Serialize, Deserialize, Clone)]
@@ -389,6 +433,63 @@ mod content_client {
     }
 }
 
+/// /api/messages/* client (1:1 DMs) — content_client's ureq idiom against the messages routes. All
+/// calls require the session token; the server computes viewer-relative flags, so responses map
+/// straight onto the Dm* shapes.
+mod messages_client {
+    use super::{auth_base_url, AuthErrorBody, DataError, DmConversation, DmMessage, DmThread};
+    use serde::Deserialize;
+
+    fn url(path: &str) -> String {
+        format!("{}/api/messages/{path}", auth_base_url())
+    }
+
+    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
+        req.set("authorization", &format!("Bearer {token}"))
+    }
+
+    fn err(e: ureq::Error) -> DataError {
+        match e {
+            ureq::Error::Status(_, resp) => {
+                let msg = resp
+                    .into_json::<AuthErrorBody>()
+                    .map(|b| b.error)
+                    .unwrap_or_else(|_| "Request failed.".to_string());
+                DataError::Db(msg)
+            }
+            e => DataError::Db(format!("Network error: {e}")),
+        }
+    }
+
+    fn json<T: serde::de::DeserializeOwned>(resp: ureq::Response) -> Result<T, DataError> {
+        resp.into_json::<T>().map_err(|e| DataError::Db(e.to_string()))
+    }
+
+    pub fn conversations(token: &str) -> Result<Vec<DmConversation>, DataError> {
+        json(bearer(ureq::get(&url("conversations")), token).call().map_err(err)?)
+    }
+
+    pub fn thread(token: &str, with: &str) -> Result<DmThread, DataError> {
+        json(bearer(ureq::get(&url("thread")).query("with", with), token).call().map_err(err)?)
+    }
+
+    pub fn send(token: &str, to: &str, body: &str) -> Result<DmMessage, DataError> {
+        json(
+            bearer(ureq::post(&url("send")), token)
+                .send_json(serde_json::json!({ "to": to, "body": body }))
+                .map_err(err)?,
+        )
+    }
+
+    pub fn unread(token: &str) -> Result<f64, DataError> {
+        #[derive(Deserialize)]
+        struct Count {
+            count: f64,
+        }
+        Ok(json::<Count>(bearer(ureq::get(&url("unread")), token).call().map_err(err)?)?.count)
+    }
+}
+
 /// Extract the `id` from a delete outbox payload (`{ "id": "…" }`).
 fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
     p.get("id")
@@ -565,6 +666,13 @@ impl Db {
             .ok_or_else(|| DataError::Auth("Sign in to add or edit recipes and ingredients.".into()))
     }
 
+    /// The session token, or an auth error — for the online-only endpoints (messages) where an
+    /// anonymous fallback makes no sense.
+    fn require_token(&self) -> Result<String, DataError> {
+        self.current_token()
+            .ok_or_else(|| DataError::Auth("Sign in to use messages.".into()))
+    }
+
     /// Push: drain the outbox to the content API in FIFO (`seq`) order, deleting each row on success.
     /// Stops at the first failure — the unpushed tail stays queued, so order holds and a re-push is
     /// idempotent (every payload carries its client id → the server upserts). The connection mutex is
@@ -688,6 +796,11 @@ pub trait VegifyData {
     /// Resend the email-verification link (enumeration-safe; the confirm happens in the browser via the
     /// emailed link, exactly like reset). Always succeeds.
     fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError>;
+    /// 1:1 DMs — online-only proxies to /api/messages/* (no local cache; auth required).
+    fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError>;
+    fn message_thread(&self, username: String) -> Result<DmThread, DataError>;
+    fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError>;
+    fn messages_unread(&self) -> Result<f64, DataError>;
 }
 
 // The trait methods are thin desktop adapters: derive the viewer from the cached session, lock the
@@ -871,6 +984,26 @@ impl VegifyData for Db {
         let url = format!("{}/api/auth/email-verification/request", auth_base_url());
         let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
         Ok(())
+    }
+
+    fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError> {
+        let token = self.require_token()?;
+        messages_client::conversations(&token)
+    }
+
+    fn message_thread(&self, username: String) -> Result<DmThread, DataError> {
+        let token = self.require_token()?;
+        messages_client::thread(&token, &username)
+    }
+
+    fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError> {
+        let token = self.require_token()?;
+        messages_client::send(&token, &input.to, &input.body)
+    }
+
+    fn messages_unread(&self) -> Result<f64, DataError> {
+        let token = self.require_token()?;
+        messages_client::unread(&token)
     }
 }
 

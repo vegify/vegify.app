@@ -27,6 +27,14 @@ export const Route = createFileRoute('/$username/')({
 
 function ProfilePage() {
   const { username } = Route.useParams()
+  const { user } = Route.useRouteContext()
   const { data: profile } = useSuspenseQuery(profileQuery(username))
-  return <ProfileView username={username} profile={profile} LinkComponent={LinkAdapter} />
+  return (
+    <ProfileView
+      username={username}
+      profile={profile}
+      LinkComponent={LinkAdapter}
+      canMessage={!!user && user.username !== username}
+    />
+  )
 }

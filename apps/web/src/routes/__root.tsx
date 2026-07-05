@@ -7,7 +7,8 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { createServerFn } from '@tanstack/react-start'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { AppShell } from '@vegify/ui/app-shell'
@@ -25,6 +26,13 @@ import faviconUrl from '../favicon.ico?url'
 
 // Path policy (which paths are reachable logged-out, which bounce a signed-in user) lives in ../auth-gate,
 // where it is derived fail-closed from the route files and unit-tested.
+
+// The chrome's unread-DM badge. Client-polled (60s + window focus + invalidated by the thread route on
+// open/send) — the web has no push channel yet; the count is cheap and auth-scoped server-side.
+const getUnreadFn = createServerFn({ method: 'GET' }).handler(async (): Promise<number> => {
+  const { unreadCount } = await import('../messages')
+  return unreadCount()
+})
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -104,6 +112,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { search, setSearch, query } = useChromeSearch(pathname)
+  const { data: unreadMessages } = useQuery({
+    queryKey: ['messages-unread'],
+    queryFn: () => getUnreadFn(),
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  })
   // The app chrome wraps every page EXCEPT the bare surfaces (auth/token forms + the blog, which
   // carries its own chrome) and the logged-out "/" marketing landing. A logged-out visitor browsing
   // the public catalog (/recipes, /<username>, …) still gets the shell — with a "Sign in" affordance
@@ -131,6 +146,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             searchValue={search}
             onSearchChange={setSearch}
             user={user ? { name: user.name, email: user.email, username: user.username } : null}
+            unreadMessages={unreadMessages ?? 0}
             onSignOut={async () => {
               await logoutFn()
               queryClient.clear() // drop the prior session's cached content before the gate flips

@@ -58,6 +58,12 @@ import {
   type RecipeFormDefaults,
   type RecipeFormInput,
 } from '@vegify/ui/recipe-form'
+import {
+  MessagesView,
+  ThreadView,
+  type ConversationSummary,
+  type ThreadVM,
+} from '@vegify/ui/messages'
 import { useChromeSearch } from '@vegify/ui/use-chrome-search'
 import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
@@ -379,6 +385,14 @@ function RootChrome() {
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { search, setSearch, query } = useChromeSearch(pathname)
+  // Unread-DM badge. The WS push → scheduleSync → invalidateQueries() chain keeps it realtime; the
+  // interval is the quiet-network fallback. Signed out there is nothing to count.
+  const { data: unreadMessages } = useQuery({
+    queryKey: ['messages-unread'],
+    queryFn: () => vegifyData.messagesUnread(),
+    enabled: !!auth?.user,
+    refetchInterval: 60_000,
+  })
 
   useEffect(() => {
     const focusSearch = () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
@@ -450,6 +464,7 @@ function RootChrome() {
       onSearchChange={setSearch}
       user={auth?.user ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
       onSignOut={auth?.onSignOut}
+      unreadMessages={unreadMessages ?? 0}
     >
       {auth?.user && !auth.user.emailVerified ? <EmailVerificationNotice email={auth.user.email} /> : null}
       {query ? <SearchOverlay query={query} /> : <Outlet />}
@@ -590,11 +605,101 @@ const profileRoute = createRoute({
   path: '/$username',
   loader: ({ context, params }) => context.queryClient.ensureQueryData(profileQuery(params.username)),
   component: function Profile() {
+    const auth = useContext(AuthContext)
     const { username } = useParams({ from: '/$username' })
     const { data: profile } = useSuspenseQuery(profileQuery(username))
-    return <ProfileView username={username} profile={profile} LinkComponent={LinkComponent} />
+    return (
+      <ProfileView
+        username={username}
+        profile={profile}
+        LinkComponent={LinkComponent}
+        canMessage={!!auth?.user && auth.user.username !== username}
+      />
+    )
   },
 })
+
+// ---- messages (1:1 DMs — online-only IPC proxies to the backend; auth required, like the web) ----
+// ttipc emits f64 as `number | null` (like caloriesPer100g), so the queryFns normalize into the
+// shared screens' strict VM types — the usual bindings→VM transform, à la toRecipeListItem.
+
+const conversationsQuery = queryOptions({
+  queryKey: ['conversations'],
+  queryFn: async (): Promise<ConversationSummary[]> =>
+    (await vegifyData.messageConversations()).map((c) => ({
+      ...c,
+      lastAt: c.lastAt ?? 0,
+      unread: c.unread ?? 0,
+    })),
+})
+
+const threadQuery = (username: string) =>
+  queryOptions({
+    queryKey: ['thread', username],
+    queryFn: async (): Promise<ThreadVM> => {
+      const t = await vegifyData.messageThread(username)
+      return { with: t.with, messages: t.messages.map((m) => ({ ...m, createdAt: m.createdAt ?? 0 })) }
+    },
+    // The WS push already schedules a sync (which invalidates every query); this interval is the
+    // fallback while a thread sits open with the network quiet.
+    refetchInterval: 15_000,
+  })
+
+const messagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/messages',
+  // No loader: the fetch is auth-gated, so it runs inside the component where the gate can render.
+  component: function Messages() {
+    const auth = useContext(AuthContext)
+    if (!auth?.user) return <SignInRequired action="read your messages" />
+    return <MessagesInner />
+  },
+})
+
+function MessagesInner() {
+  const { data: conversations } = useSuspenseQuery(conversationsQuery)
+  return <MessagesView conversations={conversations} LinkComponent={LinkComponent} />
+}
+
+const messageThreadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/messages/$username',
+  component: function Thread() {
+    const auth = useContext(AuthContext)
+    if (!auth?.user) return <SignInRequired action="read your messages" />
+    return <ThreadInner />
+  },
+})
+
+function ThreadInner() {
+  const { username } = useParams({ from: '/messages/$username' })
+  const queryClient = useQueryClient()
+  const { data: thread } = useSuspenseQuery(threadQuery(username))
+  const [sending, setSending] = useState(false)
+
+  // Opening the thread consumed unread state server-side — drop the chrome badge immediately.
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ['messages-unread'] })
+  }, [queryClient, username])
+
+  return (
+    <ThreadView
+      thread={thread}
+      sending={sending}
+      LinkComponent={LinkComponent}
+      onSend={async (body) => {
+        setSending(true)
+        try {
+          await vegifyData.sendMessage({ to: username, body })
+          await queryClient.invalidateQueries({ queryKey: ['thread', username] })
+          queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        } finally {
+          setSending(false)
+        }
+      }}
+    />
+  )
+}
 
 const recipeEditRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -845,6 +950,8 @@ const routeTree = rootRoute.addChildren([
   ingredientEditRoute,
   settingsRoute,
   loginRoute,
+  messagesRoute,
+  messageThreadRoute,
   profileRoute,
 ])
 

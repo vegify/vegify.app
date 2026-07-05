@@ -324,11 +324,14 @@ export function ProfileView({
   username,
   profile,
   LinkComponent,
+  canMessage = false,
 }: {
   /** The handle from the route — shown when no account claims it. */
   username: string;
   profile: ProfileVM | null;
   LinkComponent: NavLink;
+  /** Whether the viewer can DM this profile (signed in, and not looking at themselves). */
+  canMessage?: boolean;
 }) {
   if (!profile) {
     return (
@@ -344,10 +347,18 @@ export function ProfileView({
         <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
           {profile.name.trim().charAt(0) || "?"}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
           <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
         </div>
+        {canMessage ? (
+          <LinkComponent
+            href={`/messages/${profile.username}`}
+            className={buttonClasses({ size: "sm" })}
+          >
+            Message
+          </LinkComponent>
+        ) : null}
       </header>
 
       <section className="mb-10">
