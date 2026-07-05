@@ -1,8 +1,9 @@
 //! Build the embedded USDA catalog artifact (data/usda-plants.json.gz) from the raw FoodData
-//! Central downloads — PLANTS ONLY (the product decision). Lives in examples/ (the gen_bindings
-//! precedent) so `cargo build` / the release cross-build never compiles or ships it:
+//! Central downloads — PLANTS ONLY (the product decision). A dedicated dev-tool crate: no shipped
+//! build depends on it, so `cargo build -p vegify-server` (and the release cross-build) never
+//! compiles it. Run from the repo root:
 //!
-//!   cargo run -p vegify-server --example usda_process        # or: just usda-data
+//!   cargo run -p usda-importer        # or: just usda-data
 //!
 //! Inputs (gitignored, .data/import/usda/): Foundation 2025-04 + SR Legacy 2018-04, public domain.
 //! Selection: the six unambiguous plant categories (oils/beverages/sweets are mixed bags — curate

@@ -47,7 +47,7 @@ bindings:
 
 # Rebuild the embedded USDA catalog artifact from the raw FDC downloads (.data/import/usda/).
 usda-data:
-    cargo run -p vegify-server --example usda_process
+    cargo run -p usda-importer
 
 # Create/refresh the dev DB from the Drizzle schema + seed it.
 db:

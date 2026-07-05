@@ -5896,6 +5896,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "usda-importer"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
