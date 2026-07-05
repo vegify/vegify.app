@@ -30,7 +30,8 @@ const getRecipe = createServerFn({ method: 'GET' })
     const recipe = await getRecipeView(data) // backend gates canView; null => forbidden/missing
     if (!recipe) return null
 
-    const serving = recipe.serving
+    // specta emits f64 as `number | null` — normalize at the VM edge (the desktop does the same).
+    const serving = recipe.serving ? { ...recipe.serving, grams: recipe.serving.grams ?? 0 } : null
     const nutrition: NutritionFactsData = {
       heading: 'This Recipe',
       serving,
@@ -40,7 +41,7 @@ const getRecipe = createServerFn({ method: 'GET' })
         recipe.nutrition.caloriesPer100g != null && serving?.grams
           ? (recipe.nutrition.caloriesPer100g * serving.grams) / 100
           : recipe.nutrition.caloriesPer100g,
-      readings: recipe.nutrition.readings,
+      readings: recipe.nutrition.readings.map((r) => ({ ...r, amountPer100g: r.amountPer100g ?? 0 })),
     }
 
     const href = (item: (typeof recipe.items)[number]) =>
@@ -78,12 +79,12 @@ const getRecipe = createServerFn({ method: 'GET' })
             subtitle: editData.subtitle,
             directions: editData.directions,
             servings: editData.servings,
-            items: editData.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams })),
+            items: editData.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams ?? 0 })),
           },
           rows: editData.items.map((i) => ({
             ingredientId: i.ingredientId,
             name: i.name,
-            grams: i.grams,
+            grams: i.grams ?? 0,
             href: hrefById.get(i.ingredientId) ?? `/ingredients/${i.ingredientId}`,
           })),
         }

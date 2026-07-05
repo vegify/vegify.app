@@ -38,7 +38,7 @@ const getIngredient = createServerFn({ method: 'GET' })
       serving: ing.servingGrams != null ? { amount: null, unit: null, grams: ing.servingGrams } : null,
       servingsPerBatch:
         ing.packageGrams != null && ing.servingGrams ? ing.packageGrams / ing.servingGrams : null,
-      readings: ing.nutrients,
+      readings: ing.nutrients.map((n) => ({ ...n, amountPer100g: n.amountPer100g ?? 0 })),
     }
 
     const vm: IngredientDetailVM = {
@@ -121,7 +121,7 @@ const toInput = (d: IngredientEditData): IngredientFormInput => ({
   caloriesPer100g: d.caloriesPer100g,
   servingGrams: d.servingGrams,
   packageGrams: d.packageGrams,
-  nutrients: d.nutrients.map((n) => ({ name: n.name, amountPer100g: n.amountPer100g, unit: n.unit })),
+  nutrients: d.nutrients.map((n) => ({ name: n.name, amountPer100g: n.amountPer100g ?? 0, unit: n.unit })),
 })
 
 function IngredientPage() {

@@ -8,78 +8,40 @@ import type { RecipeFormInput, IngredientSearchItem } from '@vegify/ui/recipe-fo
 import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
 import type { BlogSummary, BlogPostData } from '@vegify/ui/blog'
 
-type Visibility = 'public' | 'private' | 'unlisted'
-type Reading = { name: string; amountPer100g: number; unit: string }
-type Amount = { amount: number | null; unit: string | null; grams: number }
-type AggregatedNutrition = { caloriesPer100g: number | null; readings: Reading[] }
+// The wire types are GENERATED from vegify-core (@vegify/api-types — `just bindings`), so the web
+// imports the server's actual serde contract instead of hand-mirroring it. Re-exported here so
+// routes keep importing from './content'. The two *SlugHit shapes are server-local (content.rs
+// slug-resolution responses), not core types — they stay hand-written until they move into core.
+import type {
+  Visibility,
+  Reading,
+  Amount,
+  AggregatedNutrition,
+  RecipeCard,
+  Profile,
+  RecipeItem,
+  RecipeView,
+  RecipeEditItem,
+  RecipeEditData,
+  IngredientCard,
+  IngredientEditData,
+} from '@vegify/api-types'
 
-export type RecipeCard = {
-  id: string
-  name: string
-  subtitle: string | null
-  username: string | null
-  slug: string | null
+export type {
+  Visibility,
+  Reading,
+  Amount,
+  AggregatedNutrition,
+  RecipeCard,
+  Profile,
+  RecipeItem,
+  RecipeView,
+  RecipeEditItem,
+  RecipeEditData,
+  IngredientCard,
+  IngredientEditData,
 }
-export type Profile = { username: string; name: string; recipes: RecipeCard[] }
 export type RecipeSlugHit = { recipeId: string; canonicalSlug: string }
-export type RecipeItem = {
-  id: string
-  name: string
-  amount: Amount
-  recipeId: string | null
-  /** Tombstoned by its owner AND this recipe is theirs — grey + restore affordance (see @vegify/ui). */
-  deleted: boolean
-}
-export type RecipeView = {
-  id: string
-  name: string
-  subtitle: string | null
-  directions: string | null
-  creator: string | null
-  slug: string | null
-  canEdit: boolean
-  serving: Amount | null
-  batchGrams: number | null
-  items: RecipeItem[]
-  nutrition: AggregatedNutrition
-}
-export type RecipeEditItem = {
-  ingredientId: string
-  name: string
-  grams: number
-  caloriesPer100g: number | null
-  readings: Reading[]
-}
-export type RecipeEditData = {
-  id: string
-  name: string
-  subtitle: string | null
-  directions: string | null
-  servings: number | null
-  visibility: Visibility
-  items: RecipeEditItem[]
-}
-export type IngredientCard = {
-  id: string
-  name: string
-  caloriesPer100g: number | null
-  slug: string | null
-}
-export type IngredientEditData = {
-  id: string
-  name: string
-  description: string | null
-  price: number | null
-  caloriesPer100g: number | null
-  servingGrams: number | null
-  packageGrams: number | null
-  visibility: Visibility
-  slug: string | null
-  canEdit: boolean
-  /** Soft-deleted by its owner (tombstone) — the detail page badges it; lists never surface it. */
-  deleted: boolean
-  nutrients: Reading[]
-}
 export type IngredientSlugHit = { ingredientId: string; canonicalSlug: string }
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`

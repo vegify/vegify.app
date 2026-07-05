@@ -57,7 +57,11 @@ function EditRecipe() {
     subtitle: data.subtitle,
     directions: data.directions,
     servings: data.servings,
-    items: data.items,
+    items: data.items.map((i) => ({
+      ...i,
+      grams: i.grams ?? 0,
+      readings: i.readings.map((r) => ({ ...r, amountPer100g: r.amountPer100g ?? 0 })),
+    })),
   }
   return (
     <RecipeForm
