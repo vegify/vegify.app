@@ -35,6 +35,8 @@ const timestamps = {
 export const users = sqliteTable("users", {
   id: pk(),
   name: text("name").notNull(),
+  // Profile avatar's media key (media/<ulid>.<ext>, served at the API's /media/*); NULL = none.
+  avatarKey: text("avatar_key"),
   // Public handle for /<username> profiles. Assigned at signup (a slug of the name, deduped); existing
   // rows are backfilled in vegify-server's ensure_schema. Lower-cased, unique.
   username: text("username").notNull().unique(),

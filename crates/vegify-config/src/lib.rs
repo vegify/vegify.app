@@ -61,6 +61,13 @@ pub mod server {
     pub fn data_bucket() -> Option<String> {
         non_empty("VEGIFY_DATA_BUCKET")
     }
+
+    /// S3 bucket for USER MEDIA (recipe photos, avatars) — presigned-PUT uploads, served at the
+    /// API's /media/* CloudFront behavior. None (dev without AWS) → uploads are refused with a
+    /// clear message; everything else works.
+    pub fn media_bucket() -> Option<String> {
+        non_empty("VEGIFY_MEDIA_BUCKET")
+    }
 }
 
 #[cfg(feature = "desktop")]

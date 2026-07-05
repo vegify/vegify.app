@@ -176,7 +176,21 @@ const saveIngredientFromForm = (input: IngredientFormInput) =>
   })
 
 // --- IPC results → shared view-models (the desktop's data adapter) ---
-const toRecipeListItem = (r: RecipeCard): RecipeListItem => ({ id: r.id, name: r.name, subtitle: r.subtitle })
+// Photos are served from the server's CloudFront (not the local cache); resolve the base ONCE at
+// boot so the synchronous VM mappers can compose `<base>/<photoKey>`. Empty until resolved → the
+// card/hero placeholders show, then a post-resolve invalidate fills them in.
+let MEDIA_BASE = ''
+export async function initMediaBase() {
+  MEDIA_BASE = await vegifyData.mediaBase().catch(() => '')
+}
+const mediaUrl = (key?: string | null): string | null => (key && MEDIA_BASE ? `${MEDIA_BASE}/${key}` : null)
+
+const toRecipeListItem = (r: RecipeCard): RecipeListItem => ({
+  id: r.id,
+  name: r.name,
+  subtitle: r.subtitle,
+  photoUrl: mediaUrl(r.photoKey),
+})
 
 function recipeViewToNutrition(recipe: RecipeView): NutritionFactsData {
   const serving = recipe.serving
@@ -467,6 +481,7 @@ function RootChrome() {
   // 5-min safety-net poll, and a reconnect trigger. Writes schedule their own (debounced) sync. All of it
   // runs through the quiet single-flight scheduler — no manual Sync button.
   useEffect(() => {
+    void initMediaBase().then(() => queryClient.invalidateQueries()) // resolve the media base, then let photos fill in
     scheduleSync(0)
     // WS push is the primary trigger now, so the interval drops to a 5-min net for missed pushes / WS gaps.
     const interval = setInterval(() => scheduleSync(0), 5 * 60_000)

@@ -156,6 +156,8 @@ pub struct RecipeView {
     pub batch_grams: Option<f64>,
     pub items: Vec<RecipeItem>,
     pub nutrition: AggregatedNutrition,
+    /// Media key of the hero photo — see [`RecipeCard::photo_key`].
+    pub photo_key: Option<String>,
 }
 
 #[derive(Serialize, Type)]
@@ -168,6 +170,9 @@ pub struct RecipeCard {
     /// ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.
     pub username: Option<String>,
     pub slug: Option<String>,
+    /// Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the
+    /// URL as `<api base>/<key>`. None = no photo yet (cards render the placeholder tile).
+    pub photo_key: Option<String>,
 }
 
 /// A public profile: the handle, the display name, and the user's visible recipes. Shared by the
@@ -181,6 +186,8 @@ pub struct Profile {
     /// The user's LEAF ingredients (created or imported by them), visible to the viewer and not
     /// tombstoned — browsable under `/<username>/ingredients/<slug>`.
     pub ingredients: Vec<IngredientCard>,
+    /// Media key of the profile avatar; clients compose `<api base>/<key>`.
+    pub avatar_key: Option<String>,
 }
 
 #[derive(Serialize, Type)]
@@ -988,7 +995,8 @@ pub fn list_recipes(
 ) -> Result<Vec<RecipeCard>, Error> {
     let (keyset, order) = page.sort.clauses("r.id", "i.name");
     let sql = format!(
-        "SELECT r.id, i.name, r.subtitle, u.username, i.slug
+        "SELECT r.id, i.name, r.subtitle, u.username, i.slug,
+                (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
          LEFT JOIN users u ON u.id = i.user_id
          WHERE (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
@@ -1011,6 +1019,7 @@ pub fn list_recipes(
                     subtitle: row.get(2)?,
                     username: row.get(3)?,
                     slug: row.get(4)?,
+                    photo_key: row.get(5)?,
                 })
             },
         )?
@@ -1026,18 +1035,19 @@ pub fn get_profile(
     username: &str,
     viewer: Option<&str>,
 ) -> Result<Option<Profile>, Error> {
-    let user: Option<(String, String, String)> = conn
+    let user: Option<(String, String, String, Option<String>)> = conn
         .query_row(
-            "SELECT id, name, username FROM users WHERE username = ?1",
+            "SELECT id, name, username, avatar_key FROM users WHERE username = ?1",
             [username],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((uid, name, username)) = user else {
+    let Some((uid, name, username, avatar_key)) = user else {
         return Ok(None);
     };
     let mut stmt = conn.prepare(
-        "SELECT r.id, i.name, r.subtitle, u.username, i.slug
+        "SELECT r.id, i.name, r.subtitle, u.username, i.slug,
+                (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
          LEFT JOIN users u ON u.id = i.user_id
          WHERE i.user_id = ?1 AND (i.visibility = 'public' OR i.user_id = ?2)
@@ -1051,6 +1061,7 @@ pub fn get_profile(
                 subtitle: row.get(2)?,
                 username: row.get(3)?,
                 slug: row.get(4)?,
+                photo_key: row.get(5)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1076,7 +1087,7 @@ pub fn get_profile(
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(Some(Profile { username, name, recipes, ingredients }))
+    Ok(Some(Profile { username, name, recipes, ingredients, avatar_key }))
 }
 
 #[derive(Serialize, Type)]
@@ -1440,7 +1451,8 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
     let meta = conn
         .query_row(
             "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
-                    sa.amount, sa.unit, sa.grams, ba.grams, i.user_id, i.slug
+                    sa.amount, sa.unit, sa.grams, ba.grams, i.user_id, i.slug,
+                    (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id
              LEFT JOIN users u ON u.id = i.user_id
@@ -1461,11 +1473,12 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
                     row.get::<_, Option<f64>>(8)?,
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
                 ))
             },
         )
         .optional()?;
-    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner, slug)) =
+    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner, slug, photo_key)) =
         meta
     else {
         return Ok(None);
@@ -1517,6 +1530,7 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
         batch_grams,
         items,
         nutrition,
+        photo_key,
     }))
 }
 

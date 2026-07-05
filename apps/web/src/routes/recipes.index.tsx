@@ -10,8 +10,9 @@ type Cursor = { id: string; name: string }
 const getRecipes = createServerFn({ method: 'GET' })
   .validator((p: { sort: Sort; cursor?: string; cursorName?: string }) => p)
   .handler(async ({ data }): Promise<RecipeListItem[]> => {
-    const { listRecipeCards } = await import('../content')
-    return listRecipeCards({ ...data, limit: PAGE_SIZE }) // viewer-scoped + keyset-sorted by the backend
+    const { listRecipeCards, mediaUrl } = await import('../content')
+    const cards = await listRecipeCards({ ...data, limit: PAGE_SIZE }) // viewer-scoped + keyset-sorted
+    return cards.map((r) => ({ ...r, photoUrl: mediaUrl(r.photoKey) }))
   })
 
 const recipesQuery = (sort: Sort) =>

@@ -27,6 +27,8 @@ export const vegifyData = {
 	batchGrams: number | null,
 	items: RecipeItem[],
 	nutrition: AggregatedNutrition,
+	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
+	photoKey: string | null,
 } | null> {
     return invoke("recipe", { id });
   },
@@ -41,6 +43,8 @@ export const vegifyData = {
 	 *  tombstoned — browsable under `/<username>/ingredients/<slug>`.
 	 */
 	ingredients: IngredientCard[],
+	/**  Media key of the profile avatar; clients compose `<api base>/<key>`. */
+	avatarKey: string | null,
 } | null> {
     return invoke("get_profile", { username });
   },
@@ -197,6 +201,11 @@ export const vegifyData = {
 	emailVerified: boolean,
 } | null> {
     return invoke("current_user");
+  },
+
+  /** @throws {DataError} */
+  mediaBase(): Promise<string> {
+    return invoke("media_base");
   },
 
   /** @throws {DataError} */
@@ -416,6 +425,8 @@ export type Profile = {
 	 *  tombstoned — browsable under `/<username>/ingredients/<slug>`.
 	 */
 	ingredients: IngredientCard[],
+	/**  Media key of the profile avatar; clients compose `<api base>/<key>`. */
+	avatarKey: string | null,
 };
 
 export type Reading = {
@@ -434,6 +445,11 @@ export type RecipeCard = {
 	 */
 	username: string | null,
 	slug: string | null,
+	/**
+	 *  Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the
+	 *  URL as `<api base>/<key>`. None = no photo yet (cards render the placeholder tile).
+	 */
+	photoKey: string | null,
 };
 
 export type RecipeEditData = {
@@ -506,6 +522,8 @@ export type RecipeView = {
 	batchGrams: number | null,
 	items: RecipeItem[],
 	nutrition: AggregatedNutrition,
+	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
+	photoKey: string | null,
 };
 
 export type ResetRequestInput = {

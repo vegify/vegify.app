@@ -22,6 +22,16 @@ pub enum JsonValue {
     Object(std::collections::HashMap<String, JsonValue>),
 }
 
+// ---- media ----
+
+/// An approved upload: PUT the bytes to `url` (presigned, short-lived), then attach `key`.
+#[derive(Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadTicket {
+    pub key: String,
+    pub url: String,
+}
+
 // ---- auth ----
 
 /// The signed-in user — the `{id, name, username, email}` the auth routes return, and the viewer the content
@@ -216,6 +226,7 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::IngredientSlugHit>()
         .register::<vegify_core::SitemapData>()
         // this crate (server-local wire shapes)
+        .register::<UploadTicket>()
         .register::<User>()
         .register::<PostSummary>()
         .register::<PostFull>()
