@@ -2,3 +2,4 @@
 .vegify-replica.db*
 # changeset blob store (the S3 stand-in for dev; never committed)
 .sync-blobs/
+private_keys/
