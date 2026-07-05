@@ -71,10 +71,13 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
-      - name: Inject the version (dispatched, else the latest release tag)
-        # The committed tauri.conf.json version is vestigial (0.0.0); inject a real one via a --config
-        # merge file (like the desktop's tauri.version.json). A dispatched version wins; otherwise use
-        # the latest release tag so TestFlight never sees 0.0.0.
+      - name: Inject the version + signing team (via a --config merge, so the team stays out of the repo)
+        # The committed tauri.conf.json version is vestigial (0.0.0) and it has NO iOS bundle config, so
+        # the Xcode project signs as the placeholder team "Tauri (unset)". Both are supplied here via a
+        # --config merge file (like the desktop's tauri.version.json): a real version (dispatched, else
+        # the latest release tag) AND bundle.iOS.developmentTeam (the reliable way to set the Apple team
+        # in Tauri v2 — the env var alone didn't reach the generated project). Team id comes from the
+        # ASC secret above, never the repo.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -83,8 +86,10 @@ jobs:
           if [ -z "$v" ]; then
             v=$(gh release view --json tagName -q .tagName | sed 's/^v//')
           fi
-          printf '{"version":"%s"}\n' "$v" > apps/desktop/src-tauri/tauri.version.json
-          echo "iOS build version: $v"
+          jq -n --arg v "$v" --arg team "$APPLE_TEAM_ID" \
+            '{version: $v, bundle: {iOS: {developmentTeam: $team}}}' \
+            > apps/desktop/src-tauri/tauri.version.json
+          echo "iOS build version: $v (team ${APPLE_TEAM_ID:+set})"
       - name: Build + upload to TestFlight
         env:
           # Baked into the binary via option_env! so the shipped app points at the real backend.
