@@ -12,6 +12,7 @@ mod email;
 mod error;
 mod messages;
 mod notifications;
+mod usda;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
 // now (a claimed handle can't be reclaimed); not yet called — signups are invite-only and `users` has
 // no handle column. `signup` will call `handles::validate_username` when usernames launch.
@@ -862,6 +863,15 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         if has_slug == 0 {
             conn.execute("ALTER TABLE ingredients ADD COLUMN slug TEXT", [])?;
         }
+        // Provenance for imported reference data (the USDA catalog) — NULL for user content.
+        let has_source: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'source'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_source == 0 {
+            conn.execute("ALTER TABLE ingredients ADD COLUMN source TEXT", [])?;
+        }
     }
     Ok(())
 }
@@ -933,6 +943,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Migrate the blog posts into the DB on first boot (no-op once any post exists). Posts are data
     // now, not code — authoring one never bumps the app version.
     blog::seed_if_empty(&setup_conn)?;
+    // The USDA plant catalog (communal reference ingredients) — DATA lives in S3, not the repo:
+    // marker-gated fetch of the processed artifact from the Data bucket, then a one-transaction
+    // ingest (~2k foods, seconds, once). Missing/corrupt data warns and serves without the catalog —
+    // reference data is an enhancement, never a boot blocker.
+    if usda::catalog_missing(&setup_conn)? {
+        if let Some(artifact) = usda::fetch_artifact().await {
+            match usda::ingest(&setup_conn, &artifact) {
+                Ok(foods) => tracing::info!(foods, "USDA plant catalog seeded"),
+                Err(e) => tracing::warn!(error = %e, "USDA catalog ingest failed — serving without it"),
+            }
+        }
+    }
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
@@ -987,6 +1009,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .on_response(DefaultOnResponse::new().level(Level::INFO).latency_unit(LatencyUnit::Millis))
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
         )
+        // Gzip responses when the client asks (ureq/fetch both do): the USDA catalog pushed the full
+        // content pull to ~3.6 MB raw — ~10x smaller on the wire. Skips WS upgrades automatically.
+        .layer(tower_http::compression::CompressionLayer::new())
         .with_state(state);
 
     // Bind all interfaces so CloudFront can reach the origin (the SG locks the port to CloudFront's
