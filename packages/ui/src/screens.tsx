@@ -637,7 +637,13 @@ export function RecipeDetailView({
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink>@{recipe.creator ?? "user"}</BreadcrumbLink>
+                  {recipe.creator ? (
+                    <LinkComponent href={`/${recipe.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                      @{recipe.creator}
+                    </LinkComponent>
+                  ) : (
+                    <BreadcrumbLink>@user</BreadcrumbLink>
+                  )}
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
@@ -1095,7 +1101,13 @@ export function IngredientDetailView({
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink>{ingredient.creator ? `@${ingredient.creator}` : "Catalog"}</BreadcrumbLink>
+                  {ingredient.creator ? (
+                    <LinkComponent href={`/${ingredient.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                      @{ingredient.creator}
+                    </LinkComponent>
+                  ) : (
+                    <BreadcrumbLink>Catalog</BreadcrumbLink>
+                  )}
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
