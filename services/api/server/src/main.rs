@@ -12,6 +12,7 @@ mod email;
 mod error;
 mod messages;
 mod notifications;
+mod safety;
 mod usda;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
 // now (a claimed handle can't be reclaimed); not yet called — signups are invite-only. `signup` will
@@ -634,6 +635,97 @@ async fn restore_ingredient(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportBody {
+    target_type: Option<String>,
+    target_id: Option<String>,
+    reason: Option<String>,
+    note: Option<String>,
+}
+
+/// Report content or a user (App Review 1.2). Any signed-in user.
+async fn report_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<ReportBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let (tt, tid, reason) = (
+        b.target_type.unwrap_or_default(),
+        b.target_id.unwrap_or_default(),
+        b.reason.unwrap_or_default(),
+    );
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        safety::report(conn, &me.id, &tt, &tid, &reason, b.note.as_deref())
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct BlockBody {
+    username: Option<String>,
+}
+
+/// Block a user (App Review 1.2): no DMs either way; their content leaves your reads.
+async fn block_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<BlockBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let username = b.username.unwrap_or_default();
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        safety::block(conn, &me.id, &username)
+    })
+    .await?;
+    state.notify_change("content"); // reads change (blocked user's content drops out)
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn unblock_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<BlockBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let username = b.username.unwrap_or_default();
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        safety::unblock(conn, &me.id, &username)
+    })
+    .await?;
+    state.notify_change("content");
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct DeleteAccountBody {
+    password: Option<String>,
+}
+
+/// Delete the signed-in account (App Review 5.1.1(v)): password-reconfirmed, then a full cascade —
+/// the user's content (owned ingredients/recipes), sessions, DMs, blocks, and reports all go via
+/// ON DELETE CASCADE when the user row is removed. Irreversible.
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<DeleteAccountBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let password = b.password.unwrap_or_default();
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        auth::delete_account(conn, &me.id, &password)
+    })
+    .await?;
+    state.notify_change("content");
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
 struct UploadUrlBody {
     content_type: Option<String>,
 }
@@ -911,6 +1003,7 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     // the shared content schema).
     messages::ensure_tables(conn)?;
     notifications::ensure_tables(conn)?;
+    safety::ensure_tables(conn)?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -1112,6 +1205,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/upload-url", post(upload_url))
         .route("/api/content/attach-photo", post(attach_photo))
         .route("/api/content/attach-avatar", post(attach_avatar))
+        .route("/api/content/report", post(report_content))
+        .route("/api/users/block", post(block_user))
+        .route("/api/users/unblock", post(unblock_user))
+        .route("/api/auth/delete-account", post(delete_account))
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))

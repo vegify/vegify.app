@@ -90,6 +90,17 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
   return { ok: true }
 })
 
+// Delete the signed-in account (App Review 5.1.1(v)) — password-reconfirmed, then the cookie is
+// cleared so the browser is signed out. Irreversible.
+export const deleteAccountFn = createServerFn({ method: 'POST' })
+  .validator((d: { password: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const { deleteCookie } = await import('@tanstack/react-start/server')
+    await api('/api/auth/delete-account', { method: 'POST', body: { password: data.password } })
+    deleteCookie(SESSION_COOKIE, { path: '/' })
+    return { ok: true }
+  })
+
 export const requestPasswordResetFn = createServerFn({ method: 'POST' })
   .validator((d: { email: string }) => d)
   .handler(async ({ data }): Promise<{ ok: boolean }> => {

@@ -352,6 +352,69 @@ pub fn consume_email_verification(conn: &Connection, token: &str) -> Result<(), 
     Ok(())
 }
 
+/// Delete the signed-in account (App Review 5.1.1(v)), password-reconfirmed. Irreversible.
+///
+/// The cascade respects the UGC model: the user's RECIPES are deleted; their LEAF INGREDIENTS that
+/// are still used by ANOTHER user's recipe are ANONYMIZED to the communal catalog (user_id NULL,
+/// live) so those recipes keep working; unreferenced ones are deleted. Everything keyed on the user
+/// (sessions, reset/verify tokens, conversations→messages, blocks, reports, notifications) drops via
+/// ON DELETE CASCADE when the user row is finally removed.
+pub fn delete_account(conn: &Connection, user_id: &str, password: &str) -> Result<(), AppError> {
+    let hash: Option<Option<String>> = conn
+        .query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))
+        .optional()?;
+    let Some(Some(hash)) = hash else {
+        return Err(AppError::Unauthorized);
+    };
+    if !verify_password(&hash, password) {
+        return Err(AppError::InvalidCredentials);
+    }
+
+    // Recipes first (frees ingredient references + removes each recipe's as-ingredient row).
+    let recipe_ids: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT r.id FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE i.user_id = ?1",
+        )?;
+        let v = stmt.query_map([user_id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        v
+    };
+    for id in recipe_ids {
+        vegify_core::do_delete_recipe(conn, &id, Some(user_id))
+            .map_err(|e| AppError::internal(e.to_string()))?;
+    }
+
+    // Leaf ingredients: anonymize the ones still referenced by other users; delete the rest.
+    let leaf_ids: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT id FROM ingredients WHERE user_id = ?1 AND id NOT IN (SELECT as_ingredient_id FROM recipes)",
+        )?;
+        let v = stmt.query_map([user_id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        v
+    };
+    for id in leaf_ids {
+        let referenced: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM ingredient_in_recipe WHERE ingredient_id = ?1",
+            [&id],
+            |r| r.get(0),
+        )?;
+        if referenced > 0 {
+            // Sever ownership, restore to a live communal catalog row (others depend on it).
+            conn.execute(
+                "UPDATE ingredients SET user_id = NULL, deleted_at = NULL, visibility = 'public' WHERE id = ?1",
+                [&id],
+            )?;
+        } else {
+            vegify_core::do_delete_ingredient(conn, &id, Some(user_id))
+                .map_err(|e| AppError::internal(e.to_string()))?;
+        }
+    }
+
+    // The user row — cascades sessions, tokens, conversations→messages, blocks, reports, notifications.
+    conn.execute("DELETE FROM users WHERE id = ?1", [user_id])?;
+    tracing::info!(user = %user_id, "account deleted");
+    Ok(())
+}
+
 /// Pull the bearer token out of an Authorization header (case-insensitive `Bearer `, then trimmed).
 pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let h = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
