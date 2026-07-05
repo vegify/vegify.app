@@ -35,7 +35,10 @@ export async function sitemapResponse(apiBaseUrl, origin) {
     ...STATIC_PATHS,
     ...posts.map((p) => `/blog/${p.slug}`),
     ...data.recipes.map((r) => `/${r.username}/${r.slug}`),
-    ...data.ingredients.map((s) => `/ingredients/${s}`),
+    // Owned ingredients are canonical under their creator; the catalog stays global.
+    ...data.ingredients.map((i) =>
+      i.username ? `/${i.username}/ingredients/${i.slug}` : `/ingredients/${i.slug}`,
+    ),
   ];
   const body =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +

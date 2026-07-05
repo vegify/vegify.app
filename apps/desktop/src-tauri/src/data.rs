@@ -1878,9 +1878,13 @@ mod tests {
         do_save_recipe(&conn, &rec("Headless Stew", Visibility::Public), Some("u0")).unwrap();
 
         let sm = vegify_core::public_sitemap(&conn).unwrap();
-        let ings: Vec<&str> = sm.ingredients.iter().map(String::as_str).collect();
+        let ings: Vec<&str> = sm.ingredients.iter().map(|i| i.slug.as_str()).collect();
         assert!(ings.contains(&"tofu"), "public leaf ingredient listed");
         assert!(!ings.contains(&"secret-sauce"), "private ingredient excluded");
+        assert!(
+            sm.ingredients.iter().any(|i| i.slug == "tofu" && i.username.as_deref() == Some("chef")),
+            "owned leaf carries its owner handle (canonical /<username>/ingredients/<slug>)"
+        );
 
         let recs: Vec<&str> = sm.recipes.iter().map(|r| r.slug.as_str()).collect();
         assert!(recs.contains(&"public-stew"), "public recipe listed");

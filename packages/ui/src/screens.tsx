@@ -68,13 +68,17 @@ export type IngredientListItem = {
   id: string;
   name: string;
   caloriesPer100g?: number | null;
-  /** Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`. */
+  /** Slug for the canonical link; fall back to `/ingredients/<id>`. */
   slug?: string | null;
+  /** Owner handle: owned ingredients are canonical at `/<username>/ingredients/<slug>`; absent =
+   * the communal catalog (`/ingredients/<slug>`). */
+  username?: string | null;
 };
 
-/** Canonical link for an ingredient: `/ingredients/<slug>` when known, else `/ingredients/<id>`
- * (which 301s). Global namespace (ingredients are a communal catalog), so no username. */
-export function ingredientHref(i: { id: string; slug?: string | null }): string {
+/** Canonical link for an ingredient: owned → `/<username>/ingredients/<slug>` (browsable under its
+ * creator); catalog → `/ingredients/<slug>`; no slug yet → `/ingredients/<id>` (which 301s). */
+export function ingredientHref(i: { id: string; slug?: string | null; username?: string | null }): string {
+  if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`;
   return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
 }
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
@@ -156,6 +160,8 @@ export type IngredientDetailVM = {
   /** Soft-deleted by its owner: delisted from browse/search, preserved for the recipes that use it.
    *  Renders a "Deleted" badge so a direct link tells the truth. */
   deleted?: boolean;
+  /** Owner handle (absent = the communal catalog) — the breadcrumb links to the profile. */
+  creator?: string | null;
   nutrition: NutritionFactsData;
 };
 
@@ -183,6 +189,8 @@ export type ProfileVM = {
   username: string;
   name: string;
   recipes: RecipeListItem[];
+  /** The user's leaf ingredients (created or imported by them) — browsable under their handle. */
+  ingredients: IngredientListItem[];
 };
 
 const cardClass =
@@ -389,6 +397,34 @@ export function ProfileView({
                     <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
                     <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
                   </div>
+                </div>
+              </LinkComponent>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
+          Ingredients{" "}
+          <span className="font-normal text-muted-foreground">· {profile.ingredients.length}</span>
+        </h2>
+        {profile.ingredients.length === 0 ? (
+          <p className="text-muted-foreground">No public ingredients yet.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {profile.ingredients.map((i) => (
+              <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
+                <div className={cardClass}>
+                  <div className="size-12 shrink-0 rounded-lg bg-muted" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-serif text-xl font-semibold">{i.name}</h3>
+                  </div>
+                  {i.caloriesPer100g != null ? (
+                    <span className="shrink-0 text-sm text-muted-foreground">
+                      {Math.round(i.caloriesPer100g)} kcal/100g
+                    </span>
+                  ) : null}
                 </div>
               </LinkComponent>
             ))}
@@ -971,7 +1007,7 @@ export function IngredientDetailView({
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink>@user</BreadcrumbLink>
+                  <BreadcrumbLink>{ingredient.creator ? `@${ingredient.creator}` : "Catalog"}</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
