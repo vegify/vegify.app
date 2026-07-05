@@ -54,6 +54,13 @@ pub mod server {
     pub fn email_from() -> Option<String> {
         non_empty("VEGIFY_EMAIL_FROM")
     }
+
+    /// S3 bucket holding reference DATA (the USDA catalog artifact) — set by the CDK from the
+    /// server stack's Data bucket. None (dev, or a self-host that skipped the upload) → the boot
+    /// ingest logs and serves without the catalog.
+    pub fn data_bucket() -> Option<String> {
+        non_empty("VEGIFY_DATA_BUCKET")
+    }
 }
 
 #[cfg(feature = "desktop")]

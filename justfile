@@ -45,9 +45,14 @@ rust-desktop:
 bindings:
     pnpm --filter desktop gen:bindings
 
-# Rebuild the embedded USDA catalog artifact from the raw FDC downloads (.data/import/usda/).
+# Rebuild the USDA catalog artifact from the raw FDC downloads (.data/import/usda/) → .data/build/.
 usda-data:
     cargo run -p usda-importer
+
+# Ship the artifact to the server's Data bucket (name from SSM — written by the VegifyServer stack).
+# The server ingests it at the next boot (marker-gated), i.e. the next server deploy.
+usda-upload:
+    aws s3 cp --region {{deploy_region}} .data/build/usda-plants.json.gz s3://$(aws ssm get-parameter --region {{deploy_region}} --name /vegify/deploy/data-bucket --query Parameter.Value --output text)/catalog/usda-plants.json.gz
 
 # Create/refresh the dev DB from the Drizzle schema + seed it.
 db:

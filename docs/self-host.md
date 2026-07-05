@@ -62,6 +62,8 @@ cdk deploy VegifyEmail                 # SES sending identity (see §6)
 cdk deploy VegifyWebStart VegifyClientLogs   # the web wires itself to the backend cross-stack
 ```
 
+**The USDA plant catalog (optional but recommended):** reference data lives in the server's S3 Data bucket, not the repo. Download the FDC datasets (Foundation + SR Legacy JSON from fdc.nal.usda.gov/download-datasets into `.data/import/usda/`), then `just usda-data && just usda-upload` — the server ingests it at its next boot (any server deploy). Skipping this just means an empty communal catalog.
+
 The web finds the backend through the `VegifyServer` stack's exports (no URL to copy), creates its DNS-validated certificate on first deploy (issuance takes a few minutes while ACM validates through your zone), and writes the apex/`www` CloudFront alias records into the zone it looked up from your domain. Deeper per-stack notes live in `infra/README.md`.
 
 ## 5. DNS

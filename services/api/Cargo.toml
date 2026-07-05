@@ -35,6 +35,8 @@ tower-http = { version = "0.6", features = ["trace", "compression-gzip"] }
 # still boots with no email config and pays nothing until a reset is actually requested.
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-sesv2 = "1"
+# Boot-time catalog ingest: fetch the USDA artifact from the Data bucket (instance-role creds).
+aws-sdk-s3 = "1"
 # Gunzip the embedded USDA catalog seed (pure-Rust backend — fine under musl cross).
 flate2 = "1"
 

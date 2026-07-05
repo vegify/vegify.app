@@ -65,6 +65,14 @@ export class ServerStack extends Stack {
     const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
+    // Reference DATA (the USDA catalog artifact, future imports) — data lives in S3, not the repo.
+    // Written by the operator (`just usda-data && just usda-upload`; the bucket name is published to
+    // SSM below), read by the server at boot. RETAIN: it's data.
+    const data = new s3.Bucket(this, "Data", {
+      removalPolicy: RemovalPolicy.RETAIN,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    });
+
     const replica = new s3.Bucket(this, "Replica", {
       removalPolicy: RemovalPolicy.RETAIN,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -82,6 +90,7 @@ export class ServerStack extends Stack {
     serverBin.grantRead(role);
     seedDb.grantRead(role);
     replica.grantReadWrite(role); // litestream replicate + restore
+    data.grantRead(role); // boot-time catalog ingest reads the artifact
     // The instance self-attaches its data volume in user-data (robust across replacement — a CFN
     // VolumeAttachment deadlocks a replace, since the new attach can't precede the old detach on one
     // volume). DescribeVolumes is account-wide (no resource-level support); tighten attach/detach later.
@@ -178,6 +187,9 @@ export class ServerStack extends Stack {
       `Environment="VEGIFY_EMAIL_FROM=${emailFrom}"`,
       `Environment=VEGIFY_SES_REGION=${this.region}`,
       `Environment=VEGIFY_SIGNUPS_OPEN=${signupsOpen ? "1" : "0"}`,
+      // Reference-data bucket: the boot ingest fetches catalog/usda-plants.json.gz from here
+      // (marker-gated; a missing object logs a warning and the server serves without the catalog).
+      `Environment=VEGIFY_DATA_BUCKET=${data.bucketName}`,
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
@@ -244,6 +256,13 @@ export class ServerStack extends Stack {
     // Publish the backend origin as an account fact: publish-desktop reads it to bake VEGIFY_API_URL
     // into the shipped binary (replacing the repository secret), and anything else in the account can
     // discover the API the same way.
+    // The data bucket as an account fact: `just usda-upload` resolves it from here — the operator
+    // never types a bucket name.
+    new ssm.StringParameter(this, "DataBucketParam", {
+      parameterName: "/vegify/deploy/data-bucket",
+      stringValue: data.bucketName,
+    });
+
     new ssm.StringParameter(this, "ApiUrlParam", {
       parameterName: "/vegify/deploy/api-url",
       stringValue: this.apiUrl,

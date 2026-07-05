@@ -1,9 +1,10 @@
-//! Build the embedded USDA catalog artifact (data/usda-plants.json.gz) from the raw FoodData
-//! Central downloads — PLANTS ONLY (the product decision). A dedicated dev-tool crate: no shipped
-//! build depends on it, so `cargo build -p vegify-server` (and the release cross-build) never
-//! compiles it. Run from the repo root:
+//! Build the USDA catalog artifact from the raw FoodData
+//! Central downloads — PLANTS ONLY (the product decision). The artifact is DATA and lives in S3
+//! (the server stack's Data bucket), NOT the repo: this tool writes .data/build/ (gitignored);
+//! `just usda-upload` ships it to the bucket (name resolved from SSM); the server ingests at boot.
+//! A dedicated dev-tool crate — no shipped build depends on it. Run from the repo root:
 //!
-//!   cargo run -p usda-importer        # or: just usda-data
+//!   cargo run -p usda-importer        # or: just usda-data, then just usda-upload
 //!
 //! Inputs (gitignored, .data/import/usda/, public domain): the LATEST Foundation release present
 //! (semi-annual, April/October — download from fdc.nal.usda.gov/download-datasets; the newest file
@@ -23,7 +24,7 @@ use flate2::Compression;
 use serde::{Deserialize, Serialize};
 
 const SRC: &str = ".data/import/usda";
-const OUT: &str = "services/api/data/usda-plants.json.gz";
+const OUT: &str = ".data/build/usda-plants.json.gz";
 
 const PLANT_CATEGORIES: [&str; 6] = [
     "Vegetables and Vegetable Products",
@@ -234,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     let json = serde_json::to_string(&entries)?;
 
-    std::fs::create_dir_all("services/api/data")?;
+    std::fs::create_dir_all(".data/build")?;
     let mut gz = GzEncoder::new(std::fs::File::create(OUT)?, Compression::best());
     gz.write_all(json.as_bytes())?;
     let bytes = gz.finish()?.metadata()?.len();
