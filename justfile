@@ -39,6 +39,8 @@ rust: rust-core rust-desktop
 # Server + shared core (CI's `ci` rust job — no dev DB needed).
 rust-core:
     cargo test -p vegify-server -p vegify-core
+    # The dev-tool crates ship in no build, so nothing else compiles them — keep them honest here.
+    cargo check -p vegify-admin -p usda-importer
 
 # The desktop crate (CI covers it in the release job). Needs the dev DB (`just db`) for the
 # schema-parity test.
