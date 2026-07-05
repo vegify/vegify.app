@@ -4,9 +4,13 @@ import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import * as ssm from "aws-cdk-lib/aws-ssm";
+import { resolveZone } from "./zone.js";
 import type { Construct } from "constructs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -33,6 +37,13 @@ interface ServerStackProps extends StackProps {
   /** Signups gate (SSM decision signups-open / VEGIFY_SIGNUPS_OPEN; default closed). Lands in the
    *  systemd env; the server rejects signups unless it's "1". */
   signupsOpen: boolean;
+  /** Site domains (primary first) — the API's own hostname is DERIVED: `api.<primary>`. Same
+   *  decision the web stack consumes; no separate api-domain knob to configure or drift. */
+  domainNames: string[];
+  /** False on a fresh clone (placeholder domains): the distribution then keeps only its default
+   *  *.cloudfront.net name and no cert/records are created — zero-env synth stays green. */
+  domainsConfigured: boolean;
+  hostedZoneIdOverride?: string;
 }
 
 /**
@@ -62,7 +73,7 @@ export class ServerStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen } = props;
+    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, domainNames, domainsConfigured } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     // Reference DATA (the USDA catalog artifact, future imports) — data lives in S3, not the repo.
@@ -237,7 +248,25 @@ export class ServerStack extends Stack {
       ".compute-1.amazonaws.com",
     ]);
 
+    // api.<primary domain> — the backend's stable public name (the dynamically assigned
+    // *.cloudfront.net domain stays alive as an alias-less default, so everything already pointing
+    // at it keeps working; web + desktop adopt the stable name on their next deploys). The cert is
+    // DNS-validated in the site zone, issued automatically on first deploy.
+    const apiDomain = `api.${domainNames[0]}`;
+    const zone = resolveZone(this, "Zone", {
+      zoneName: domainNames[0],
+      configured: domainsConfigured,
+      overrideZoneId: props.hostedZoneIdOverride,
+    });
+    const certificate = domainsConfigured
+      ? new acm.Certificate(this, "ApiCert", {
+          domainName: apiDomain,
+          validation: acm.CertificateValidation.fromDns(zone),
+        })
+      : undefined;
+
     const distribution = new cloudfront.Distribution(this, "Cdn", {
+      ...(certificate ? { domainNames: [apiDomain], certificate } : {}),
       defaultBehavior: {
         origin: new origins.HttpOrigin(originDns, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
@@ -251,7 +280,15 @@ export class ServerStack extends Stack {
       },
     });
 
-    this.apiUrl = `https://${distribution.distributionDomainName}`;
+    if (domainsConfigured) {
+      const aliasTarget = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
+      new route53.ARecord(this, "ApiA", { zone, recordName: "api", target: aliasTarget });
+      new route53.AaaaRecord(this, "ApiAaaa", { zone, recordName: "api", target: aliasTarget });
+    }
+
+    this.apiUrl = domainsConfigured
+      ? `https://${apiDomain}`
+      : `https://${distribution.distributionDomainName}`;
 
     // Publish the backend origin as an account fact: publish-desktop reads it to bake VEGIFY_API_URL
     // into the shipped binary (replacing the repository secret), and anything else in the account can
