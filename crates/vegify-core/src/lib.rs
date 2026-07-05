@@ -178,6 +178,9 @@ pub struct Profile {
     pub username: String,
     pub name: String,
     pub recipes: Vec<RecipeCard>,
+    /// The user's LEAF ingredients (created or imported by them), visible to the viewer and not
+    /// tombstoned — browsable under `/<username>/ingredients/<slug>`.
+    pub ingredients: Vec<IngredientCard>,
 }
 
 #[derive(Serialize, Type)]
@@ -220,8 +223,11 @@ pub struct IngredientCard {
     pub id: String,
     pub name: String,
     pub calories_per_100g: Option<f64>,
-    /// Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`.
+    /// Slug for the canonical link; fall back to `/ingredients/<id>`.
     pub slug: Option<String>,
+    /// Owner handle: an OWNED ingredient is canonical at `/<username>/ingredients/<slug>` (browsable
+    /// under its creator); None = the communal catalog, canonical at `/ingredients/<slug>`.
+    pub username: Option<String>,
 }
 
 /// IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving).
@@ -245,6 +251,8 @@ pub struct IngredientEditData {
     /// Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the
     /// recipes that use it. Detail renders a badge; lists never surface it.
     pub deleted: bool,
+    /// Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL.
+    pub creator: Option<String>,
     pub nutrients: Vec<Reading>,
 }
 
@@ -859,8 +867,9 @@ fn load_ingredient_edit(
     let meta = conn
         .query_row(
             "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
-                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL
+                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL, u.username
              FROM ingredients i
+             LEFT JOIN users u ON u.id = i.user_id
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
              WHERE i.id = ?1",
@@ -877,11 +886,12 @@ fn load_ingredient_edit(
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, bool>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             },
         )
         .optional()?;
-    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug, deleted)) =
+    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug, deleted, creator)) =
         meta
     else {
         return Ok(None);
@@ -913,6 +923,7 @@ fn load_ingredient_edit(
             slug,
             can_edit: false,
             deleted,
+            creator,
             nutrients,
         },
         owner,
@@ -1043,7 +1054,29 @@ pub fn get_profile(
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(Some(Profile { username, name, recipes }))
+    // The user's LEAF ingredients (not recipe cards), viewer-visible, tombstones excluded — the
+    // profile's second shelf, canonical at /<username>/ingredients/<slug>.
+    let mut istmt = conn.prepare(
+        "SELECT i.id, i.name, i.calories_per_100g, i.slug, u.username
+         FROM ingredients i
+         LEFT JOIN users u ON u.id = i.user_id
+         WHERE i.user_id = ?1 AND i.id NOT IN (SELECT as_ingredient_id FROM recipes)
+           AND i.deleted_at IS NULL
+           AND (i.visibility = 'public' OR i.user_id = ?2)
+         ORDER BY i.name",
+    )?;
+    let ingredients = istmt
+        .query_map(params![uid, viewer], |row| {
+            Ok(IngredientCard {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                calories_per_100g: row.get(2)?,
+                slug: row.get(3)?,
+                username: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(Some(Profile { username, name, recipes, ingredients }))
 }
 
 #[derive(Serialize, Type)]
@@ -1111,6 +1144,9 @@ pub fn resolve_recipe_by_slug(
 pub struct IngredientSlugHit {
     pub ingredient_id: String,
     pub canonical_slug: String,
+    /// Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to
+    /// `/<username>/ingredients/<slug>` (the catalog stays at the global path).
+    pub username: Option<String>,
 }
 
 /// Resolve `/ingredients/<slug>` → an ingredient id + its current canonical slug. Live-slug match
@@ -1121,16 +1157,17 @@ pub fn resolve_ingredient_by_slug(
     conn: &Connection,
     slug: &str,
 ) -> Result<Option<IngredientSlugHit>, Error> {
-    let live: Option<String> = conn
+    let live: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT i.id FROM ingredients i
+            "SELECT i.id, u.username FROM ingredients i
+             LEFT JOIN users u ON u.id = i.user_id
              WHERE i.slug = ?1 AND i.id NOT IN (SELECT as_ingredient_id FROM recipes)",
             [slug],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    if let Some(ingredient_id) = live {
-        return Ok(Some(IngredientSlugHit { ingredient_id, canonical_slug: slug.to_string() }));
+    if let Some((ingredient_id, username)) = live {
+        return Ok(Some(IngredientSlugHit { ingredient_id, canonical_slug: slug.to_string(), username }));
     }
     let target: Option<String> = conn
         .query_row(
@@ -1140,11 +1177,16 @@ pub fn resolve_ingredient_by_slug(
         )
         .optional()?;
     if let Some(target) = target {
-        let canonical: Option<Option<String>> = conn
-            .query_row("SELECT slug FROM ingredients WHERE id = ?1", [&target], |r| r.get(0))
+        let canonical: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT i.slug, u.username FROM ingredients i
+                 LEFT JOIN users u ON u.id = i.user_id WHERE i.id = ?1",
+                [&target],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?;
-        if let Some(Some(canonical_slug)) = canonical {
-            return Ok(Some(IngredientSlugHit { ingredient_id: target, canonical_slug }));
+        if let Some((Some(canonical_slug), username)) = canonical {
+            return Ok(Some(IngredientSlugHit { ingredient_id: target, canonical_slug, username }));
         }
     }
     Ok(None)
@@ -1157,13 +1199,22 @@ pub struct SitemapRecipe {
     pub slug: String,
 }
 
-/// The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes carry
-/// their owner handle (for `/<username>/<slug>`); ingredients are the global catalog (`/ingredients/<slug>`).
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SitemapIngredient {
+    /// Owner handle: owned rows are canonical at `/<username>/ingredients/<slug>`; None = catalog
+    /// (`/ingredients/<slug>`).
+    pub username: Option<String>,
+    pub slug: String,
+}
+
+/// The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes and
+/// OWNED ingredients carry their owner handle; unowned ingredients are the catalog namespace.
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SitemapData {
     pub recipes: Vec<SitemapRecipe>,
-    pub ingredients: Vec<String>,
+    pub ingredients: Vec<SitemapIngredient>,
 }
 
 /// Enumerate every PUBLIC recipe (owner handle + slug) and PUBLIC leaf ingredient (slug) for the
@@ -1188,14 +1239,15 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
     };
     let ingredients = {
         let mut stmt = conn.prepare(
-            "SELECT i.slug FROM ingredients i
+            "SELECT u.username, i.slug FROM ingredients i
+             LEFT JOIN users u ON u.id = i.user_id
              WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
                AND i.deleted_at IS NULL
                AND i.visibility = 'public' AND i.slug IS NOT NULL
              ORDER BY i.slug",
         )?;
         let v = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
+            .query_map([], |row| Ok(SitemapIngredient { username: row.get(0)?, slug: row.get(1)? }))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
@@ -1321,8 +1373,9 @@ pub fn list_ingredients(
 ) -> Result<Vec<IngredientCard>, Error> {
     let (keyset, order) = page.sort.clauses("i.id", "i.name");
     let sql = format!(
-        "SELECT i.id, i.name, i.calories_per_100g, i.slug
+        "SELECT i.id, i.name, i.calories_per_100g, i.slug, u.username
          FROM ingredients i
+         LEFT JOIN users u ON u.id = i.user_id
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
            AND i.deleted_at IS NULL
            AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
@@ -1344,6 +1397,7 @@ pub fn list_ingredients(
                     name: row.get(1)?,
                     calories_per_100g: row.get(2)?,
                     slug: row.get(3)?,
+                    username: row.get(4)?,
                 })
             },
         )?

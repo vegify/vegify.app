@@ -218,7 +218,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
     servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
     readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
   }
-  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, deleted: data.deleted, nutrition }
+  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, deleted: data.deleted, creator: data.creator, nutrition }
 }
 
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
@@ -288,7 +288,15 @@ const profileQuery = (username: string) =>
     queryKey: ['profile', username],
     queryFn: async (): Promise<ProfileVM | null> => {
       const p = await vegifyData.getProfile(username)
-      return p ? { username: p.username, name: p.name, recipes: p.recipes.map(toRecipeListItem) } : null
+      if (!p) return null
+      return {
+        username: p.username,
+        name: p.name,
+        recipes: p.recipes.map(toRecipeListItem),
+        // id-only mapping (no slug/username): the desktop links by id everywhere — offline-first,
+        // no slug-resolution routes in the shell.
+        ingredients: p.ingredients.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+      }
     },
   })
 const ingredientsQuery = (sort: Sort) =>

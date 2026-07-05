@@ -1860,6 +1860,8 @@ mod tests {
         };
         do_save_ingredient(&conn, &ing("Tofu", Visibility::Public), None).unwrap();
         do_save_ingredient(&conn, &ing("Secret Sauce", Visibility::Private), None).unwrap();
+        // An OWNED leaf — canonical under its creator (/<username>/ingredients/<slug>).
+        do_save_ingredient(&conn, &ing("Chef Paste", Visibility::Public), Some("u1")).unwrap();
 
         let rec = |name: &str, vis: Visibility| SaveRecipeInput {
             id: None,
@@ -1878,9 +1880,17 @@ mod tests {
         do_save_recipe(&conn, &rec("Headless Stew", Visibility::Public), Some("u0")).unwrap();
 
         let sm = vegify_core::public_sitemap(&conn).unwrap();
-        let ings: Vec<&str> = sm.ingredients.iter().map(String::as_str).collect();
+        let ings: Vec<&str> = sm.ingredients.iter().map(|i| i.slug.as_str()).collect();
         assert!(ings.contains(&"tofu"), "public leaf ingredient listed");
         assert!(!ings.contains(&"secret-sauce"), "private ingredient excluded");
+        assert!(
+            sm.ingredients.iter().any(|i| i.slug == "tofu" && i.username.is_none()),
+            "unowned leaf = the catalog namespace (/ingredients/<slug>)"
+        );
+        assert!(
+            sm.ingredients.iter().any(|i| i.slug == "chef-paste" && i.username.as_deref() == Some("chef")),
+            "owned leaf carries its owner handle (canonical /<username>/ingredients/<slug>)"
+        );
 
         let recs: Vec<&str> = sm.recipes.iter().map(|r| r.slug.as_str()).collect();
         assert!(recs.contains(&"public-stew"), "public recipe listed");

@@ -14,7 +14,12 @@ const getProfileFn = createServerFn({ method: 'GET' })
     const { getProfile } = await import('../content')
     const profile = await getProfile(data) // null => no account claims this handle
     if (!profile) return null
-    return { username: profile.username, name: profile.name, recipes: profile.recipes }
+    return {
+      username: profile.username,
+      name: profile.name,
+      recipes: profile.recipes,
+      ingredients: profile.ingredients,
+    }
   })
 
 const profileQuery = (username: string) =>

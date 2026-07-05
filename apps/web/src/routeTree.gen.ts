@@ -31,6 +31,7 @@ import { Route as RecipesRecipeIdIndexRouteImport } from './routes/recipes.$reci
 import { Route as IngredientsIngredientIdIndexRouteImport } from './routes/ingredients.$ingredientId.index'
 import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recipeId.edit'
 import { Route as IngredientsIngredientIdEditRouteImport } from './routes/ingredients.$ingredientId.edit'
+import { Route as UsernameIngredientsSlugRouteImport } from './routes/$username.ingredients.$slug'
 
 const VerifyRoute = VerifyRouteImport.update({
   id: '/verify',
@@ -144,6 +145,11 @@ const IngredientsIngredientIdEditRoute =
     path: '/ingredients/$ingredientId/edit',
     getParentRoute: () => rootRouteImport,
   } as any)
+const UsernameIngredientsSlugRoute = UsernameIngredientsSlugRouteImport.update({
+  id: '/$username/ingredients/$slug',
+  path: '/$username/ingredients/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/ingredients/': typeof IngredientsIndexRoute
   '/messages/': typeof MessagesIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/$username/ingredients/$slug': typeof UsernameIngredientsSlugRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -188,6 +195,7 @@ export interface FileRoutesByTo {
   '/ingredients': typeof IngredientsIndexRoute
   '/messages': typeof MessagesIndexRoute
   '/recipes': typeof RecipesIndexRoute
+  '/$username/ingredients/$slug': typeof UsernameIngredientsSlugRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId': typeof IngredientsIngredientIdIndexRoute
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/ingredients/': typeof IngredientsIndexRoute
   '/messages/': typeof MessagesIndexRoute
   '/recipes/': typeof RecipesIndexRoute
+  '/$username/ingredients/$slug': typeof UsernameIngredientsSlugRoute
   '/ingredients/$ingredientId/edit': typeof IngredientsIngredientIdEditRoute
   '/recipes/$recipeId/edit': typeof RecipesRecipeIdEditRoute
   '/ingredients/$ingredientId/': typeof IngredientsIngredientIdIndexRoute
@@ -239,6 +248,7 @@ export interface FileRouteTypes {
     | '/ingredients/'
     | '/messages/'
     | '/recipes/'
+    | '/$username/ingredients/$slug'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/ingredients'
     | '/messages'
     | '/recipes'
+    | '/$username/ingredients/$slug'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/ingredients/'
     | '/messages/'
     | '/recipes/'
+    | '/$username/ingredients/$slug'
     | '/ingredients/$ingredientId/edit'
     | '/recipes/$recipeId/edit'
     | '/ingredients/$ingredientId/'
@@ -312,6 +324,7 @@ export interface RootRouteChildren {
   IngredientsIndexRoute: typeof IngredientsIndexRoute
   MessagesIndexRoute: typeof MessagesIndexRoute
   RecipesIndexRoute: typeof RecipesIndexRoute
+  UsernameIngredientsSlugRoute: typeof UsernameIngredientsSlugRoute
   IngredientsIngredientIdEditRoute: typeof IngredientsIngredientIdEditRoute
   RecipesRecipeIdEditRoute: typeof RecipesRecipeIdEditRoute
   IngredientsIngredientIdIndexRoute: typeof IngredientsIngredientIdIndexRoute
@@ -474,6 +487,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IngredientsIngredientIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$username/ingredients/$slug': {
+      id: '/$username/ingredients/$slug'
+      path: '/$username/ingredients/$slug'
+      fullPath: '/$username/ingredients/$slug'
+      preLoaderRoute: typeof UsernameIngredientsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -496,6 +516,7 @@ const rootRouteChildren: RootRouteChildren = {
   IngredientsIndexRoute: IngredientsIndexRoute,
   MessagesIndexRoute: MessagesIndexRoute,
   RecipesIndexRoute: RecipesIndexRoute,
+  UsernameIngredientsSlugRoute: UsernameIngredientsSlugRoute,
   IngredientsIngredientIdEditRoute: IngredientsIngredientIdEditRoute,
   RecipesRecipeIdEditRoute: RecipesRecipeIdEditRoute,
   IngredientsIngredientIdIndexRoute: IngredientsIngredientIdIndexRoute,

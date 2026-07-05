@@ -29,8 +29,13 @@ export type IngredientCard = {
 	id: string,
 	name: string,
 	caloriesPer100g: number | null,
-	/**  Slug for the canonical `/ingredients/<slug>` link; fall back to `/ingredients/<id>`. */
+	/**  Slug for the canonical link; fall back to `/ingredients/<id>`. */
 	slug: string | null,
+	/**
+	 *  Owner handle: an OWNED ingredient is canonical at `/<username>/ingredients/<slug>` (browsable
+	 *  under its creator); None = the communal catalog, canonical at `/ingredients/<slug>`.
+	 */
+	username: string | null,
 };
 
 /**  IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving). */
@@ -56,6 +61,8 @@ export type IngredientEditData = {
 	 *  recipes that use it. Detail renders a badge; lists never surface it.
 	 */
 	deleted: boolean,
+	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
+	creator: string | null,
 	nutrients: Reading[],
 };
 
@@ -70,6 +77,11 @@ export type IngredientSearchResult = {
 export type IngredientSlugHit = {
 	ingredientId: string,
 	canonicalSlug: string,
+	/**
+	 *  Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to
+	 *  `/<username>/ingredients/<slug>` (the catalog stays at the global path).
+	 */
+	username: string | null,
 };
 
 /**
@@ -135,6 +147,11 @@ export type Profile = {
 	username: string,
 	name: string,
 	recipes: RecipeCard[],
+	/**
+	 *  The user's LEAF ingredients (created or imported by them), visible to the viewer and not
+	 *  tombstoned — browsable under `/<username>/ingredients/<slug>`.
+	 */
+	ingredients: IngredientCard[],
 };
 
 export type PullIngredient = {
@@ -280,12 +297,21 @@ export type RecipeView = {
 };
 
 /**
- *  The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes carry
- *  their owner handle (for `/<username>/<slug>`); ingredients are the global catalog (`/ingredients/<slug>`).
+ *  The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes and
+ *  OWNED ingredients carry their owner handle; unowned ingredients are the catalog namespace.
  */
 export type SitemapData = {
 	recipes: SitemapRecipe[],
-	ingredients: string[],
+	ingredients: SitemapIngredient[],
+};
+
+export type SitemapIngredient = {
+	/**
+	 *  Owner handle: owned rows are canonical at `/<username>/ingredients/<slug>`; None = catalog
+	 *  (`/ingredients/<slug>`).
+	 */
+	username: string | null,
+	slug: string,
 };
 
 export type SitemapRecipe = {
