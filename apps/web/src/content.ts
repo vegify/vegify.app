@@ -10,8 +10,8 @@ import type { BlogSummary, BlogPostData } from '@vegify/ui/blog'
 
 // The wire types are GENERATED from vegify-core (@vegify/api-types — `just bindings`), so the web
 // imports the server's actual serde contract instead of hand-mirroring it. Re-exported here so
-// routes keep importing from './content'. The two *SlugHit shapes are server-local (content.rs
-// slug-resolution responses), not core types — they stay hand-written until they move into core.
+// routes keep importing from './content'. Coverage is the FULL contract now — core shapes
+// AND server-local responses — via the api TypeCollection (services/api/src/lib.rs).
 import type {
   Visibility,
   Reading,
@@ -25,6 +25,8 @@ import type {
   RecipeEditData,
   IngredientCard,
   IngredientEditData,
+  RecipeSlugHit,
+  IngredientSlugHit,
 } from '@vegify/api-types'
 
 export type {
@@ -40,9 +42,10 @@ export type {
   RecipeEditData,
   IngredientCard,
   IngredientEditData,
+  RecipeSlugHit,
+  IngredientSlugHit,
 }
-export type RecipeSlugHit = { recipeId: string; canonicalSlug: string }
-export type IngredientSlugHit = { ingredientId: string; canonicalSlug: string }
+
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`
 

@@ -39,6 +39,27 @@ pub fn export_bindings() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// The desktop polices its own bindings (ttipc's documented consumer pattern): the plain test is the
+// drift guard (`Bindings::check`), and `just bindings` reruns it with VEGIFY_REGEN_BINDINGS=1 to
+// regenerate in place. In-crate on purpose — the desktop is an APPLICATION, a leaf; no tools crate
+// may depend on it to reach these types.
+#[cfg(test)]
+mod bindings_tests {
+    #[test]
+    fn bindings_ts_is_current() {
+        if std::env::var("VEGIFY_REGEN_BINDINGS").is_ok() {
+            crate::export_bindings().expect("regenerate bindings.ts");
+            println!("wrote apps/desktop/src/bindings.ts");
+            return;
+        }
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts");
+        ttipc::Bindings::new()
+            .register::<crate::data::VegifyDataProcedures>()
+            .check(path)
+            .expect("bindings.ts drifted from the DAL trait — run `just bindings` and commit it");
+    }
+}
+
 /// The Tauri app, platform-independent: every shell (desktop binary, iOS static lib) runs this.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

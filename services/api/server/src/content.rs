@@ -5,69 +5,10 @@
 //! through vegify-core directly; only this bulk mutation-shape assembly is server-specific.
 
 use rusqlite::{params, Connection};
-use serde::Serialize;
 
 use crate::error::AppError;
+pub use vegify_api_types::{PullPayload, PullRecipe, PullItem, PullIngredient, PullReading};
 
-#[derive(Serialize)]
-pub struct PullPayload {
-    pub recipes: Vec<PullRecipe>,
-    pub ingredients: Vec<PullIngredient>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullRecipe {
-    pub id: String,
-    pub as_ingredient_id: String,
-    pub user_id: Option<String>,
-    pub visibility: String,
-    pub name: String,
-    pub subtitle: Option<String>,
-    pub directions: Option<String>,
-    pub serving_grams: Option<f64>,
-    pub batch_grams: Option<f64>,
-    pub slug: Option<String>,
-    pub items: Vec<PullItem>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullItem {
-    pub ingredient_id: String,
-    pub grams: f64,
-    pub unit: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullIngredient {
-    pub id: String,
-    pub user_id: Option<String>,
-    pub visibility: String,
-    pub name: String,
-    pub description: Option<String>,
-    /// Cents (USD). i32 END-TO-END: SaveIngredientInput (the only write path) is i32, the desktop
-    /// mirror is i32, the TS side is number — an i64 here was silent width drift in the wire contract
-    /// (found by the specta-side repo audit; the class of bug a generated client would make impossible).
-    pub price: Option<i32>,
-    pub calories_per_100g: Option<f64>,
-    pub serving_grams: Option<f64>,
-    pub package_grams: Option<f64>,
-    pub slug: Option<String>,
-    /// Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
-    /// the data — and clients mirror the flag so their local list/search filtering matches.
-    pub deleted_at: Option<i64>,
-    pub nutrients: Vec<PullReading>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullReading {
-    pub name: String,
-    pub amount_per_100g: f64,
-    pub unit: String,
-}
 
 /// Assemble the viewer's listed world in mutation shape. isListed = public + own (the same gate the
 /// vegify-core lists use); each row carries its REAL owner so the desktop's apply stamps it correctly.

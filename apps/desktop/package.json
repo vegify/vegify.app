@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
-    "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --example gen_bindings"
+    "gen:bindings": "VEGIFY_REGEN_BINDINGS=1 cargo test --manifest-path src-tauri/Cargo.toml --lib bindings_ts_is_current && cargo run -p vegify-typegen"
   },
   "dependencies": {
     "@fltsci/tauri-plugin-tracing": "^0.3.4",

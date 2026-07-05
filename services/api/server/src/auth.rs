@@ -12,29 +12,16 @@ use base64::Engine;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
 use crate::handles;
+pub use vegify_api_types::{User};
 
 const SESSION_TTL_MS: i64 = 1000 * 60 * 60 * 24 * 30; // 30 days
 const RESET_TTL_MS: i64 = 1000 * 60 * 60; // 1 hour — password-reset links are short-lived
 const EMAIL_VERIFY_TTL_MS: i64 = 1000 * 60 * 60 * 24; // 24 hours — verification links live longer than resets
 
-/// The signed-in user — the `{id, name, username, email}` the auth routes return, and the viewer the content
-/// gates scope to. Serializes with bare field names (matching the web's response).
-#[derive(Serialize, Clone)]
-pub struct User {
-    pub id: String,
-    pub name: String,
-    /// Public handle backing `/<username>`. Assigned at signup (see [`derive_unique_username`]).
-    pub username: String,
-    pub email: String,
-    /// Whether `users.email_verified_at` is set — surfaced to the clients so they can prompt for
-    /// verification (and gate verified-only actions later) without a second round trip.
-    pub email_verified: bool,
-}
 
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64

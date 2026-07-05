@@ -4832,6 +4832,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38f9a30cbcbb7011f1da7d73483983bf838af123883e45f2b36ed76328df9c50"
 dependencies = [
  "rustc_version",
+ "serde_json",
  "specta-macros",
 ]
 
@@ -6087,8 +6088,6 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
- "specta-serde",
- "specta-typescript",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -6111,6 +6110,16 @@ dependencies = [
  "serde",
  "serde_json",
  "ureq",
+]
+
+[[package]]
+name = "vegify-api-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "specta",
+ "vegify-core",
 ]
 
 [[package]]
@@ -6153,8 +6162,18 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "vegify-api-types",
  "vegify-config",
  "vegify-core",
+]
+
+[[package]]
+name = "vegify-typegen"
+version = "0.1.0"
+dependencies = [
+ "specta-serde",
+ "specta-typescript",
+ "vegify-api-types",
 ]
 
 [[package]]

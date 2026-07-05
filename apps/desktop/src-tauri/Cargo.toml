@@ -16,12 +16,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # bundle (only the lipo'd `vegify` binary lands in target/universal-apple-darwin/). Run it explicitly:
 # `pnpm --filter desktop gen:bindings` → `cargo run --example gen_bindings`.
 
-[dev-dependencies]
-# gen_bindings' SECOND output: packages/api-types (the web's generated wire types). Example-only —
-# nothing shipped compiles these. Pinned to ttipc's own internals so the emission is identical.
-specta-typescript = "=0.0.12"
-specta-serde = "=0.0.12"
-
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 
