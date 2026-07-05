@@ -71,11 +71,20 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
-      - name: Inject the marketing version (if provided)
-        # The committed tauri.conf.json version is vestigial; a dispatched version overrides it via a
-        # --config merge file (same mechanism as the desktop's tauri.version.json).
-        if: ${{ inputs.version != '' }}
-        run: printf '{"version":"%s"}\n' "${{ inputs.version }}" > apps/desktop/src-tauri/tauri.version.json
+      - name: Inject the version (dispatched, else the latest release tag)
+        # The committed tauri.conf.json version is vestigial (0.0.0); inject a real one via a --config
+        # merge file (like the desktop's tauri.version.json). A dispatched version wins; otherwise use
+        # the latest release tag so TestFlight never sees 0.0.0.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then
+            v=$(gh release view --json tagName -q .tagName | sed 's/^v//')
+          fi
+          printf '{"version":"%s"}\n' "$v" > apps/desktop/src-tauri/tauri.version.json
+          echo "iOS build version: $v"
       - name: Build + upload to TestFlight
         env:
           # Baked into the binary via option_env! so the shipped app points at the real backend.
@@ -83,12 +92,18 @@ jobs:
           # The provisioning profile for the restricted associated-domains entitlement (same secret the
           # desktop uses). Written where tauri's bundler expects it.
           VEGIFY_PROVISION_PROFILE_B64: ${{ secrets.VEGIFY_PROVISION_PROFILE_B64 }}
+          # `tauri ios build` reads the Apple team from APPLE_DEVELOPMENT_TEAM (NOT APPLE_TEAM_ID, which
+          # is tauri-action's macOS-notarization var). Without it the export signs as the placeholder
+          # team "Tauri (unset)" and fails: "No Account for Team Tauri / No profiles for app.vegify.ios".
+          APPLE_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+          # ASC API key → automatic (cloud) signing: Xcode creates/fetches the App Store provisioning
+          # profile for app.vegify.ios on the fly, so there's no cert/profile to manage in the repo.
           APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
           cd apps/desktop
-          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_TEAM_ID + the ASC
+          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_DEVELOPMENT_TEAM + the ASC
           # API key, then --export-method app-store-connect produces + uploads the TestFlight build.
           # The version override (if injected above) rides in as an extra --config arg.
           if [ -f src-tauri/tauri.version.json ]; then
