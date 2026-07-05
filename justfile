@@ -41,6 +41,9 @@ rust-core:
     cargo test -p vegify-server -p vegify-core
     # The dev-tool crates ship in no build, so nothing else compiles them — keep them honest here.
     cargo check -p vegify-admin -p usda-importer
+    # The SDK compiles standalone WITHOUT its specta feature (a plain consumer's tree) — the desktop
+    # only ever builds it WITH the feature, so this is the no-specta path's only gate.
+    cargo check -p vegify-client-rs
 
 # The desktop crate (CI covers it in the release job). Needs the dev DB (`just db`) for the
 # schema-parity test.

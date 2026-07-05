@@ -25,6 +25,10 @@ tauri-build = { version = "2.6.2", features = [] }
 vegify-core = { path = "../../../crates/vegify-core" }
 # Central env-sourced settings (backend URL incl. the build-time VEGIFY_API_URL bake, on-device DB path).
 vegify-config = { path = "../../../crates/vegify-config", features = ["desktop"] }
+# The API client SDK (auth/content/messages/notifications transport + the keychain session store) —
+# extracted FROM this app; the app consumes it (applications are leaves). "specta" adds Type derives
+# to its wire types so the IPC bindings can register them.
+vegify-client-rs = { path = "../../../crates/vegify-client-rs", features = ["specta"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.2", features = ["tray-icon", "image-png"] }
@@ -34,10 +38,6 @@ tracing = "0.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
-# Desktop sign-in + content-API sync: a blocking HTTP client (matches the sync DAL) to the web shell's
-# JSON auth + content routes, and the OS keychain for the session token.
-ureq = { version = "2", features = ["json", "gzip"] }
-keyring = { version = "3", features = ["apple-native"] }
 # OS deep links: vegify:// custom scheme (CFBundleURLTypes injected at bundle time from
 # tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs
 # to the frontend (onOpenUrl/getCurrent). Runtime needs a built .app bundle — inert under `tauri dev`.
