@@ -2,42 +2,44 @@
 //! (never the DB directly: the API is the only write path, so every owner gate, cascade rule, and
 //! WS fanout applies exactly as it would for any client).
 //!
-//! v1: `purge-content` — delete ALL recipes and leaf ingredients OWNED BY the signed-in user (the
-//! seed/test-content cleanup that makes room for the USDA catalog + the CompleteFoods import).
-//! Recipes go first (freeing their ingredient references and their as-ingredient cards), then a
-//! re-pull, then the remaining owned leaf ingredients; anything still refused (e.g. used by another
-//! user's recipe) is reported and skipped — the DAL's friendly refusal, not a crash.
+//! Subcommands (both DRY-RUN by default; `--yes` executes):
+//! - `purge-content` — delete ALL recipes + leaf ingredients owned by the signed-in user (the
+//!   seed/test-content cleanup). Recipes first (freeing references + their as-ingredient cards),
+//!   re-pull, then the remaining owned leaves; refusals are reported and skipped.
+//! - `import-completefoods` — move the CompleteFoods capture into vegify (see completefoods.rs).
 //!
-//! DRY-RUN BY DEFAULT: prints exactly what would be deleted; nothing happens without `--yes`.
-//!
-//!   VEGIFY_EMAIL=you@x VEGIFY_PASSWORD=... cargo run -p vegify-admin -- purge-content [--yes]
+//!   VEGIFY_EMAIL=you@x VEGIFY_PASSWORD=... cargo run -p vegify-admin -- <subcommand> [--yes]
 //!   (VEGIFY_API_URL defaults to http://localhost:8787 — point it at prod deliberately.)
 use serde::Deserialize;
 
+mod completefoods;
+
 #[derive(Deserialize)]
-struct LoginResponse {
-    token: String,
-    user: WhoAmI,
+pub struct ApiSession {
+    pub token: String,
+    pub user: WhoAmI,
 }
 
 #[derive(Deserialize)]
-struct WhoAmI {
-    id: String,
-    username: String,
+pub struct WhoAmI {
+    pub id: String,
+    pub username: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PullRow {
-    id: String,
-    name: String,
-    user_id: Option<String>,
+pub struct PullRow {
+    pub id: String,
+    pub name: String,
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub calories_per_100g: Option<f64>,
 }
 
 #[derive(Deserialize)]
-struct PullPayload {
-    recipes: Vec<PullRow>,
-    ingredients: Vec<PullRow>,
+pub struct PullPayload {
+    pub recipes: Vec<PullRow>,
+    pub ingredients: Vec<PullRow>,
 }
 
 #[derive(Deserialize)]
@@ -59,7 +61,7 @@ fn err_msg(e: ureq::Error) -> String {
     }
 }
 
-fn login() -> Result<LoginResponse, String> {
+pub fn login() -> Result<ApiSession, String> {
     let email = std::env::var("VEGIFY_EMAIL").map_err(|_| "set VEGIFY_EMAIL".to_string())?;
     let password = std::env::var("VEGIFY_PASSWORD").map_err(|_| "set VEGIFY_PASSWORD".to_string())?;
     ureq::post(&format!("{}/api/auth/login", base_url()))
@@ -69,13 +71,30 @@ fn login() -> Result<LoginResponse, String> {
         .map_err(|e| e.to_string())
 }
 
-fn pull(token: &str) -> Result<PullPayload, String> {
+pub fn pull(token: &str) -> Result<PullPayload, String> {
     ureq::get(&format!("{}/api/content/pull", base_url()))
         .set("authorization", &format!("Bearer {token}"))
         .call()
         .map_err(err_msg)?
         .into_json()
         .map_err(|e| e.to_string())
+}
+
+impl ApiSession {
+    /// POST a content mutation (`recipes` / `ingredients`), returning the created/updated id.
+    pub fn post_content(&self, collection: &str, body: &serde_json::Value) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct Created {
+            id: String,
+        }
+        ureq::post(&format!("{}/api/content/{collection}", base_url()))
+            .set("authorization", &format!("Bearer {}", self.token))
+            .send_json(body)
+            .map_err(err_msg)?
+            .into_json::<Created>()
+            .map(|c| c.id)
+            .map_err(|e| e.to_string())
+    }
 }
 
 fn delete(token: &str, collection: &str, id: &str) -> Result<(), String> {
@@ -86,14 +105,7 @@ fn delete(token: &str, collection: &str, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) != Some("purge-content") {
-        eprintln!("usage: vegify-admin purge-content [--yes]   (env: VEGIFY_API_URL, VEGIFY_EMAIL, VEGIFY_PASSWORD)");
-        std::process::exit(2);
-    }
-    let execute = args.iter().any(|a| a == "--yes");
-
+fn purge(execute: bool) {
     let session = match login() {
         Ok(s) => s,
         Err(e) => {
@@ -126,7 +138,10 @@ fn main() {
         return;
     }
     if !execute {
-        println!("\nDRY RUN — nothing deleted. Re-run with --yes to purge the {} items above.", recipes.len() + ingredients.len());
+        println!(
+            "\nDRY RUN — nothing deleted. Re-run with --yes to purge the {} items above.",
+            recipes.len() + ingredients.len()
+        );
         return;
     }
 
@@ -159,4 +174,19 @@ fn main() {
         mine(&world.ingredients).len(),
         failed
     );
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let execute = args.iter().any(|a| a == "--yes");
+    match args.get(1).map(String::as_str) {
+        Some("purge-content") => purge(execute),
+        Some("import-completefoods") => completefoods::run(execute),
+        _ => {
+            eprintln!(
+                "usage: vegify-admin <purge-content|import-completefoods> [--yes]   (env: VEGIFY_API_URL, VEGIFY_EMAIL, VEGIFY_PASSWORD)"
+            );
+            std::process::exit(2);
+        }
+    }
 }
