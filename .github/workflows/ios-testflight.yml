@@ -23,6 +23,10 @@ concurrency:
   group: ios-testflight
   cancel-in-progress: false
 
+env:
+  APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
+  APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+
 jobs:
   testflight:
     runs-on: macos-latest
