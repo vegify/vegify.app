@@ -3,7 +3,7 @@
 // mirror vegify-core's wire types (proven byte-parity with the desktop's DAL). The web SSR loaders +
 // mutation server-fns call these — the web holds NO database of its own. See [[server-source-of-truth]].
 
-import { api } from './api'
+import { api, apiUrl } from './api'
 import type { RecipeFormInput, IngredientSearchItem } from '@vegify/ui/recipe-form'
 import type { IngredientFormInput } from '@vegify/ui/ingredient-form'
 import type { BlogSummary, BlogPostData } from '@vegify/ui/blog'
@@ -12,6 +12,7 @@ import type { BlogSummary, BlogPostData } from '@vegify/ui/blog'
 // imports the server's actual serde contract instead of hand-mirroring it. Re-exported here so
 // routes keep importing from './content'. Coverage is the FULL contract now — core shapes
 // AND server-local responses — via the api TypeCollection (services/api/src/lib.rs).
+import type { UploadTicket } from '@vegify/api-types'
 import type {
   Visibility,
   Reading,
@@ -48,6 +49,10 @@ export type {
 
 
 const byId = (id: string) => `?id=${encodeURIComponent(id)}`
+
+// Media keys (media/<ulid>.<ext>) are served at the API's /media/* CloudFront behavior; compose the
+// absolute URL for <img src>. Null-safe: no key → no photo.
+export const mediaUrl = (key?: string | null): string | null => (key ? `${apiUrl()}/${key}` : null)
 
 // Keyset page query for the catalog reads: the sort, a cursor (the last card's id; plus its name for
 // the name sorts), and a page limit. Empty when nothing is set, so an un-paginated call still fetches
@@ -108,6 +113,14 @@ export const saveIngredient = (input: IngredientFormInput): Promise<string> =>
   api<{ id: string }>('/api/content/ingredients', { method: 'POST', body: input }).then((r) => r.id)
 export const deleteIngredient = (id: string): Promise<void> =>
   api(`/api/content/ingredients${byId(id)}`, { method: 'DELETE' }).then(() => undefined)
+// Media: the server mints a presigned PUT (the client uploads straight to S3), then the key attaches.
+export const requestUploadUrl = (contentType: string): Promise<UploadTicket> =>
+  api<UploadTicket>('/api/content/upload-url', { method: 'POST', body: { contentType } })
+export const attachPhoto = (p: { recipeId?: string; ingredientId?: string; key: string; contentType: string }): Promise<void> =>
+  api('/api/content/attach-photo', { method: 'POST', body: p }).then(() => undefined)
+export const attachAvatar = (p: { key: string; contentType: string }): Promise<void> =>
+  api('/api/content/attach-avatar', { method: 'POST', body: p }).then(() => undefined)
+
 // Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated server-side.
 export const restoreIngredient = (id: string): Promise<void> =>
   api(`/api/content/ingredient-restore${byId(id)}`, { method: 'POST', body: {} }).then(() => undefined)

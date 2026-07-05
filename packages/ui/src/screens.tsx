@@ -57,7 +57,18 @@ export type RecipeListItem = {
   /** Owner handle + slug for the canonical `/<username>/<slug>` link; fall back to `/recipes/<id>`. */
   username?: string | null;
   slug?: string | null;
+  /** Absolute URL of the hero photo; absent = the placeholder tile. */
+  photoUrl?: string | null;
 };
+
+/** A card's photo tile: the hero when present, the muted placeholder when not. */
+function CardTile({ photoUrl, name, size }: { photoUrl?: string | null; name: string; size: string }) {
+  return photoUrl ? (
+    <img src={photoUrl} alt={name} loading="lazy" className={`${size} shrink-0 rounded-lg object-cover`} />
+  ) : (
+    <div className={`${size} shrink-0 rounded-lg bg-muted`} />
+  );
+}
 
 /** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
  * (which 301s to canonical). One helper so every card + search result links the same way. */
@@ -102,6 +113,8 @@ export type RecipeDetailVM = {
   directions?: string | null;
   items: RecipeDetailItem[];
   nutrition: NutritionFactsData;
+  /** Absolute URL of the hero photo; absent = placeholder. */
+  photoUrl?: string | null;
 };
 
 export type Visibility = "public" | "unlisted" | "private";
@@ -188,6 +201,8 @@ export type IngredientEditAdapter = {
 export type ProfileVM = {
   username: string;
   name: string;
+  /** Avatar photo URL; absent = the monogram tile. */
+  avatarUrl?: string | null;
   recipes: RecipeListItem[];
   /** The user's leaf ingredients (created or imported by them) — browsable under their handle. */
   ingredients: IngredientListItem[];
@@ -323,7 +338,7 @@ export function RecipeListView({
           {recipes.map((r) => (
             <LinkComponent key={r.id} href={recipeHref(r)} className="block">
               <div className={cardClass}>
-                <div className="size-16 shrink-0 rounded-lg bg-muted" />
+                <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                 <div className="min-w-0">
                   <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
                   <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
@@ -364,9 +379,17 @@ export function ProfileView({
   return (
     <div className="mx-auto max-w-3xl p-8">
       <header className="mb-8 flex items-center gap-5">
-        <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
-          {profile.name.trim().charAt(0) || "?"}
-        </div>
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt={profile.name}
+            className="size-20 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
+            {profile.name.trim().charAt(0) || "?"}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
           <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
@@ -407,7 +430,7 @@ export function ProfileView({
             {profile.recipes.map((r) => (
               <LinkComponent key={r.id} href={recipeHref(r)} className="block">
                 <div className={cardClass}>
-                  <div className="size-16 shrink-0 rounded-lg bg-muted" />
+                  <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                   <div className="min-w-0">
                     <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
                     <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
@@ -521,6 +544,7 @@ export function RecipeDetailView({
   LinkComponent,
   edit,
   onRestoreIngredient,
+  onUploadPhoto,
 }: {
   recipe: RecipeDetailVM;
   LinkComponent: NavLink;
@@ -529,6 +553,8 @@ export function RecipeDetailView({
   /** Un-deletes a tombstoned ingredient (the greyed row's hover affordance). Only meaningful for
    *  the owner — shells pass it alongside `edit`. */
   onRestoreIngredient?: (ingredientId: string) => void;
+  /** Owner affordance: upload + attach a hero photo (shells wire the media pipeline). */
+  onUploadPhoto?: (file: File) => void | Promise<void>;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -589,6 +615,8 @@ export function RecipeDetailView({
 
           <DetailHero
             label="Recipe Image"
+            photoUrl={recipe.photoUrl}
+            onUploadPhoto={edit ? onUploadPhoto : undefined}
             // Inline mode is the editor now — the hero no longer links to the /edit form.
             editHref={recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined}
             LinkComponent={LinkComponent}

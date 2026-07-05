@@ -84,6 +84,23 @@ export class ServerStack extends Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
 
+    // USER MEDIA (recipe photos, avatars): uploaded by clients via server-issued presigned PUTs,
+    // served through THIS stack's CloudFront at /media/* (no new distribution). RETAIN: user content.
+    // CORS: presigned PUTs come straight from browsers/webviews; '*' is safe here (no credentials
+    // ride a presigned URL — the signature IS the authorization).
+    const media = new s3.Bucket(this, "Media", {
+      removalPolicy: RemovalPolicy.RETAIN,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
+          allowedOrigins: ["*"],
+          allowedHeaders: ["*"],
+          maxAge: 3600,
+        },
+      ],
+    });
+
     const replica = new s3.Bucket(this, "Replica", {
       removalPolicy: RemovalPolicy.RETAIN,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -102,6 +119,7 @@ export class ServerStack extends Stack {
     seedDb.grantRead(role);
     replica.grantReadWrite(role); // litestream replicate + restore
     data.grantRead(role); // boot-time catalog ingest reads the artifact
+    media.grantPut(role); // the server PRESIGNS client uploads (the clients PUT directly to S3)
     // The instance self-attaches its data volume in user-data (robust across replacement — a CFN
     // VolumeAttachment deadlocks a replace, since the new attach can't precede the old detach on one
     // volume). DescribeVolumes is account-wide (no resource-level support); tighten attach/detach later.
@@ -201,6 +219,8 @@ export class ServerStack extends Stack {
       // Reference-data bucket: the boot ingest fetches catalog/usda-plants.json.gz from here
       // (marker-gated; a missing object logs a warning and the server serves without the catalog).
       `Environment=VEGIFY_DATA_BUCKET=${data.bucketName}`,
+      // Media bucket for presigned upload URLs (photos/avatars); served at <api>/media/*.
+      `Environment=VEGIFY_MEDIA_BUCKET=${media.bucketName}`,
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
@@ -267,6 +287,14 @@ export class ServerStack extends Stack {
 
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       ...(certificate ? { domainNames: [apiDomain], certificate } : {}),
+      additionalBehaviors: {
+        // User media, cached hard at the edge (immutable keys — a re-upload mints a new key).
+        "/media/*": {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(media),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+      },
       defaultBehavior: {
         origin: new origins.HttpOrigin(originDns, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,

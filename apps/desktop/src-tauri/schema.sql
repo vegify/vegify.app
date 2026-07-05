@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`email` text NOT NULL,
 	`created_at` integer,
 	`updated_at` integer
-, `password_hash` text, `email_verified_at` integer);
+, `password_hash` text, `email_verified_at` integer, `avatar_key` text);
 CREATE UNIQUE INDEX IF NOT EXISTS `users_email_unique` ON `users` (`email`);
 CREATE TABLE IF NOT EXISTS `videos` (
 	`id` text PRIMARY KEY NOT NULL,

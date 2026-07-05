@@ -13,6 +13,8 @@ import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { IngredientSearchItem } from '@vegify/ui/recipe-form'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
 import { LinkAdapter } from './link'
+import { apiUrl } from './api'
+import { uploadImage } from './upload'
 
 // The recipe detail — SHARED by the canonical `/<username>/<slug>` route (renders) and the legacy
 // `/recipes/<id>` route (301s to canonical). Keyed by recipe id throughout; the slug route resolves
@@ -54,6 +56,7 @@ const getRecipe = createServerFn({ method: 'GET' })
       creator: recipe.creator ?? undefined,
       canEdit: recipe.canEdit,
       directions: recipe.directions,
+      photoUrl: recipe.photoKey ? `${apiUrl()}/${recipe.photoKey}` : null,
       items: recipe.items.map((item, i) => ({
         key: `${item.id}-${i}`,
         label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
@@ -113,6 +116,13 @@ const deleteFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { deleteRecipe } = await import('./content')
     await deleteRecipe(data)
+  })
+
+const attachPhotoFn = createServerFn({ method: 'POST' })
+  .validator((p: { recipeId: string; key: string; contentType: string }) => p)
+  .handler(async ({ data }) => {
+    const { attachPhoto } = await import('./content')
+    await attachPhoto(data)
   })
 
 const restoreIngredientFn = createServerFn({ method: 'POST' })
@@ -190,12 +200,23 @@ export function RecipeDetailPage({ recipeId }: { recipeId: string }) {
       }
     : undefined
 
+  // Owner-only (edit presence): browser-side shrink → presigned PUT → attach → refresh.
+  const onUploadPhoto = edit
+    ? async (file: File) => {
+        const { key, contentType } = await uploadImage(file)
+        await attachPhotoFn({ data: { recipeId, key, contentType } })
+        await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
+        await queryClient.invalidateQueries({ queryKey: ['recipes'] })
+      }
+    : undefined
+
   return (
     <RecipeDetailView
       recipe={data.vm}
       LinkComponent={LinkAdapter}
       edit={edit}
       onRestoreIngredient={onRestoreIngredient}
+      onUploadPhoto={onUploadPhoto}
     />
   )
 }

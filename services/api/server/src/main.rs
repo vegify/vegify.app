@@ -18,6 +18,7 @@ mod usda;
 // call `handles::validate_username` when usernames launch.
 #[allow(dead_code)]
 mod handles;
+mod media;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
@@ -632,6 +633,89 @@ async fn restore_ingredient(
     Ok(Json(json!({ "ok": true })))
 }
 
+#[derive(Deserialize)]
+struct UploadUrlBody {
+    content_type: Option<String>,
+}
+
+/// Mint a presigned PUT for one image (signed-in users; attachment is owner-gated separately).
+async fn upload_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UploadUrlBody>,
+) -> Result<Json<vegify_api_types::UploadTicket>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    db(&state, move |conn| require_user(conn, &token).map(|_| ())).await?;
+    let content_type = body.content_type.unwrap_or_default();
+    Ok(Json(media::presign_upload(&content_type).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachPhotoBody {
+    /// Either directly, or via recipe_id (resolved to the recipe's as-ingredient — a recipe IS an
+    /// ingredient, and the photo lives on that row).
+    ingredient_id: Option<String>,
+    recipe_id: Option<String>,
+    key: Option<String>,
+    content_type: Option<String>,
+}
+
+async fn attach_photo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<AttachPhotoBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let (ing, rid, key, ct) = (
+        body.ingredient_id.unwrap_or_default(),
+        body.recipe_id.unwrap_or_default(),
+        body.key.unwrap_or_default(),
+        body.content_type.unwrap_or_default(),
+    );
+    if (ing.is_empty() && rid.is_empty()) || key.is_empty() {
+        return Err(AppError::BadRequest("ingredientId (or recipeId) and key are required.".into()));
+    }
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        let target = if !ing.is_empty() {
+            ing
+        } else {
+            conn.query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&rid], |r| r.get(0))
+                .map_err(|_| AppError::BadRequest("No such recipe.".into()))?
+        };
+        media::attach_photo(conn, &me.id, &target, &key, &ct)
+    })
+    .await?;
+    state.notify_change("recipe");
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachAvatarBody {
+    key: Option<String>,
+    content_type: Option<String>,
+}
+
+async fn attach_avatar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<AttachAvatarBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let (key, ct) = (body.key.unwrap_or_default(), body.content_type.unwrap_or_default());
+    if key.is_empty() {
+        return Err(AppError::BadRequest("key is required.".into()));
+    }
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        media::attach_avatar(conn, &me.id, &key, &ct)
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 async fn recipe_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -889,6 +973,15 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         if has_source == 0 {
             conn.execute("ALTER TABLE ingredients ADD COLUMN source TEXT", [])?;
         }
+        // Avatar media key on users — additive, NULL = none.
+        let has_avatar: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'avatar_key'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_avatar == 0 {
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_key TEXT", [])?;
+        }
         // Soft-delete tombstone (see packages/db schema note) — additive, NULL = live.
         let has_deleted: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'deleted_at'",
@@ -1016,6 +1109,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/recipe-edit", get(recipe_edit))
         .route("/api/content/ingredient-detail", get(ingredient_detail))
         .route("/api/content/ingredient-restore", post(restore_ingredient))
+        .route("/api/content/upload-url", post(upload_url))
+        .route("/api/content/attach-photo", post(attach_photo))
+        .route("/api/content/attach-avatar", post(attach_avatar))
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))
