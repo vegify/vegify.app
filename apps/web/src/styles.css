@@ -19,3 +19,10 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* The top navigation-progress bar (see NavigationProgress in __root): a shimmer while a route loads. */
+@keyframes vegify-nav-progress {
+  0% { transform: scaleX(0); transform-origin: left; }
+  50% { transform: scaleX(0.7); transform-origin: left; }
+  100% { transform: scaleX(1); transform-origin: left; }
+}

@@ -252,6 +252,10 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
         Blog
       </LinkComponent>
       <span aria-hidden>·</span>
+      <LinkComponent href="/download" className="font-medium transition-colors hover:text-foreground">
+        Get the app
+      </LinkComponent>
+      <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
   );

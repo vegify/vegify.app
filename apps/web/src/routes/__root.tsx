@@ -111,6 +111,21 @@ function RootErrorBoundary() {
   )
 }
 
+/** A slim top progress bar shown whenever a navigation can't resolve instantly (a loader is
+ * pending) — so a click that waits on data/network gives immediate feedback instead of a dead beat. */
+function NavigationProgress() {
+  const isLoading = useRouterState({ select: (s) => s.status === 'pending' })
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[100] h-0.5 origin-left bg-primary transition-all duration-300 ${
+        isLoading ? 'w-full opacity-100' : 'w-0 opacity-0'
+      }`}
+      style={isLoading ? { animation: 'vegify-nav-progress 1.2s ease-out infinite' } : undefined}
+    />
+  )
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { user } = Route.useRouteContext()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -150,6 +165,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
+        <NavigationProgress />
         {showShell ? (
           <AppShell
             currentPath={pathname}
