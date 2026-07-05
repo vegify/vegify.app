@@ -13,6 +13,7 @@ import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetRouteImport } from './routes/reset'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotRouteImport } from './routes/forgot'
 import { Route as IndexRouteImport } from './routes/index'
@@ -49,6 +50,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ResetRoute = ResetRouteImport.update({
   id: '/reset',
   path: '/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
+  '/notifications': typeof NotificationsRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
+  '/notifications': typeof NotificationsRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
+  '/notifications': typeof NotificationsRoute
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -215,6 +224,7 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot'
     | '/login'
+    | '/notifications'
     | '/reset'
     | '/settings'
     | '/signup'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot'
     | '/login'
+    | '/notifications'
     | '/reset'
     | '/settings'
     | '/signup'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot'
     | '/login'
+    | '/notifications'
     | '/reset'
     | '/settings'
     | '/signup'
@@ -285,6 +297,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
+  NotificationsRoute: typeof NotificationsRoute
   ResetRoute: typeof ResetRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
@@ -333,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/reset'
       fullPath: '/reset'
       preLoaderRoute: typeof ResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -461,6 +481,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
+  NotificationsRoute: NotificationsRoute,
   ResetRoute: ResetRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,

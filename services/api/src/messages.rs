@@ -137,8 +137,10 @@ fn get_or_create_conversation(conn: &Connection, me: &str, other: &str) -> Resul
     }
 }
 
-/// Send `body` to `to_username`. Creates the conversation on first contact. Returns the stored message.
-pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Result<Message, AppError> {
+/// Send `body` from `me` to `to_username`. Creates the conversation on first contact, records a
+/// "message" notification for the recipient (same conn — the notification is part of the send), and
+/// returns the stored message.
+pub fn send(conn: &Connection, me: &crate::auth::User, to_username: &str, body: &str) -> Result<Message, AppError> {
     let body = body.trim();
     if body.is_empty() {
         return Err(AppError::BadRequest("A message can't be empty.".into()));
@@ -147,19 +149,29 @@ pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Re
         return Err(AppError::BadRequest("That message is too long.".into()));
     }
     let to = party_by_username(conn, to_username)?;
-    if to.id == me_id {
+    if to.id == me.id {
         return Err(AppError::BadRequest("You can't message yourself.".into()));
     }
-    let conversation = get_or_create_conversation(conn, me_id, &to.id)?;
+    let conversation = get_or_create_conversation(conn, &me.id, &to.id)?;
     let id = vegify_core::new_id();
     let now = now_ms();
     conn.execute(
         "INSERT INTO messages (id, conversation_id, sender_id, body, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![id, conversation, me_id, body, now],
+        params![id, conversation, me.id, body, now],
     )?;
     conn.execute(
         "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
         params![now, conversation],
+    )?;
+    let preview: String = body.chars().take(80).collect();
+    crate::notifications::notify(
+        conn,
+        &to.id,
+        "message",
+        &serde_json::json!({
+            "from": { "id": me.id, "name": me.name, "username": me.username },
+            "preview": preview,
+        }),
     )?;
     Ok(Message {
         id,
@@ -220,6 +232,8 @@ pub fn thread(conn: &Connection, me_id: &str, other_username: &str) -> Result<Th
         "UPDATE messages SET read_at = ?1 WHERE conversation_id = ?2 AND sender_id != ?3 AND read_at IS NULL",
         params![now_ms(), conversation, me_id],
     )?;
+    // The bell drains with the thread: their message notifications are consumed by reading the thread.
+    crate::notifications::mark_message_thread_read(conn, me_id, &with.id)?;
     // rowid tie-break: ULIDs don't order within one millisecond, but insertion order (rowid) always does.
     let mut stmt = conn.prepare(
         "SELECT id, body, created_at, (sender_id = ?2) FROM messages
@@ -262,14 +276,27 @@ mod tests {
         )
         .unwrap();
         ensure_tables(&conn).unwrap();
+        // send() records a notification for the recipient on the same conn.
+        crate::notifications::ensure_tables(&conn).unwrap();
         conn
+    }
+
+    /// A test viewer — send() takes the full user (its name/handle feed the notification payload).
+    fn user(id: &str, name: &str, username: &str) -> crate::auth::User {
+        crate::auth::User {
+            id: id.into(),
+            name: name.into(),
+            username: username.into(),
+            email: format!("{username}@x"),
+            email_verified: true,
+        }
     }
 
     #[test]
     fn send_creates_one_conversation_per_pair_regardless_of_direction() {
         let conn = test_conn();
-        send(&conn, "u1", "grace", "hi").unwrap();
-        send(&conn, "u2", "ada", "hi back").unwrap();
+        send(&conn, &user("u1", "Ada", "ada"), "grace", "hi").unwrap();
+        send(&conn, &user("u2", "Grace", "grace"), "ada", "hi back").unwrap();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM conversations", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1, "both directions share the normalized pair row");
     }
@@ -277,9 +304,9 @@ mod tests {
     #[test]
     fn thread_marks_only_their_messages_read_and_unread_counts_track() {
         let conn = test_conn();
-        send(&conn, "u1", "grace", "one").unwrap();
-        send(&conn, "u1", "grace", "two").unwrap();
-        send(&conn, "u2", "ada", "reply").unwrap();
+        send(&conn, &user("u1", "Ada", "ada"), "grace", "one").unwrap();
+        send(&conn, &user("u1", "Ada", "ada"), "grace", "two").unwrap();
+        send(&conn, &user("u2", "Grace", "grace"), "ada", "reply").unwrap();
         assert_eq!(unread_count(&conn, "u2").unwrap(), 2);
         assert_eq!(unread_count(&conn, "u1").unwrap(), 1);
         // Grace opens the thread: her unread drains; Ada's reply stays unread for Ada until SHE opens.
@@ -294,8 +321,8 @@ mod tests {
     #[test]
     fn conversation_list_shows_last_message_and_unread_per_other_party() {
         let conn = test_conn();
-        send(&conn, "u2", "ada", "from grace").unwrap();
-        send(&conn, "u3", "ada", "from alan").unwrap();
+        send(&conn, &user("u2", "Grace", "grace"), "ada", "from grace").unwrap();
+        send(&conn, &user("u3", "Alan", "alan"), "ada", "from alan").unwrap();
         let list = list_conversations(&conn, "u1").unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].with.username, "alan", "most recently active first");
@@ -307,11 +334,11 @@ mod tests {
     #[test]
     fn guards_empty_self_unknown_and_oversized() {
         let conn = test_conn();
-        assert!(matches!(send(&conn, "u1", "ada", "hi"), Err(AppError::BadRequest(_))), "self-send refused");
-        assert!(matches!(send(&conn, "u1", "nobody", "hi"), Err(AppError::NotFound(_))));
-        assert!(matches!(send(&conn, "u1", "grace", "   "), Err(AppError::BadRequest(_))));
+        assert!(matches!(send(&conn, &user("u1", "Ada", "ada"), "ada", "hi"), Err(AppError::BadRequest(_))), "self-send refused");
+        assert!(matches!(send(&conn, &user("u1", "Ada", "ada"), "nobody", "hi"), Err(AppError::NotFound(_))));
+        assert!(matches!(send(&conn, &user("u1", "Ada", "ada"), "grace", "   "), Err(AppError::BadRequest(_))));
         let big = "x".repeat(MAX_BODY_CHARS + 1);
-        assert!(matches!(send(&conn, "u1", "grace", &big), Err(AppError::BadRequest(_))));
+        assert!(matches!(send(&conn, &user("u1", "Ada", "ada"), "grace", &big), Err(AppError::BadRequest(_))));
         // A thread with a stranger (no conversation yet) resolves the party with zero messages.
         let t = thread(&conn, "u1", "grace").unwrap();
         assert_eq!(t.with.username, "grace");

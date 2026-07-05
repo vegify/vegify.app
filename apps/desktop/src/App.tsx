@@ -64,6 +64,16 @@ import {
   type ConversationSummary,
   type ThreadVM,
 } from '@vegify/ui/messages'
+import {
+  NotificationsView,
+  describeNotification,
+  type NotificationVM,
+} from '@vegify/ui/notifications'
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification'
 import { useChromeSearch } from '@vegify/ui/use-chrome-search'
 import { useEditHistory } from '@vegify/ui/use-edit-history'
 import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
@@ -393,6 +403,12 @@ function RootChrome() {
     enabled: !!auth?.user,
     refetchInterval: 60_000,
   })
+  const { data: unreadNotifications } = useQuery({
+    queryKey: ['notifications-unread'],
+    queryFn: () => vegifyData.notificationsUnread(),
+    enabled: !!auth?.user,
+    refetchInterval: 60_000,
+  })
 
   useEffect(() => {
     const focusSearch = () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
@@ -448,10 +464,21 @@ function RootChrome() {
     window.addEventListener('online', onOnline)
     // Realtime: pull the instant the server says content changed (another device — or our own push echo).
     const unlisten = listen('server-content-changed', () => scheduleSync(0))
+    // Bell events additionally refetch the badges and — when the window isn't focused — fire a native
+    // OS toast for the newest unread entry (the sender's own client gets the event too, but it has no
+    // unread rows, so toastNewestNotification no-ops).
+    const unlistenNotif = listen('server-notification', () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
+      queryClient.invalidateQueries({ queryKey: ['messages-unread'] })
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      if (!document.hasFocus()) void toastNewestNotification()
+    })
     return () => {
       clearInterval(interval)
       window.removeEventListener('online', onOnline)
       unlisten.then((f) => f())
+      unlistenNotif.then((f) => f())
     }
   }, [])
 
@@ -465,6 +492,7 @@ function RootChrome() {
       user={auth?.user ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
       onSignOut={auth?.onSignOut}
       unreadMessages={unreadMessages ?? 0}
+      unreadNotifications={unreadNotifications ?? 0}
     >
       {auth?.user && !auth.user.emailVerified ? <EmailVerificationNotice email={auth.user.email} /> : null}
       {query ? <SearchOverlay query={query} /> : <Outlet />}
@@ -644,6 +672,78 @@ const threadQuery = (username: string) =>
     // fallback while a thread sits open with the network quiet.
     refetchInterval: 15_000,
   })
+
+// The bell. IPC ships payload as a raw JSON string (specta has no stable JSON type) — parse here
+// into the shared screen's VM.
+const notificationsQuery = queryOptions({
+  queryKey: ['notifications'],
+  queryFn: async (): Promise<NotificationVM[]> =>
+    (await vegifyData.notifications()).map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      payload: safeParse(n.payload),
+      createdAt: n.createdAt ?? 0,
+      read: n.read,
+    })),
+})
+
+function safeParse(raw: string): NotificationVM['payload'] {
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+  } catch {
+    return null
+  }
+}
+
+/** Fire a native OS toast for the newest unread bell entry — called off the WS `server-notification`
+ *  event when the window isn't focused. Permission is requested lazily on first use. */
+async function toastNewestNotification() {
+  try {
+    let granted = await isPermissionGranted()
+    if (!granted) granted = (await requestPermission()) === 'granted'
+    if (!granted) return
+    const rows = await vegifyData.notifications()
+    const newest = rows.find((n) => !n.read)
+    if (!newest) return
+    const d = describeNotification({
+      id: newest.id,
+      kind: newest.kind,
+      payload: safeParse(newest.payload),
+      createdAt: newest.createdAt ?? 0,
+      read: newest.read,
+    })
+    sendNotification({ title: d.title, body: d.detail })
+  } catch {
+    // Toasts are garnish — never let them surface an error into the app.
+  }
+}
+
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/notifications',
+  component: function Notifications() {
+    const auth = useContext(AuthContext)
+    if (!auth?.user) return <SignInRequired action="see your notifications" />
+    return <NotificationsInner />
+  },
+})
+
+function NotificationsInner() {
+  const queryClient = useQueryClient()
+  const { data: notifications } = useSuspenseQuery(notificationsQuery)
+
+  // Bell-standard: render with unread highlights, then mark everything read.
+  useEffect(() => {
+    void (async () => {
+      await vegifyData.notificationsMarkRead()
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications'], refetchType: 'none' })
+    })()
+  }, [queryClient])
+
+  return <NotificationsView notifications={notifications} LinkComponent={LinkComponent} />
+}
 
 const messagesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -952,6 +1052,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   messagesRoute,
   messageThreadRoute,
+  notificationsRoute,
   profileRoute,
 ])
 

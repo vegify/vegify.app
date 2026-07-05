@@ -136,6 +136,18 @@ pub struct SendMessageInput {
     pub body: String,
 }
 
+/// One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
+/// type) — App.tsx parses it into the shared screens' NotificationVM.
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DmNotification {
+    pub id: String,
+    pub kind: String,
+    pub payload: String,
+    pub created_at: f64,
+    pub read: bool,
+}
+
 /// What the OS keychain holds: the opaque session token + the user profile. The token authorizes
 /// the content API (Bearer) + server-side logout; the cached profile lets `current_user` work offline.
 #[derive(Serialize, Deserialize, Clone)]
@@ -207,9 +219,18 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
                     while let Some(frame) = stream.next().await {
                         match frame {
                             // Any change frame → pull now (the frontend listener calls scheduleSync(0)).
+                            // Notification frames ALSO get their own event: the frontend fires a native
+                            // toast + refetches the bell off it (the generic event only means "re-pull").
                             Ok(Message::Text(payload)) => {
                                 tracing::info!(change = %payload, "ws push: change received");
                                 let _ = app.emit("server-content-changed", ());
+                                let is_notification = serde_json::from_str::<serde_json::Value>(&payload)
+                                    .ok()
+                                    .and_then(|v| v.get("changed").and_then(|c| c.as_str().map(String::from)))
+                                    .is_some_and(|kind| kind == "notification");
+                                if is_notification {
+                                    let _ = app.emit("server-notification", ());
+                                }
                             }
                             Ok(Message::Close(_)) | Err(_) => break,
                             Ok(_) => {} // ping/pong handled by tungstenite; ignore other frames
@@ -487,6 +508,82 @@ mod messages_client {
             count: f64,
         }
         Ok(json::<Count>(bearer(ureq::get(&url("unread")), token).call().map_err(err)?)?.count)
+    }
+}
+
+/// /api/notifications client (the bell) — same idiom as messages_client. The server sends `payload`
+/// as parsed JSON; it's re-serialized to a string for the IPC shape (see DmNotification).
+mod notifications_client {
+    use super::{auth_base_url, AuthErrorBody, DataError, DmNotification};
+    use serde::Deserialize;
+
+    fn url(path: &str) -> String {
+        format!("{}/api/notifications{path}", auth_base_url())
+    }
+
+    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
+        req.set("authorization", &format!("Bearer {token}"))
+    }
+
+    fn err(e: ureq::Error) -> DataError {
+        match e {
+            ureq::Error::Status(_, resp) => {
+                let msg = resp
+                    .into_json::<AuthErrorBody>()
+                    .map(|b| b.error)
+                    .unwrap_or_else(|_| "Request failed.".to_string());
+                DataError::Db(msg)
+            }
+            e => DataError::Db(format!("Network error: {e}")),
+        }
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WireNotification {
+        id: String,
+        kind: String,
+        payload: serde_json::Value,
+        created_at: f64,
+        read: bool,
+    }
+
+    pub fn list(token: &str) -> Result<Vec<DmNotification>, DataError> {
+        let rows: Vec<WireNotification> = bearer(ureq::get(&url("")), token)
+            .call()
+            .map_err(err)?
+            .into_json()
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .map(|n| DmNotification {
+                id: n.id,
+                kind: n.kind,
+                payload: n.payload.to_string(),
+                created_at: n.created_at,
+                read: n.read,
+            })
+            .collect())
+    }
+
+    pub fn unread(token: &str) -> Result<f64, DataError> {
+        #[derive(Deserialize)]
+        struct Count {
+            count: f64,
+        }
+        let c: Count = bearer(ureq::get(&url("/unread")), token)
+            .call()
+            .map_err(err)?
+            .into_json()
+            .map_err(|e| DataError::Db(e.to_string()))?;
+        Ok(c.count)
+    }
+
+    pub fn mark_all_read(token: &str) -> Result<(), DataError> {
+        bearer(ureq::post(&url("/read")), token)
+            .send_json(serde_json::json!({}))
+            .map_err(err)?;
+        Ok(())
     }
 }
 
@@ -801,6 +898,10 @@ pub trait VegifyData {
     fn message_thread(&self, username: String) -> Result<DmThread, DataError>;
     fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError>;
     fn messages_unread(&self) -> Result<f64, DataError>;
+    /// The bell — online-only proxies to /api/notifications (auth required).
+    fn notifications(&self) -> Result<Vec<DmNotification>, DataError>;
+    fn notifications_unread(&self) -> Result<f64, DataError>;
+    fn notifications_mark_read(&self) -> Result<(), DataError>;
 }
 
 // The trait methods are thin desktop adapters: derive the viewer from the cached session, lock the
@@ -1004,6 +1105,21 @@ impl VegifyData for Db {
     fn messages_unread(&self) -> Result<f64, DataError> {
         let token = self.require_token()?;
         messages_client::unread(&token)
+    }
+
+    fn notifications(&self) -> Result<Vec<DmNotification>, DataError> {
+        let token = self.require_token()?;
+        notifications_client::list(&token)
+    }
+
+    fn notifications_unread(&self) -> Result<f64, DataError> {
+        let token = self.require_token()?;
+        notifications_client::unread(&token)
+    }
+
+    fn notifications_mark_read(&self) -> Result<(), DataError> {
+        let token = self.require_token()?;
+        notifications_client::mark_all_read(&token)
     }
 }
 
