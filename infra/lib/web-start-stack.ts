@@ -130,6 +130,12 @@ export class WebStartStack extends Stack {
       },
     });
 
+// A CloudFront behavior serving a static file from the client S3 bucket (used for the root statics).
+    const staticFromS3: cloudfront.BehaviorOptions = {
+      origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+    };
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       domainNames,
       certificate,
@@ -181,6 +187,14 @@ export class WebStartStack extends Stack {
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         },
+        // Root static files (PWA icons + manifest + favicon), from public/ → S3, NOT the SSR Lambda
+        // (whose auth gate 307s unknown paths to /login — which hid the icons/manifest from iOS
+        // home-screen, 1Password's icon crawler, and PWA install). Same fix as /robots.txt above.
+        "/favicon.ico": staticFromS3,
+        "/manifest.json": staticFromS3,
+        "/apple-touch-icon.png": staticFromS3,
+        "/logo192.png": staticFromS3,
+        "/logo512.png": staticFromS3,
       },
     });
 
