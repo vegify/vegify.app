@@ -121,6 +121,20 @@ export const attachPhoto = (p: { recipeId?: string; ingredientId?: string; key: 
 export const attachAvatar = (p: { key: string; contentType: string }): Promise<void> =>
   api('/api/content/attach-avatar', { method: 'POST', body: p }).then(() => undefined)
 
+// --- UGC safety (App Review 1.2): report content/users, block users ---
+export type ReportInput = {
+  targetType: 'ingredient' | 'recipe' | 'user' | 'message'
+  targetId: string
+  reason: 'spam' | 'abuse' | 'sexual' | 'violence' | 'other'
+  note?: string | null
+}
+export const reportContent = (input: ReportInput): Promise<void> =>
+  api('/api/content/report', { method: 'POST', body: input }).then(() => undefined)
+export const blockUser = (username: string): Promise<void> =>
+  api('/api/users/block', { method: 'POST', body: { username } }).then(() => undefined)
+export const unblockUser = (username: string): Promise<void> =>
+  api('/api/users/unblock', { method: 'POST', body: { username } }).then(() => undefined)
+
 // Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated server-side.
 export const restoreIngredient = (id: string): Promise<void> =>
   api(`/api/content/ingredient-restore${byId(id)}`, { method: 'POST', body: {} }).then(() => undefined)

@@ -116,6 +116,10 @@ pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Re
     if to.id == me_id {
         return Err(AppError::BadRequest("You can't message yourself.".into()));
     }
+    // A block in either direction closes the channel (App Review 1.2).
+    if crate::safety::either_blocked(conn, me_id, &to.id)? {
+        return Err(AppError::Forbidden("You can't message this user.".into()));
+    }
     let conversation = get_or_create_conversation(conn, me_id, &to.id)?;
     let id = vegify_core::new_id();
     let now = now_ms();
@@ -149,7 +153,9 @@ pub fn list_conversations(conn: &Connection, me_id: &str) -> Result<Vec<Conversa
            JOIN messages m ON m.id = (SELECT id FROM messages
                                        WHERE conversation_id = c.id
                                        ORDER BY created_at DESC, rowid DESC LIMIT 1)
-          WHERE c.user_a = ?1 OR c.user_b = ?1
+          WHERE (c.user_a = ?1 OR c.user_b = ?1)
+            AND u.id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = ?1)
+            AND u.id NOT IN (SELECT blocker_id FROM user_blocks WHERE blocked_id = ?1)
           ORDER BY m.created_at DESC, m.rowid DESC",
     )?;
     let rows = stmt
@@ -228,6 +234,7 @@ mod tests {
         )
         .unwrap();
         ensure_tables(&conn).unwrap();
+        crate::safety::ensure_tables(&conn).unwrap();
         conn
     }
 

@@ -1,4 +1,4 @@
-import { useRouter } from '@tanstack/react-router'
+import { useRouteContext, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { queryOptions, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import {
@@ -128,6 +128,13 @@ const attachPhotoFn = createServerFn({ method: 'POST' })
     await attachPhoto(data)
   })
 
+const reportRecipeFn = createServerFn({ method: 'POST' })
+  .validator((d: { id: string; reason: string; note: string }) => d)
+  .handler(async ({ data }) => {
+    const { reportContent } = await import('./content')
+    await reportContent({ targetType: 'recipe', targetId: data.id, reason: data.reason as never, note: data.note })
+  })
+
 const restoreIngredientFn = createServerFn({ method: 'POST' })
   .validator((id: string) => id)
   .handler(async ({ data }) => {
@@ -140,6 +147,7 @@ export const recipeQuery = (id: string) =>
 
 /** The detail page, keyed by recipe id (the slug route resolves the id before rendering this). */
 export function RecipeDetailPage({ recipeId }: { recipeId: string }) {
+  const { user } = useRouteContext({ from: '__root__' })
   const { data } = useSuspenseQuery(recipeQuery(recipeId))
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -213,6 +221,12 @@ export function RecipeDetailPage({ recipeId }: { recipeId: string }) {
       }
     : undefined
 
+  // A signed-in non-owner can report the recipe (App Review 1.2). Owners edit instead.
+  const onReportContent =
+    user && !edit
+      ? (reason: string, note: string) => reportRecipeFn({ data: { id: recipeId, reason, note } })
+      : undefined
+
   return (
     <RecipeDetailView
       recipe={data.vm}
@@ -220,6 +234,7 @@ export function RecipeDetailPage({ recipeId }: { recipeId: string }) {
       edit={edit}
       onRestoreIngredient={onRestoreIngredient}
       onUploadPhoto={onUploadPhoto}
+      onReportContent={onReportContent}
     />
   )
 }

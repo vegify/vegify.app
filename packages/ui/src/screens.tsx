@@ -2,6 +2,7 @@ import { type ComponentType, useEffect, useMemo, useRef, useState } from "react"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
+import { cn } from "./cn";
 import { SORT_OPTIONS, type Sort } from "./catalog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 import {
@@ -252,6 +253,14 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
         Blog
       </LinkComponent>
       <span aria-hidden>·</span>
+      <LinkComponent href="/download" className="font-medium transition-colors hover:text-foreground">
+        Get the app
+      </LinkComponent>
+      <span aria-hidden>·</span>
+      <LinkComponent href="/terms" className="transition-colors hover:text-foreground">Terms</LinkComponent>
+      <span aria-hidden>·</span>
+      <LinkComponent href="/privacy" className="transition-colors hover:text-foreground">Privacy</LinkComponent>
+      <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
   );
@@ -387,11 +396,108 @@ export function RecipeListView({
   );
 }
 
+/** The report reasons the server accepts (safety.rs REASONS). */
+export type ReportReason = "spam" | "abuse" | "sexual" | "violence" | "other";
+const REPORT_REASONS: readonly { value: ReportReason; label: string }[] = [
+  { value: "spam", label: "Spam" },
+  { value: "abuse", label: "Harassment or abuse" },
+  { value: "sexual", label: "Sexual content" },
+  { value: "violence", label: "Violence or threats" },
+  { value: "other", label: "Something else" },
+];
+
+/** Shared report dialog (App Review 1.2): pick a reason, add an optional note, submit. Used for a
+ * user, a recipe, an ingredient, or a message. */
+export function ReportDialog({
+  open,
+  onOpenChange,
+  subject,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  /** What's being reported, for the title (e.g. "@bob", "this recipe"). */
+  subject: string;
+  onSubmit: (reason: ReportReason, note: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState<ReportReason>("spam");
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Report {subject}</DialogTitle>
+          <DialogDescription>
+            {done
+              ? "Thanks — our team reviews reports and acts within 24 hours."
+              : "Tell us what's wrong. Reports are confidential."}
+          </DialogDescription>
+        </DialogHeader>
+        {done ? null : (
+          <div className="flex flex-col gap-3">
+            <Select value={reason} onValueChange={(v) => setReason(v as ReportReason)}>
+              <SelectTrigger aria-label="Reason">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REPORT_REASONS.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add details (optional)"
+              rows={3}
+              className="w-full rounded-lg border border-border bg-transparent p-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        )}
+        <DialogFooter>
+          {done ? (
+            <button type="button" className={buttonClasses({ size: "sm" })} onClick={() => onOpenChange(false)}>
+              Close
+            </button>
+          ) : (
+            <>
+              <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+              <button
+                type="button"
+                disabled={sending}
+                className={buttonClasses({ size: "sm" })}
+                onClick={async () => {
+                  setSending(true);
+                  try {
+                    await onSubmit(reason, note.trim());
+                    setDone(true);
+                  } finally {
+                    setSending(false);
+                  }
+                }}
+              >
+                {sending ? "Sending…" : "Submit report"}
+              </button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ProfileView({
   username,
   profile,
   LinkComponent,
   canMessage = false,
+  isBlocked = false,
+  onReport,
+  onToggleBlock,
 }: {
   /** The handle from the route — shown when no account claims it. */
   username: string;
@@ -399,7 +505,14 @@ export function ProfileView({
   LinkComponent: NavLink;
   /** Whether the viewer can DM this profile (signed in, and not looking at themselves). */
   canMessage?: boolean;
+  /** Whether the viewer has blocked this profile (drives the Block/Unblock label). */
+  isBlocked?: boolean;
+  /** Present ⇒ the viewer can report this user (signed in, not themselves). */
+  onReport?: (reason: ReportReason, note: string) => Promise<void>;
+  /** Present ⇒ the viewer can block/unblock this user. */
+  onToggleBlock?: () => Promise<void>;
 }) {
+  const [reportOpen, setReportOpen] = useState(false);
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center">
@@ -434,7 +547,35 @@ export function ProfileView({
             Message
           </LinkComponent>
         ) : null}
+        {onReport || onToggleBlock ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Safety options"
+              className="flex size-9 items-center justify-center rounded-full text-muted-foreground ring-1 ring-foreground/10 transition hover:text-foreground"
+            >
+              <MoreHorizontal className="size-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onReport ? (
+                <DropdownMenuItem onClick={() => setReportOpen(true)}>Report @{profile.username}</DropdownMenuItem>
+              ) : null}
+              {onToggleBlock ? (
+                <DropdownMenuItem onClick={() => void onToggleBlock()}>
+                  {isBlocked ? "Unblock" : "Block"} @{profile.username}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </header>
+      {onReport ? (
+        <ReportDialog
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          subject={`@${profile.username}`}
+          onSubmit={onReport}
+        />
+      ) : null}
 
       {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
       <section className="mb-10 grid gap-3 sm:grid-cols-3">
@@ -571,12 +712,27 @@ export function IngredientListView({
   );
 }
 
+/** A discreet "Report" text button for a non-owner on a detail page. */
+function ReportControl({ subject, onOpen }: { subject: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Report ${subject}`}
+      className="shrink-0 text-sm text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline"
+    >
+      Report
+    </button>
+  );
+}
+
 export function RecipeDetailView({
   recipe,
   LinkComponent,
   edit,
   onRestoreIngredient,
   onUploadPhoto,
+  onReportContent,
 }: {
   recipe: RecipeDetailVM;
   LinkComponent: NavLink;
@@ -587,10 +743,13 @@ export function RecipeDetailView({
   onRestoreIngredient?: (ingredientId: string) => void;
   /** Owner affordance: upload + attach a hero photo (shells wire the media pipeline). */
   onUploadPhoto?: (file: File) => void | Promise<void>;
+  /** Present ⇒ a signed-in non-owner can report this recipe (App Review 1.2). */
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   // LIVE nutrition: while an item's amount is scrubbed/typed, hold its in-flight grams here and
   // recompute the panel client-side (aggregateItems). Cleared on commit — the refetch brings truth.
   const [previewGrams, setPreviewGrams] = useState<{ id: string; grams: number } | null>(null);
@@ -637,7 +796,13 @@ export function RecipeDetailView({
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink>@{recipe.creator ?? "user"}</BreadcrumbLink>
+                  {recipe.creator ? (
+                    <LinkComponent href={`/${recipe.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                      @{recipe.creator}
+                    </LinkComponent>
+                  ) : (
+                    <BreadcrumbLink>@user</BreadcrumbLink>
+                  )}
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
@@ -664,8 +829,13 @@ export function RecipeDetailView({
                   canRedo={edit.canRedo}
                 />
               </div>
+            ) : onReportContent ? (
+              <ReportControl subject="this recipe" onOpen={() => setReportOpen(true)} />
             ) : null}
           </div>
+          {onReportContent ? (
+            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this recipe" onSubmit={onReportContent} />
+          ) : null}
 
           <DetailHero
             label="Recipe Image"
@@ -1066,14 +1236,18 @@ export function IngredientDetailView({
   ingredient,
   LinkComponent,
   edit,
+  onReportContent,
 }: {
   ingredient: IngredientDetailVM;
   LinkComponent: NavLink;
   /** Present ⇒ inline editor (owner). Absent ⇒ read-only, unchanged from before. */
   edit?: IngredientEditAdapter;
+  /** Present ⇒ a signed-in non-owner can report this ingredient (App Review 1.2). */
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useDetailShortcuts(
     {
@@ -1095,7 +1269,13 @@ export function IngredientDetailView({
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink>{ingredient.creator ? `@${ingredient.creator}` : "Catalog"}</BreadcrumbLink>
+                  {ingredient.creator ? (
+                    <LinkComponent href={`/${ingredient.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                      @{ingredient.creator}
+                    </LinkComponent>
+                  ) : (
+                    <BreadcrumbLink>Catalog</BreadcrumbLink>
+                  )}
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
@@ -1128,8 +1308,13 @@ export function IngredientDetailView({
                   canRedo={edit.canRedo}
                 />
               </div>
+            ) : onReportContent ? (
+              <ReportControl subject="this ingredient" onOpen={() => setReportOpen(true)} />
             ) : null}
           </div>
+          {onReportContent ? (
+            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this ingredient" onSubmit={onReportContent} />
+          ) : null}
 
           <DetailHero
             label="Ingredient Image"
@@ -1297,7 +1482,11 @@ export function SearchResultsView({
   );
 }
 
-export function SettingsView() {
+export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password: string) => Promise<void> }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
     <div className="mx-auto max-w-3xl p-8">
       <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Settings</h1>
@@ -1315,6 +1504,73 @@ export function SettingsView() {
           <ThemeSetting className="self-start sm:self-auto" />
         </div>
       </section>
+
+      {onDeleteAccount ? (
+        <section className="mt-10">
+          <h2 className="mb-3 font-serif text-xl font-bold text-destructive">Danger zone</h2>
+          <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-destructive/30 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <p className="font-semibold">Delete account</p>
+              <p className="text-sm text-muted-foreground">
+                Permanently delete your account and your recipes. Ingredients others cook with become
+                part of the shared catalog. This can't be undone.
+              </p>
+            </div>
+            <button
+              type="button"
+              className={cn(buttonClasses({ variant: "ghost", size: "sm" }), "shrink-0 text-destructive ring-1 ring-destructive/40")}
+              onClick={() => {
+                setError(null);
+                setPassword("");
+                setDeleteOpen(true);
+              }}
+            >
+              Delete account
+            </button>
+          </div>
+          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Delete your account?</DialogTitle>
+                <DialogDescription>
+                  This permanently deletes your account, sessions, and messages, and removes your
+                  recipes. Enter your password to confirm.
+                </DialogDescription>
+              </DialogHeader>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-border bg-transparent p-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+              />
+              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              <DialogFooter>
+                <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+                <button
+                  type="button"
+                  disabled={deleting || !password}
+                  className={cn(buttonClasses({ size: "sm" }), "bg-destructive text-destructive-foreground")}
+                  onClick={async () => {
+                    setDeleting(true);
+                    setError(null);
+                    try {
+                      await onDeleteAccount(password);
+                    } catch {
+                      setError("That password didn't match. Please try again.");
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? "Deleting…" : "Delete forever"}
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </section>
+      ) : null}
     </div>
   );
 }

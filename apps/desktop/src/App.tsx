@@ -591,6 +591,7 @@ const recipeDetailRoute = createRoute({
   path: '/recipes/$recipeId',
   loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeDetailQuery(params.recipeId)),
   component: function RecipeDetail() {
+    const auth = useContext(AuthContext)
     const { recipeId } = useParams({ from: '/recipes/$recipeId' })
     const { data } = useSuspenseQuery(recipeDetailQuery(recipeId))
     const navigate = useNavigate()
@@ -668,6 +669,11 @@ const recipeDetailRoute = createRoute({
         LinkComponent={LinkComponent}
         edit={edit}
         onRestoreIngredient={onRestoreIngredient}
+        onReportContent={
+          auth?.user && !edit
+            ? async (reason, note) => { await vegifyData.reportContent('recipe', recipeId, reason, note) }
+            : undefined
+        }
       />
     )
   },
@@ -681,12 +687,23 @@ const profileRoute = createRoute({
     const auth = useContext(AuthContext)
     const { username } = useParams({ from: '/$username' })
     const { data: profile } = useSuspenseQuery(profileQuery(username))
+    const queryClient = useQueryClient()
+    const canModerate = !!auth?.user && auth.user.username !== username
     return (
       <ProfileView
         username={username}
         profile={profile}
         LinkComponent={LinkComponent}
-        canMessage={!!auth?.user && auth.user.username !== username}
+        canMessage={canModerate}
+        onReport={canModerate ? async (reason, note) => { await vegifyData.reportContent('user', username, reason, note) } : undefined}
+        onToggleBlock={
+          canModerate
+            ? async () => {
+                await vegifyData.blockUser(username)
+                await queryClient.invalidateQueries()
+              }
+            : undefined
+        }
       />
     )
   },
@@ -952,6 +969,7 @@ const ingredientDetailRoute = createRoute({
   path: '/ingredients/$ingredientId',
   loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientDetailQuery(params.ingredientId)),
   component: function IngredientDetail() {
+    const auth = useContext(AuthContext)
     const { ingredientId } = useParams({ from: '/ingredients/$ingredientId' })
     const { data } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
     const navigate = useNavigate()
@@ -1002,7 +1020,18 @@ const ingredientDetailRoute = createRoute({
         }
       : undefined
 
-    return <IngredientDetailView ingredient={data.vm} LinkComponent={LinkComponent} edit={edit} />
+    return (
+      <IngredientDetailView
+        ingredient={data.vm}
+        LinkComponent={LinkComponent}
+        edit={edit}
+        onReportContent={
+          auth?.user && !edit
+            ? async (reason, note) => { await vegifyData.reportContent('ingredient', ingredientId, reason, note) }
+            : undefined
+        }
+      />
+    )
   },
 })
 
@@ -1058,7 +1087,25 @@ const ingredientEditRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: () => <SettingsView />,
+  component: function Settings() {
+    const auth = useContext(AuthContext)
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    return (
+      <SettingsView
+        onDeleteAccount={
+          auth?.user
+            ? async (password) => {
+                await vegifyData.deleteAccount(password)
+                auth.onSignOut()
+                queryClient.clear()
+                navigate({ to: '/' })
+              }
+            : undefined
+        }
+      />
+    )
+  },
 })
 
 // /login mounts the shared auth views INSIDE the now-always-present router (the app is usable logged-out,
