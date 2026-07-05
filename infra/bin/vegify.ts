@@ -44,6 +44,9 @@ const server = new ServerStack(app, "VegifyServer", {
   emailFrom: cfg.emailFrom,
   emailDomain: cfg.emailDomain,
   signupsOpen: cfg.signupsOpen,
+  domainNames: cfg.domainNames,
+  domainsConfigured: cfg.domainsConfigured,
+  hostedZoneIdOverride: cfg.hostedZoneIdOverride,
 });
 
 // (Retired 2026-06-25) The old VegifySync stack — an S3 changeset-blob store for the desktop's former
