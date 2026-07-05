@@ -37,6 +37,9 @@ interface ServerStackProps extends StackProps {
   /** Signups gate (SSM decision signups-open / VEGIFY_SIGNUPS_OPEN; default closed). Lands in the
    *  systemd env; the server rejects signups unless it's "1". */
   signupsOpen: boolean;
+  /** Admin email allowlist (SSM admin-emails / VEGIFY_ADMIN_EMAILS) — accounts allowed to invite new
+   *  users while signups stay closed. Empty by default. */
+  adminEmails: string;
   /** Site domains (primary first) — the API's own hostname is DERIVED: `api.<primary>`. Same
    *  decision the web stack consumes; no separate api-domain knob to configure or drift. */
   domainNames: string[];
@@ -73,7 +76,7 @@ export class ServerStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, domainNames, domainsConfigured } = props;
+    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, adminEmails, domainNames, domainsConfigured } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     // Reference DATA (the USDA catalog artifact, future imports) — data lives in S3, not the repo.
@@ -216,6 +219,7 @@ export class ServerStack extends Stack {
       `Environment="VEGIFY_EMAIL_FROM=${emailFrom}"`,
       `Environment=VEGIFY_SES_REGION=${this.region}`,
       `Environment=VEGIFY_SIGNUPS_OPEN=${signupsOpen ? "1" : "0"}`,
+      `Environment=VEGIFY_ADMIN_EMAILS=${adminEmails}`,
       // Reference-data bucket: the boot ingest fetches catalog/usda-plants.json.gz from here
       // (marker-gated; a missing object logs a warning and the server serves without the catalog).
       `Environment=VEGIFY_DATA_BUCKET=${data.bucketName}`,

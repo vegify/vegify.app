@@ -68,6 +68,15 @@ pub mod server {
     pub fn media_bucket() -> Option<String> {
         non_empty("VEGIFY_MEDIA_BUCKET")
     }
+
+    /// Admin email allowlist (comma-separated, VEGIFY_ADMIN_EMAILS) — accounts allowed to INVITE new
+    /// users while public signups stay closed (invite-only). Empty = no admins (the default). Emails
+    /// are compared lowercased/trimmed, matching how they're stored.
+    pub fn admin_emails() -> Vec<String> {
+        non_empty("VEGIFY_ADMIN_EMAILS")
+            .map(|v| v.split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect())
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(feature = "desktop")]

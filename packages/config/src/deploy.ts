@@ -80,6 +80,9 @@ export interface DeployConfig {
   /** Signups gate the server enforces (env VEGIFY_SIGNUPS_OPEN → SSM signups-open → closed). Lands in
    *  the instance's systemd env; flip with `just config-set signups-open 1` + a release. */
   signupsOpen: boolean
+  /** Admin email allowlist (VEGIFY_ADMIN_EMAILS → SSM admin-emails). Accounts allowed to invite new
+   *  users while signups stay closed. Set with `just config-set admin-emails 'you@domain'` + a release. */
+  adminEmails: string
   /** SES identity domain — env VEGIFY_EMAIL_DOMAIN → SSM email-domain → the first domain. */
   emailDomain: string
   /** True when either the email domain or the domain list was really configured (gates the email
@@ -130,6 +133,7 @@ export async function deployConfig(opts: DeployConfigOptions = {}): Promise<Depl
     certificateArnOverride: pick('VEGIFY_CERT_ARN', 'cert-arn'),
     publicUrl: `https://${domainNames[0]}`,
     signupsOpen: (pick('VEGIFY_SIGNUPS_OPEN', 'signups-open') ?? '0') === '1',
+    adminEmails: pick('VEGIFY_ADMIN_EMAILS', 'admin-emails') ?? '',
     emailDomain,
     emailConfigured: Boolean(pick('VEGIFY_EMAIL_DOMAIN', 'email-domain')) || domainsConfigured,
     emailFrom: pick('VEGIFY_EMAIL_FROM', 'email-from') ?? `Vegify <hello@${emailDomain}>`,
