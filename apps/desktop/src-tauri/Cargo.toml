@@ -42,6 +42,8 @@ keyring = { version = "3", features = ["apple-native"] }
 # tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs
 # to the frontend (onOpenUrl/getCurrent). Runtime needs a built .app bundle — inert under `tauri dev`.
 tauri-plugin-deep-link = "2.4"
+# Native OS toasts for bell events (new DM while the window is unfocused) — see lib.rs + App.tsx.
+tauri-plugin-notification = "2"
 # Realtime push (replaces the 60s poll): a background task connects to the server's /ws and emits a Tauri
 # event on each content change so the frontend pulls immediately. Separate from the sync ureq path above —
 # tokio-tungstenite over rustls (webpki roots, no system OpenSSL) on its own current-thread runtime.

@@ -38,7 +38,7 @@ export const APP_NAV: AppShellNavItem[] = [
   { key: "home", label: "Home", icon: House, href: "/", inMobileBar: true },
   { key: "explore", label: "Explore", icon: Search, href: "/recipes", inMobileBar: true },
   { key: "add", label: "Add Food", icon: Carrot, href: "/ingredients/new", inMobileBar: true },
-  { key: "notifications", label: "Notifications", icon: Bell, inMobileBar: true },
+  { key: "notifications", label: "Notifications", icon: Bell, href: "/notifications", inMobileBar: true },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
   { key: "inbox", label: "Inbox", icon: Mail, href: "/messages" },
   { key: "settings", label: "Settings", icon: Settings, href: "/settings" },
@@ -60,6 +60,7 @@ export function AppShell({
   user,
   onSignOut,
   unreadMessages = 0,
+  unreadNotifications = 0,
 }: {
   currentPath: string;
   LinkComponent: ComponentType<AppShellLinkProps>;
@@ -74,6 +75,8 @@ export function AppShell({
   onSignOut?: () => void;
   /** Unread DM count — badges the Inbox nav item (sidebar) and the mobile header's Mail link. */
   unreadMessages?: number;
+  /** Unread notification count — badges the Bell (sidebar + mobile tab bar). */
+  unreadNotifications?: number;
 }) {
   // The Profile destination is per-user (/<username>): filled in from the signed-in user. Logged
   // out it points at /login instead of sitting disabled — every tap on the person icon has a
@@ -84,6 +87,7 @@ export function AppShell({
     items.map((it) => {
       if (it.key === "profile") return { ...it, href: profileHref };
       if (it.key === "inbox") return { ...it, badge: unreadMessages };
+      if (it.key === "notifications") return { ...it, badge: unreadNotifications };
       return it;
     });
   const navItems = withProfile(
@@ -270,11 +274,16 @@ function TabItem({
   const inner = (
     <span
       className={cn(
-        "flex size-11 items-center justify-center rounded-2xl transition",
+        "relative flex size-11 items-center justify-center rounded-2xl transition",
         active ? "bg-orange text-white" : "text-white/85",
       )}
     >
       <Icon className="size-6" />
+      {(item.badge ?? 0) > 0 ? (
+        <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-green-dark">
+          {item.badge! > 99 ? "99+" : item.badge}
+        </span>
+      ) : null}
     </span>
   );
   if (!item.href) {

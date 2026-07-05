@@ -217,6 +217,21 @@ export const vegifyData = {
   messagesUnread(): Promise<number | null> {
     return invoke("messages_unread");
   },
+
+  /** @throws {DataError} */
+  notifications(): Promise<DmNotification[]> {
+    return invoke("notifications");
+  },
+
+  /** @throws {DataError} */
+  notificationsUnread(): Promise<number | null> {
+    return invoke("notifications_unread");
+  },
+
+  /** @throws {DataError} */
+  notificationsMarkRead(): Promise<null> {
+    return invoke("notifications_mark_read");
+  },
 };
 
 export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };
@@ -266,6 +281,18 @@ export type DmMessage = {
 	body: string,
 	createdAt: number | null,
 	mine: boolean,
+};
+
+/**
+ *  One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
+ *  type) — App.tsx parses it into the shared screens' NotificationVM.
+ */
+export type DmNotification = {
+	id: string,
+	kind: string,
+	payload: string,
+	createdAt: number | null,
+	read: boolean,
 };
 
 export type DmParty = {

@@ -11,6 +11,7 @@ mod content;
 mod email;
 mod error;
 mod messages;
+mod notifications;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
 // now (a claimed handle can't be reclaimed); not yet called — signups are invite-only and `users` has
 // no handle column. `signup` will call `handles::validate_username` when usernames launch.
@@ -455,6 +456,49 @@ async fn message_send(
     Ok(Json(out))
 }
 
+// ---- notifications routes (the bell; all authed — see notifications.rs) ----
+
+async fn notifications_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<notifications::Notification>>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let out = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        notifications::list(conn, &me.id)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
+async fn notifications_unread(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let count = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        notifications::unread_count(conn, &me.id)
+    })
+    .await?;
+    Ok(Json(json!({ "count": count })))
+}
+
+async fn notifications_read_all(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        notifications::mark_all_read(conn, &me.id)
+    })
+    .await?;
+    // Other clients drop their bell badges immediately.
+    state.notify_change("notification");
+    Ok(Json(json!({ "ok": true })))
+}
+
 async fn message_unread(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -521,13 +565,36 @@ async fn save_ingredient(
     Json(input): Json<vegify_core::SaveIngredientInput>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let id = db(&state, move |conn| {
+    let (id, notified) = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
-        vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)
+        // Pre-existence decides "update" — creating an ingredient affects nobody's recipes yet.
+        let existed: bool = input
+            .id
+            .as_deref()
+            .map(|iid| {
+                conn.query_row("SELECT COUNT(*) FROM ingredients WHERE id = ?1", [iid], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .map(|c| c > 0)
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let id = vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)?;
+        // The bell's v1 producer: an UPDATED communal ingredient notifies everyone whose recipes use
+        // it (their nutrition just changed) — never the editor, collapsed per recipient.
+        let notified = if existed {
+            notifications::notify_ingredient_updated(conn, &me, &id)?
+        } else {
+            0
+        };
+        Ok((id, notified))
     })
     .await?;
     state.notify_change("ingredient");
-    tracing::info!(%id, "saved ingredient");
+    if notified > 0 {
+        state.notify_change("notification");
+    }
+    tracing::info!(%id, notified, "saved ingredient");
     Ok(Json(json!({ "id": id })))
 }
 
@@ -738,8 +805,10 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS posts_status_published_idx ON posts(status, published_at);",
     )?;
-    // 1:1 direct messages (server-owned, like posts — online-only, never in the shared content schema).
+    // 1:1 direct messages + the notification feed (server-owned, like posts — online-only, never in
+    // the shared content schema).
     messages::ensure_tables(conn)?;
+    notifications::ensure_tables(conn)?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -884,6 +953,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/messages/thread", get(message_thread))
         .route("/api/messages/send", post(message_send))
         .route("/api/messages/unread", get(message_unread))
+        .route("/api/notifications", get(notifications_list))
+        .route("/api/notifications/unread", get(notifications_unread))
+        .route("/api/notifications/read", post(notifications_read_all))
         .route(
             "/api/content/recipes",
             get(list_recipes).post(save_recipe).delete(delete_recipe),

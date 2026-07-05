@@ -78,6 +78,9 @@ pub fn run() {
         // vegify.app universal links (applinks entitlement + AASA). The frontend consumes opened URLs
         // via onOpenUrl/getCurrent (App.tsx). Needs a built .app bundle — inert under `tauri dev`.
         .plugin(tauri_plugin_deep_link::init())
+        // Native notifications: the frontend fires an OS toast when a bell event arrives over the WS
+        // push and the window isn't focused (App.tsx listens for `server-notification`).
+        .plugin(tauri_plugin_notification::init())
         // Realtime push: a background WebSocket to the server's /ws emits `server-content-changed` on
         // every server-side content change so the frontend pulls immediately (replacing the 60s poll).
         // Runs on its own current-thread tokio runtime so it never depends on Tauri's runtime having the

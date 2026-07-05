@@ -23,6 +23,7 @@
     "./label": "./src/label.tsx",
     "./landing": "./src/landing.tsx",
     "./messages": "./src/messages.tsx",
+    "./notifications": "./src/notifications.tsx",
     "./nutrition-facts": "./src/nutrition-facts.tsx",
     "./nutrition-facts-fab": "./src/nutrition-facts-fab.tsx",
     "./recipe-form": "./src/recipe-form.tsx",

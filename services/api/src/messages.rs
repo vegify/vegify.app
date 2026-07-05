@@ -137,7 +137,9 @@ fn get_or_create_conversation(conn: &Connection, me: &str, other: &str) -> Resul
     }
 }
 
-/// Send `body` to `to_username`. Creates the conversation on first contact. Returns the stored message.
+/// Send `body` to `to_username`. Creates the conversation on first contact. Returns the stored
+/// message. Deliberately does NOT ring the bell: DMs have their own surface (the Mail badge) — the
+/// bell is reserved for personal-impact events (see notifications.rs).
 pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Result<Message, AppError> {
     let body = body.trim();
     if body.is_empty() {

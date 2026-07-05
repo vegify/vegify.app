@@ -27,11 +27,16 @@ import faviconUrl from '../favicon.ico?url'
 // Path policy (which paths are reachable logged-out, which bounce a signed-in user) lives in ../auth-gate,
 // where it is derived fail-closed from the route files and unit-tested.
 
-// The chrome's unread-DM badge. Client-polled (60s + window focus + invalidated by the thread route on
-// open/send) — the web has no push channel yet; the count is cheap and auth-scoped server-side.
+// The chrome's unread badges (DMs + bell). Client-polled (60s + window focus + invalidated by the
+// consuming routes) — the web has no push channel yet; the counts are cheap and auth-scoped.
 const getUnreadFn = createServerFn({ method: 'GET' }).handler(async (): Promise<number> => {
   const { unreadCount } = await import('../messages')
   return unreadCount()
+})
+
+const getUnreadNotificationsFn = createServerFn({ method: 'GET' }).handler(async (): Promise<number> => {
+  const { unreadNotifications } = await import('../notifications')
+  return unreadNotifications()
 })
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
@@ -119,6 +124,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   })
+  const { data: unreadNotifications } = useQuery({
+    queryKey: ['notifications-unread'],
+    queryFn: () => getUnreadNotificationsFn(),
+    enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  })
   // The app chrome wraps every page EXCEPT the bare surfaces (auth/token forms + the blog, which
   // carries its own chrome) and the logged-out "/" marketing landing. A logged-out visitor browsing
   // the public catalog (/recipes, /<username>, …) still gets the shell — with a "Sign in" affordance
@@ -147,6 +159,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             onSearchChange={setSearch}
             user={user ? { name: user.name, email: user.email, username: user.username } : null}
             unreadMessages={unreadMessages ?? 0}
+            unreadNotifications={unreadNotifications ?? 0}
             onSignOut={async () => {
               await logoutFn()
               queryClient.clear() // drop the prior session's cached content before the gate flips
