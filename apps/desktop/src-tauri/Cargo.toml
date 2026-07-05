@@ -36,7 +36,7 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
 # Desktop sign-in + content-API sync: a blocking HTTP client (matches the sync DAL) to the web shell's
 # JSON auth + content routes, and the OS keychain for the session token.
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "2", features = ["json", "gzip"] }
 keyring = { version = "3", features = ["apple-native"] }
 # OS deep links: vegify:// custom scheme (CFBundleURLTypes injected at bundle time from
 # tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs

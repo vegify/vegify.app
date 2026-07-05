@@ -114,6 +114,10 @@ export const ingredients = sqliteTable(
     // pre-backfill window; the DAL always writes it. Renames regenerate it and log the old one to
     // slug_history for 301s.
     slug: text("slug"),
+    // Provenance for imported reference data (docs/usernames.md): user content leaves this NULL;
+    // catalog imports stamp their source (e.g. "USDA FoodData Central"). Unowned (user_id NULL) +
+    // sourced rows are the communal reference catalog — uneditable by users, listed for everyone.
+    source: text("source"),
     description: text("description"),
     isVegan: integer("is_vegan", { mode: "boolean" }),
     price: integer("price"), // cents (USD)
