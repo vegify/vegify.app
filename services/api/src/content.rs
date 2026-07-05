@@ -47,7 +47,10 @@ pub struct PullIngredient {
     pub visibility: String,
     pub name: String,
     pub description: Option<String>,
-    pub price: Option<i64>,
+    /// Cents (USD). i32 END-TO-END: SaveIngredientInput (the only write path) is i32, the desktop
+    /// mirror is i32, the TS side is number — an i64 here was silent width drift in the wire contract
+    /// (found by the specta-side repo audit; the class of bug a generated client would make impossible).
+    pub price: Option<i32>,
     pub calories_per_100g: Option<f64>,
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
