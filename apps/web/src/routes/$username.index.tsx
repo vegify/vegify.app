@@ -14,10 +14,12 @@ const getProfileFn = createServerFn({ method: 'GET' })
     const { getProfile } = await import('../content')
     const profile = await getProfile(data) // null => no account claims this handle
     if (!profile) return null
+    const { mediaUrl } = await import('../content')
     return {
       username: profile.username,
       name: profile.name,
-      recipes: profile.recipes,
+      avatarUrl: mediaUrl(profile.avatarKey),
+      recipes: profile.recipes.map((r) => ({ ...r, photoUrl: mediaUrl(r.photoKey) })),
       ingredients: profile.ingredients,
     }
   })

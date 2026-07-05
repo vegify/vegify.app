@@ -152,6 +152,8 @@ export type Profile = {
 	 *  tombstoned — browsable under `/<username>/ingredients/<slug>`.
 	 */
 	ingredients: IngredientCard[],
+	/**  Media key of the profile avatar; clients compose `<api base>/<key>`. */
+	avatarKey: string | null,
 };
 
 export type PullIngredient = {
@@ -228,6 +230,11 @@ export type RecipeCard = {
 	 */
 	username: string | null,
 	slug: string | null,
+	/**
+	 *  Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the
+	 *  URL as `<api base>/<key>`. None = no photo yet (cards render the placeholder tile).
+	 */
+	photoKey: string | null,
 };
 
 export type RecipeEditData = {
@@ -294,6 +301,8 @@ export type RecipeView = {
 	batchGrams: number | null,
 	items: RecipeItem[],
 	nutrition: AggregatedNutrition,
+	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
+	photoKey: string | null,
 };
 
 /**
@@ -326,6 +335,12 @@ export type SitemapRecipe = {
 export type Thread = {
 	with: Party,
 	messages: Message[],
+};
+
+/**  An approved upload: PUT the bytes to `url` (presigned, short-lived), then attach `key`. */
+export type UploadTicket = {
+	key: string,
+	url: string,
 };
 
 /**

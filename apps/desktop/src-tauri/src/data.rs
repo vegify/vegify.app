@@ -285,6 +285,14 @@ fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     if has_username == 0 {
         conn.execute("ALTER TABLE users ADD COLUMN username TEXT", [])?;
     }
+    let has_avatar: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'avatar_key'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_avatar == 0 {
+        conn.execute("ALTER TABLE users ADD COLUMN avatar_key TEXT", [])?;
+    }
     // Same story for the two ingredient columns that postdate shipped caches: provenance (`source`)
     // and the soft-delete tombstone (`deleted_at`). Fresh DBs get them from schema.sql's CREATE.
     for (col, ddl) in [
@@ -497,6 +505,9 @@ pub trait VegifyData {
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
     fn current_user(&self) -> Result<Option<AuthUser>, DataError>;
+    /// The backend base URL — the frontend composes media URLs (`<base>/<photoKey>`) from it, since
+    /// photos are served from the server's CloudFront, not the local cache.
+    fn media_base(&self) -> Result<String, DataError>;
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
     fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError>;
     fn sign_out(&self) -> Result<(), DataError>;
@@ -640,6 +651,10 @@ impl VegifyData for Db {
     fn sync_now(&self) -> Result<(), DataError> {
         self.push()?;
         self.pull()
+    }
+
+    fn media_base(&self) -> Result<String, DataError> {
+        Ok(vegify_config::desktop::server_url())
     }
 
     fn current_user(&self) -> Result<Option<AuthUser>, DataError> {

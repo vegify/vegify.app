@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
@@ -57,7 +57,18 @@ export type RecipeListItem = {
   /** Owner handle + slug for the canonical `/<username>/<slug>` link; fall back to `/recipes/<id>`. */
   username?: string | null;
   slug?: string | null;
+  /** Absolute URL of the hero photo; absent = the placeholder tile. */
+  photoUrl?: string | null;
 };
+
+/** A card's photo tile: the hero when present, the muted placeholder when not. */
+function CardTile({ photoUrl, name, size }: { photoUrl?: string | null; name: string; size: string }) {
+  return photoUrl ? (
+    <img src={photoUrl} alt={name} loading="lazy" className={`${size} shrink-0 rounded-lg object-cover`} />
+  ) : (
+    <div className={`${size} shrink-0 rounded-lg bg-muted`} />
+  );
+}
 
 /** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
  * (which 301s to canonical). One helper so every card + search result links the same way. */
@@ -102,6 +113,8 @@ export type RecipeDetailVM = {
   directions?: string | null;
   items: RecipeDetailItem[];
   nutrition: NutritionFactsData;
+  /** Absolute URL of the hero photo; absent = placeholder. */
+  photoUrl?: string | null;
 };
 
 export type Visibility = "public" | "unlisted" | "private";
@@ -121,7 +134,39 @@ export type RecipeEditRow = {
   name: string;
   href: string;
   grams: number;
+  /** Per-100g readings of THIS item — the source for the LIVE nutrition recompute while an amount is
+   *  scrubbed/typed (the aggregate is client-computable from these). Optional: absent ⇒ the panel
+   *  updates on commit (the server recomputes), as before. */
+  caloriesPer100g?: number | null;
+  readings?: { name: string; amountPer100g: number; unit: string }[];
 };
+
+/** Recompute a recipe's per-100g nutrition from its items (each item's per-100g × its grams, summed,
+ *  ÷ total grams) — the same math the server's CTE does, run client-side so the nutrition panel
+ *  tracks a scrub/type LIVE. Returns null if any item lacks readings (→ keep the committed panel). */
+function aggregateItems(
+  rows: { grams: number; caloriesPer100g?: number | null; readings?: { name: string; amountPer100g: number; unit: string }[] }[],
+): { caloriesPer100g: number; readings: { name: string; amountPer100g: number; unit: string }[] } | null {
+  if (rows.some((r) => r.readings == null)) return null;
+  const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0);
+  if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] };
+  let cal = 0;
+  const units = new Map<string, string>();
+  const totals = new Map<string, number>();
+  for (const r of rows) {
+    const f = (r.grams || 0) / 100;
+    cal += (r.caloriesPer100g ?? 0) * f;
+    for (const n of r.readings ?? []) {
+      totals.set(n.name, (totals.get(n.name) ?? 0) + n.amountPer100g * f);
+      units.set(n.name, n.unit);
+    }
+  }
+  const per100 = 100 / totalGrams;
+  return {
+    caloriesPer100g: cal * per100,
+    readings: [...totals].map(([name, abs]) => ({ name, amountPer100g: abs * per100, unit: units.get(name)! })),
+  };
+}
 
 /**
  * The inline-edit adapter (docs/design/inline-edit.md). When present on RecipeDetailView, the detail page
@@ -188,6 +233,8 @@ export type IngredientEditAdapter = {
 export type ProfileVM = {
   username: string;
   name: string;
+  /** Avatar photo URL; absent = the monogram tile. */
+  avatarUrl?: string | null;
   recipes: RecipeListItem[];
   /** The user's leaf ingredients (created or imported by them) — browsable under their handle. */
   ingredients: IngredientListItem[];
@@ -323,7 +370,7 @@ export function RecipeListView({
           {recipes.map((r) => (
             <LinkComponent key={r.id} href={recipeHref(r)} className="block">
               <div className={cardClass}>
-                <div className="size-16 shrink-0 rounded-lg bg-muted" />
+                <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                 <div className="min-w-0">
                   <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
                   <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
@@ -364,9 +411,17 @@ export function ProfileView({
   return (
     <div className="mx-auto max-w-3xl p-8">
       <header className="mb-8 flex items-center gap-5">
-        <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
-          {profile.name.trim().charAt(0) || "?"}
-        </div>
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt={profile.name}
+            className="size-20 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
+            {profile.name.trim().charAt(0) || "?"}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
           <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
@@ -381,6 +436,21 @@ export function ProfileView({
         ) : null}
       </header>
 
+      {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
+      <section className="mb-10 grid gap-3 sm:grid-cols-3">
+        {["Meal plans", "Followers", "Following"].map((label) => (
+          <div
+            key={label}
+            className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
+          >
+            <span className="text-sm font-medium text-muted-foreground">{label}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+              soon
+            </span>
+          </div>
+        ))}
+      </section>
+
       <section className="mb-10">
         <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
           Recipes <span className="font-normal text-muted-foreground">· {profile.recipes.length}</span>
@@ -392,7 +462,7 @@ export function ProfileView({
             {profile.recipes.map((r) => (
               <LinkComponent key={r.id} href={recipeHref(r)} className="block">
                 <div className={cardClass}>
-                  <div className="size-16 shrink-0 rounded-lg bg-muted" />
+                  <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                   <div className="min-w-0">
                     <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
                     <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
@@ -430,21 +500,6 @@ export function ProfileView({
             ))}
           </div>
         )}
-      </section>
-
-      {/* Site-map sections not built yet — surfaced as disabled placeholders, like the nav's "soon" items. */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        {["Meal plans", "Followers", "Following"].map((label) => (
-          <div
-            key={label}
-            className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
-          >
-            <span className="text-sm font-medium text-muted-foreground">{label}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-              soon
-            </span>
-          </div>
-        ))}
       </section>
     </div>
   );
@@ -521,6 +576,7 @@ export function RecipeDetailView({
   LinkComponent,
   edit,
   onRestoreIngredient,
+  onUploadPhoto,
 }: {
   recipe: RecipeDetailVM;
   LinkComponent: NavLink;
@@ -529,10 +585,34 @@ export function RecipeDetailView({
   /** Un-deletes a tombstoned ingredient (the greyed row's hover affordance). Only meaningful for
    *  the owner — shells pass it alongside `edit`. */
   onRestoreIngredient?: (ingredientId: string) => void;
+  /** Owner affordance: upload + attach a hero photo (shells wire the media pipeline). */
+  onUploadPhoto?: (file: File) => void | Promise<void>;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // LIVE nutrition: while an item's amount is scrubbed/typed, hold its in-flight grams here and
+  // recompute the panel client-side (aggregateItems). Cleared on commit — the refetch brings truth.
+  const [previewGrams, setPreviewGrams] = useState<{ id: string; grams: number } | null>(null);
+
+  // The panel shown: the committed `recipe.nutrition`, OR — mid-scrub, when the item readings are
+  // available — a live client-side aggregate with the previewed grams substituted in.
+  const liveNutrition = useMemo(() => {
+    if (!previewGrams || !edit) return recipe.nutrition;
+    const rows = edit.items.map((r) =>
+      r.ingredientId === previewGrams.id ? { ...r, grams: previewGrams.grams } : r,
+    );
+    const agg = aggregateItems(rows);
+    if (!agg) return recipe.nutrition;
+    // Keep the committed serving basis; only the per-100g readings + calories move live.
+    const serving = recipe.nutrition.serving;
+    return {
+      ...recipe.nutrition,
+      caloriesPerServing:
+        serving?.grams != null ? (agg.caloriesPer100g * serving.grams) / 100 : agg.caloriesPer100g,
+      readings: agg.readings,
+    };
+  }, [previewGrams, edit, recipe.nutrition]);
 
   // Page-level shortcuts (owner only). `e`/`v` drive the inline fields via their DOM markers so the
   // primitives stay the single source of their own edit state; `a`/`?`/⌘⌫ open local UI.
@@ -589,6 +669,8 @@ export function RecipeDetailView({
 
           <DetailHero
             label="Recipe Image"
+            photoUrl={recipe.photoUrl}
+            onUploadPhoto={edit ? onUploadPhoto : undefined}
             // Inline mode is the editor now — the hero no longer links to the /edit form.
             editHref={recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined}
             LinkComponent={LinkComponent}
@@ -636,7 +718,13 @@ export function RecipeDetailView({
                         value={row.grams}
                         suffix="g"
                         group="recipe-items"
-                        onCommit={(n) => edit.setItemAmount(row.ingredientId, n)}
+                        onCommit={(n) => {
+                          setPreviewGrams(null);
+                          return edit.setItemAmount(row.ingredientId, n);
+                        }}
+                        onPreview={(n) =>
+                          setPreviewGrams(n == null ? null : { id: row.ingredientId, grams: n })
+                        }
                         ariaLabel={`grams for ${row.name}`}
                         className="font-medium"
                       />{" "}
@@ -704,12 +792,12 @@ export function RecipeDetailView({
 
       <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="lg:sticky lg:top-6">
-          <NutritionFacts data={recipe.nutrition} />
+          <NutritionFacts data={liveNutrition} />
           <DetailRailFooter LinkComponent={LinkComponent} />
         </div>
       </aside>
 
-      <NutritionFactsFab data={recipe.nutrition} />
+      <NutritionFactsFab data={liveNutrition} />
 
       {edit ? (
         <>
