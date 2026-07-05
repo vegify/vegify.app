@@ -5,7 +5,7 @@
  * never require a lockstep client release.
  */
 import type { ComponentType } from "react";
-import { Bell, Mail } from "lucide-react";
+import { Bell, Salad } from "lucide-react";
 import { cn } from "./cn";
 import type { AppShellLinkProps } from "./app-shell";
 
@@ -36,21 +36,31 @@ function shortWhen(ms: number): string {
     : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-type MessagePayload = { from?: { name?: string; username?: string }; preview?: string };
+type IngredientUpdatedPayload = {
+  ingredient?: { id?: string; name?: string; slug?: string | null };
+  by?: { name?: string; username?: string };
+};
 
-/** The renderable essence of one notification — also used by the desktop's native toasts. */
+/** The renderable essence of one notification — also used by the desktop's native toasts.
+ *  The bell is reserved for personal-impact events (DMs ring the Mail badge instead): v1's kind is
+ *  "ingredient-updated" — an ingredient your recipes use changed, so their nutrition did too. */
 export function describeNotification(n: NotificationVM): {
   title: string;
   detail?: string;
   href?: string;
 } {
-  if (n.kind === "message") {
-    const p = (n.payload ?? {}) as MessagePayload;
-    const name = p.from?.name ?? "Someone";
+  if (n.kind === "ingredient-updated") {
+    const p = (n.payload ?? {}) as IngredientUpdatedPayload;
+    const who = p.by?.name ?? "Someone";
+    const what = p.ingredient?.name ?? "an ingredient";
     return {
-      title: `${name} sent you a message`,
-      detail: p.preview,
-      href: p.from?.username ? `/messages/${p.from.username}` : "/messages",
+      title: `${who} updated ${what}`,
+      detail: "Your recipes that use it now reflect the change.",
+      href: p.ingredient?.slug
+        ? `/ingredients/${p.ingredient.slug}`
+        : p.ingredient?.id
+          ? `/ingredients/${p.ingredient.id}`
+          : undefined,
     };
   }
   return { title: "Something happened on Vegify" };
@@ -73,13 +83,14 @@ export function NotificationsView({
       </div>
       {notifications.length === 0 ? (
         <p className="text-muted-foreground">
-          When someone messages you, it lands here.
+          When something that affects you happens — like an ingredient your recipes use getting
+          updated — it lands here.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
           {notifications.map((n) => {
             const d = describeNotification(n);
-            const Icon = n.kind === "message" ? Mail : Bell;
+            const Icon = n.kind === "ingredient-updated" ? Salad : Bell;
             const row = (
               <div
                 className={cn(

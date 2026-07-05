@@ -449,13 +449,10 @@ async fn message_send(
     let text = body.body.unwrap_or_default();
     let out = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
-        messages::send(conn, &me, &to, &text)
+        messages::send(conn, &me.id, &to, &text)
     })
     .await?;
     state.notify_change("message");
-    // The send also recorded a notification for the recipient — nudge that channel too (the desktop
-    // fires a native toast off this kind; everything else just refetches).
-    state.notify_change("notification");
     Ok(Json(out))
 }
 
@@ -568,13 +565,36 @@ async fn save_ingredient(
     Json(input): Json<vegify_core::SaveIngredientInput>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let id = db(&state, move |conn| {
+    let (id, notified) = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
-        vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)
+        // Pre-existence decides "update" — creating an ingredient affects nobody's recipes yet.
+        let existed: bool = input
+            .id
+            .as_deref()
+            .map(|iid| {
+                conn.query_row("SELECT COUNT(*) FROM ingredients WHERE id = ?1", [iid], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .map(|c| c > 0)
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let id = vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)?;
+        // The bell's v1 producer: an UPDATED communal ingredient notifies everyone whose recipes use
+        // it (their nutrition just changed) — never the editor, collapsed per recipient.
+        let notified = if existed {
+            notifications::notify_ingredient_updated(conn, &me, &id)?
+        } else {
+            0
+        };
+        Ok((id, notified))
     })
     .await?;
     state.notify_change("ingredient");
-    tracing::info!(%id, "saved ingredient");
+    if notified > 0 {
+        state.notify_change("notification");
+    }
+    tracing::info!(%id, notified, "saved ingredient");
     Ok(Json(json!({ "id": id })))
 }
 
