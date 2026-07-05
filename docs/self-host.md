@@ -57,7 +57,7 @@ GITHUB_REPOSITORY=your-org/your-repo cdk deploy VegifyCi   # one-time OIDC role 
 ## 4. Deploy the app stacks
 
 ```sh
-cdk deploy VegifyVpc VegifyServer      # the standing Axum backend (+ its CloudFront)
+cdk deploy VegifyVpc VegifyServer      # the standing Axum backend (+ its CloudFront; with domains configured it also gets api.<your-domain> — cert, DNS records, and the published api-url all derive automatically)
 cdk deploy VegifyEmail                 # SES sending identity (see §6)
 cdk deploy VegifyWebStart VegifyClientLogs   # the web wires itself to the backend cross-stack
 ```
