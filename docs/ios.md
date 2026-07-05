@@ -31,12 +31,28 @@ Prereqs (all present on this machine): full Xcode with an iOS runtime, CocoaPods
 
 `gen/apple/vegify_iOS/Info.plist` bakes the version at scaffold time; the release-please `extra-files` sync that used to keep it current is retired (versions are git-tag-derived now), so its value is frozen — inject the real version at archive time when device/App Store builds become real (the desktop already does this via `deploy.yml`'s `tauri.version.json`).
 
-## Known gaps (deliberate, scaffold-scope)
+## App Store / TestFlight
 
-- **Keychain**: `keyring` falls back to its **mock** store on iOS (log shows `MockCredential`) — sign-in works but the session token does not persist across app launches. Follow-up: real iOS keychain (and note the keyring service name is hard-coded `app.vegify.desktop` in `data.rs` — revisit both together).
-- **Debug DB path**: debug builds point at the repo's seeded `.data/vegify.db`, which works on the **simulator** (sim processes see host paths) but would fail on a physical device — set `DATABASE_PATH` or use a release build there.
-- **Device builds/signing**: need a development team (`APPLE_DEVELOPMENT_TEAM` env or `bundle.iOS.developmentTeam`); keep the value out of the repo like every other account identifier.
-- **No iOS CI** — the sim build is local-only for now.
+`.github/workflows/ios-testflight.yml` builds the iOS app and uploads it to TestFlight — **manually dispatched** (Actions tab), NOT on the release cascade, so it can't fail a deploy before the App Store side exists. It reuses the SAME Apple ASC API key the desktop notarization uses (Secrets Manager via SSM) — no new secret — and signs via Xcode **cloud (automatic) signing** keyed by the team id + ASC key, so there's no distribution cert/profile to manage in the repo.
+
+**One-time App Store Connect setup (John):**
+1. Create the app record for bundle id **`app.vegify.ios`**.
+2. Confirm the ASC API key in Secrets Manager has the **App Manager** role (it signs + uploads).
+3. Fill the App Store listing surface that lives outside code: **App Privacy** labels (email, user content, messages), screenshots, description, age rating, and set the **support/marketing URLs** to `https://vegify.app` (the /terms + /privacy pages are live). Provide a **demo account** or open signups for review.
+
+Then dispatch the workflow (optionally pass a version). Device release builds use the per-user app-data DB dir and the real iOS keychain (the mock is debug-only), so no device-specific code path is needed for the shipped app.
+
+## Resolved gaps
+
+- **Keychain**: the mock is `#[cfg(any(test, debug_assertions))]` only — **release device builds use the real iOS keychain** (keyring 3's `apple-native` supports `aarch64-apple-ios`). The service name stays `app.vegify.desktop` (an opaque keychain key; renaming would log out existing desktop users for no functional gain).
+- **DB path**: release builds use `dirs::data_dir()` (the app's sandbox on device) — the repo `.data/vegify.db` path is `#[cfg(debug_assertions)]`, i.e. simulator-only, and never ships.
+- **Safe areas**: `viewport-fit=cover` + `env(safe-area-inset-*)` padding (index.html + styles.css) so content clears the notch/home indicator.
+- **Version**: injected at build time by the workflow's `--config` merge (like the desktop), so the frozen Info.plist value is overridden.
+
+## Still deferred (not review blockers)
+
+- Universal links (custom-scheme deep links work; add an `appLink: true` mobile entry to finish — AASA is already in place).
+- iOS-native photo capture (the WKWebView file input covers photo upload).
 
 ## Icons
 

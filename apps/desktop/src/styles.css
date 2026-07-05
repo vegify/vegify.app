@@ -19,3 +19,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+
+/* iOS (Tauri mobile) device polish: respect the notch/home-indicator safe areas and stop the OS
+   from auto-inflating text. The web build ignores these (no insets on desktop browsers). */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
