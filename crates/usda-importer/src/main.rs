@@ -5,7 +5,9 @@
 //!
 //!   cargo run -p usda-importer        # or: just usda-data
 //!
-//! Inputs (gitignored, .data/import/usda/): Foundation 2025-04 + SR Legacy 2018-04, public domain.
+//! Inputs (gitignored, .data/import/usda/, public domain): the LATEST Foundation release present
+//! (semi-annual, April/October — download from fdc.nal.usda.gov/download-datasets; the newest file
+//! by date wins) + SR Legacy 2018-04 (USDA's final Standard Reference — it never updates).
 //! Selection: the six unambiguous plant categories (oils/beverages/sweets are mixed bags — curate
 //! later if wanted). Nutrients: the 42-field dictionary from the completefoods capture
 //! (nutrient-meta.json's usdaId tagnames) mapped to classic NDB nutrient numbers — the SAME bridge
@@ -75,16 +77,18 @@ const NUTRIENTS: [(&str, &str, &str); 35] = [
 const FOLATE_DFE: &str = "435";
 const FOLATE_FOOD: &str = "417";
 
+// The arrays are Vec<Option<Food>>: the 2026-04 Foundation release ships literal `null` elements
+// (discovered by parse failure) — tolerate and skip them rather than trusting USDA's JSON hygiene.
 #[derive(Deserialize)]
 struct FoundationFile {
     #[serde(rename = "FoundationFoods")]
-    foods: Vec<Food>,
+    foods: Vec<Option<Food>>,
 }
 
 #[derive(Deserialize)]
 struct LegacyFile {
     #[serde(rename = "SRLegacyFoods")]
-    foods: Vec<Food>,
+    foods: Vec<Option<Food>>,
 }
 
 #[derive(Deserialize)]
@@ -179,24 +183,43 @@ fn extract(food: Food, dataset: &'static str) -> Option<Entry> {
     })
 }
 
+/// The lexically-latest Foundation JSON in the source dir — the filenames carry ISO dates, so byte
+/// order IS release order. Foundation releases semi-annually (April/October); SR Legacy is USDA's
+/// FINAL Standard Reference release (2018-04, "will not be updated") and stays pinned.
+fn latest_foundation_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let mut candidates: Vec<_> = std::fs::read_dir(SRC)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("FoodData_Central_foundation_food_json_") && n.ends_with(".json"))
+        })
+        .collect();
+    candidates.sort();
+    candidates
+        .pop()
+        .ok_or_else(|| format!("no Foundation JSON in {SRC} — download it from fdc.nal.usda.gov/download-datasets").into())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let foundation: FoundationFile = serde_json::from_str(&std::fs::read_to_string(format!(
-        "{SRC}/FoodData_Central_foundation_food_json_2025-04-24.json"
-    ))?)?;
+    let foundation_path = latest_foundation_path()?;
+    println!("foundation source: {}", foundation_path.display());
+    let foundation: FoundationFile =
+        serde_json::from_str(&std::fs::read_to_string(&foundation_path)?)?;
     let legacy: LegacyFile = serde_json::from_str(&std::fs::read_to_string(format!(
         "{SRC}/FoodData_Central_sr_legacy_food_json_2018-04.json"
     ))?)?;
 
     let mut out: HashMap<String, Entry> = HashMap::new(); // normalized name → entry; Foundation first, wins ties
     let mut from_foundation = 0usize;
-    for food in foundation.foods {
+    for food in foundation.foods.into_iter().flatten() {
         if let Some(e) = extract(food, "foundation") {
             out.insert(e.name.to_lowercase(), e);
             from_foundation += 1;
         }
     }
     let (mut from_legacy, mut shadowed) = (0usize, 0usize);
-    for food in legacy.foods {
+    for food in legacy.foods.into_iter().flatten() {
         let Some(e) = extract(food, "sr-legacy") else { continue };
         let key = e.name.to_lowercase();
         if out.contains_key(&key) {
