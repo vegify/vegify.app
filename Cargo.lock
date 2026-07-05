@@ -6103,6 +6103,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vegify-admin"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "vegify-config"
 version = "0.1.0"
 dependencies = [

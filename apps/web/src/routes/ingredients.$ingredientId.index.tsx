@@ -46,6 +46,7 @@ const getIngredient = createServerFn({ method: 'GET' })
       name: ing.name,
       description: ing.description,
       canEdit: ing.canEdit,
+      deleted: ing.deleted,
       nutrition,
     }
     return { vm, edit: ing.canEdit ? ing : null, canonical: ing.slug }

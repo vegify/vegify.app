@@ -615,6 +615,23 @@ async fn delete_ingredient(
     Ok(Json(json!({ "ok": true })))
 }
 
+/// Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated in the DAL.
+async fn restore_ingredient(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<IdQuery>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let id = q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::do_restore_ingredient(conn, &id, Some(&me.id)).map_err(AppError::from)
+    })
+    .await?;
+    state.notify_change("ingredient");
+    Ok(Json(json!({ "ok": true })))
+}
+
 async fn recipe_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -872,6 +889,15 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         if has_source == 0 {
             conn.execute("ALTER TABLE ingredients ADD COLUMN source TEXT", [])?;
         }
+        // Soft-delete tombstone (see packages/db schema note) — additive, NULL = live.
+        let has_deleted: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'deleted_at'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_deleted == 0 {
+            conn.execute("ALTER TABLE ingredients ADD COLUMN deleted_at INTEGER", [])?;
+        }
     }
     Ok(())
 }
@@ -989,6 +1015,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/recipe-detail", get(recipe_detail))
         .route("/api/content/recipe-edit", get(recipe_edit))
         .route("/api/content/ingredient-detail", get(ingredient_detail))
+        .route("/api/content/ingredient-restore", post(restore_ingredient))
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/pull", get(pull))

@@ -52,6 +52,9 @@ pub struct PullIngredient {
     pub serving_grams: Option<f64>,
     pub package_grams: Option<f64>,
     pub slug: Option<String>,
+    /// Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
+    /// the data — and clients mirror the flag so their local list/search filtering matches.
+    pub deleted_at: Option<i64>,
     pub nutrients: Vec<PullReading>,
 }
 
@@ -120,7 +123,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
     let mut ingredients: Vec<PullIngredient> = {
         let mut stmt = conn.prepare(
             "SELECT i.id, i.user_id, i.visibility, i.name, i.description, i.price, i.calories_per_100g,
-                    sa.grams, ba.grams, i.slug
+                    sa.grams, ba.grams, i.slug, i.deleted_at
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
@@ -140,6 +143,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                 serving_grams: row.get(7)?,
                 package_grams: row.get(8)?,
                 slug: row.get(9)?,
+                deleted_at: row.get(10)?,
                 nutrients: Vec::new(),
             })
         })?

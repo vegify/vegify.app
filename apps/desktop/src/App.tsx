@@ -203,6 +203,8 @@ function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
       key: item.id,
       label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
       href: item.recipeId ? `/recipes/${item.recipeId}` : `/ingredients/${item.id}`,
+      ingredientId: item.id,
+      deleted: item.deleted,
     })),
     nutrition: recipeViewToNutrition(recipe),
   }
@@ -216,7 +218,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
     servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
     readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
   }
-  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, nutrition }
+  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, deleted: data.deleted, nutrition }
 }
 
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
@@ -624,7 +626,24 @@ const recipeDetailRoute = createRoute({
           }
         : undefined
 
-    return <RecipeDetailView recipe={data.vm} LinkComponent={LinkComponent} edit={edit} />
+    // Restore mirrors the web: owner-only (edit presence), local-first over IPC, then sync.
+    const onRestoreIngredient = edit
+      ? async (ingredientId: string) => {
+          await vegifyData.restoreIngredient(ingredientId)
+          scheduleSync()
+          await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
+          await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+        }
+      : undefined
+
+    return (
+      <RecipeDetailView
+        recipe={data.vm}
+        LinkComponent={LinkComponent}
+        edit={edit}
+        onRestoreIngredient={onRestoreIngredient}
+      />
+    )
   },
 })
 

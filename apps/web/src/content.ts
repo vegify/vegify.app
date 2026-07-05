@@ -22,7 +22,14 @@ export type RecipeCard = {
 }
 export type Profile = { username: string; name: string; recipes: RecipeCard[] }
 export type RecipeSlugHit = { recipeId: string; canonicalSlug: string }
-export type RecipeItem = { id: string; name: string; amount: Amount; recipeId: string | null }
+export type RecipeItem = {
+  id: string
+  name: string
+  amount: Amount
+  recipeId: string | null
+  /** Tombstoned by its owner AND this recipe is theirs — grey + restore affordance (see @vegify/ui). */
+  deleted: boolean
+}
 export type RecipeView = {
   id: string
   name: string
@@ -69,6 +76,8 @@ export type IngredientEditData = {
   visibility: Visibility
   slug: string | null
   canEdit: boolean
+  /** Soft-deleted by its owner (tombstone) — the detail page badges it; lists never surface it. */
+  deleted: boolean
   nutrients: Reading[]
 }
 export type IngredientSlugHit = { ingredientId: string; canonicalSlug: string }
@@ -134,3 +143,6 @@ export const saveIngredient = (input: IngredientFormInput): Promise<string> =>
   api<{ id: string }>('/api/content/ingredients', { method: 'POST', body: input }).then((r) => r.id)
 export const deleteIngredient = (id: string): Promise<void> =>
   api(`/api/content/ingredients${byId(id)}`, { method: 'DELETE' }).then(() => undefined)
+// Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated server-side.
+export const restoreIngredient = (id: string): Promise<void> =>
+  api(`/api/content/ingredient-restore${byId(id)}`, { method: 'POST', body: {} }).then(() => undefined)
