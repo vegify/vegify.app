@@ -53,23 +53,37 @@ impl From<vegify_core::Error> for DataError {
     }
 }
 
-// ---- auth (desktop sign-in over HTTPS → token in the OS keychain) ----
+// The API client SDK — the auth/content/messages/notifications transport + the keychain session
+// store, EXTRACTED from this module (the app consumes the SDK; applications are leaves). The wire
+// types are re-exported under their original names so the IPC trait, the generated bindings, and
+// the tests are unchanged.
+pub use vegify_client::{AuthUser, DmConversation, DmMessage, DmNotification, DmParty, DmThread, Session};
+use vegify_client::{SessionStore, VegifyClient};
 
-/// The current user, mirrored from the web auth response. Stamped on local writes, and upserted
-/// into the local `users` table so the foreign key (and the recipe `creator`) resolves on-device.
-#[derive(Serialize, Deserialize, Type, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthUser {
-    pub id: String,
-    pub name: String,
-    /// Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
-    /// recipe `creator` resolves on-device.
-    pub username: String,
-    pub email: String,
-    /// Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
-    /// `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
-    pub email_verified: bool,
+impl From<vegify_client::Error> for DataError {
+    fn from(e: vegify_client::Error) -> Self {
+        match e {
+            vegify_client::Error::Auth(m) => DataError::Auth(m),
+            vegify_client::Error::Api(m) | vegify_client::Error::Network(m) => DataError::Db(m),
+        }
+    }
 }
+
+const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
+const KEYCHAIN_ACCOUNT: &str = "session";
+
+/// The SDK client against the configured backend (runtime override → build-time bake → placeholder
+/// — resolution lives in vegify-config). Stateless; constructed per use.
+fn client() -> VegifyClient {
+    VegifyClient::new(vegify_config::desktop::server_url())
+}
+
+/// This app's keychain slot for the session.
+fn session_store() -> SessionStore {
+    SessionStore::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+}
+
+// ---- auth (desktop sign-in over HTTPS → token in the OS keychain) ----
 
 #[derive(Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -92,96 +106,10 @@ pub struct ResetRequestInput {
     pub email: String,
 }
 
-// ---- messages (1:1 DMs — ONLINE-ONLY: the desktop proxies /api/messages/*; no local cache/sync,
-// matching auth. The shapes mirror the server's JSON verbatim, viewer-relative flags included, and
-// are structurally identical to @vegify/ui/messages' VM types, so App.tsx passes them straight to
-// the shared screens.) Timestamps/counts are f64 so specta emits `number`, not bigint.
-
-#[derive(Serialize, Deserialize, Type, Clone)]
-pub struct DmParty {
-    pub id: String,
-    pub name: String,
-    pub username: String,
-}
-
-#[derive(Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DmConversation {
-    pub id: String,
-    pub with: DmParty,
-    pub last_body: String,
-    pub last_at: f64,
-    pub last_is_mine: bool,
-    pub unread: f64,
-}
-
-#[derive(Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DmMessage {
-    pub id: String,
-    pub body: String,
-    pub created_at: f64,
-    pub mine: bool,
-}
-
-#[derive(Serialize, Deserialize, Type)]
-pub struct DmThread {
-    pub with: DmParty,
-    pub messages: Vec<DmMessage>,
-}
-
 #[derive(Deserialize, Type)]
 pub struct SendMessageInput {
     pub to: String,
     pub body: String,
-}
-
-/// One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
-/// type) — App.tsx parses it into the shared screens' NotificationVM.
-#[derive(Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DmNotification {
-    pub id: String,
-    pub kind: String,
-    pub payload: String,
-    pub created_at: f64,
-    pub read: bool,
-}
-
-/// What the OS keychain holds: the opaque session token + the user profile. The token authorizes
-/// the content API (Bearer) + server-side logout; the cached profile lets `current_user` work offline.
-#[derive(Serialize, Deserialize, Clone)]
-struct StoredSession {
-    token: String,
-    user: AuthUser,
-}
-
-#[derive(Deserialize)]
-struct AuthErrorBody {
-    error: String,
-}
-
-const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
-const KEYCHAIN_ACCOUNT: &str = "session";
-
-/// Base URL of the standing backend (vegify-server on EC2) that owns auth + the content API.
-/// Resolution (runtime override → build-time bake → inert placeholder) lives in vegify-config.
-fn auth_base_url() -> String {
-    vegify_config::desktop::server_url()
-}
-
-/// The `/ws` WebSocket URL derived from the auth base (https→wss, http→ws). Pushed change signals arrive
-/// here; the desktop pulls in response (replacing the 60s poll).
-fn ws_url() -> String {
-    let base = auth_base_url();
-    let ws = if let Some(rest) = base.strip_prefix("https://") {
-        format!("wss://{rest}")
-    } else if let Some(rest) = base.strip_prefix("http://") {
-        format!("ws://{rest}")
-    } else {
-        base
-    };
-    format!("{}/ws", ws.trim_end_matches('/'))
 }
 
 /// Background realtime-push loop: connect to the server's `/ws`, and on every change frame emit a
@@ -200,12 +128,12 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
     let mut backoff_secs = 1u64;
     loop {
         // Re-read each attempt: None → not signed in yet (or signed out). Nothing to subscribe as; wait.
-        let Some(token) = keychain_load().map(|s| s.token) else {
+        let Some(token) = session_store().load().map(|s| s.token) else {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             continue;
         };
 
-        let req = ws_url().into_client_request().map(|mut req| {
+        let req = client().ws_url().into_client_request().map(|mut req| {
             if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
                 req.headers_mut().insert("authorization", v);
             }
@@ -248,357 +176,6 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
     }
 }
 
-/// In dev (`tauri dev` — a debug build) and test builds, route ALL keychain access to keyring's
-/// in-memory mock store instead of the real macOS Keychain. Installed exactly once, before the first
-/// `Entry` is created (every keychain op funnels through `keychain_entry`). This stops `tauri dev` and
-/// `cargo test` from triggering an OS Keychain-password prompt on every run — each rebuild re-signs the
-/// binary with a fresh ad-hoc identity, so the macOS "Always Allow" grant never sticks — and keeps
-/// dev/test hermetic: the mock starts empty, so a Db opened in dev or a test never inherits a
-/// developer's real signed-in desktop session. RELEASE builds (`tauri build`) use the real Keychain.
-/// Dev tradeoff: the in-memory mock doesn't persist, so a Rust-process restart needs a re-login
-/// (frontend HMR keeps the in-memory session) — but nothing is written to disk.
-#[cfg(any(test, debug_assertions))]
-static MOCK_KEYCHAIN_INIT: std::sync::Once = std::sync::Once::new();
-
-fn keychain_entry() -> Result<keyring::Entry, DataError> {
-    #[cfg(any(test, debug_assertions))]
-    MOCK_KEYCHAIN_INIT.call_once(|| {
-        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
-    });
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|e| DataError::Auth(e.to_string()))
-}
-
-fn keychain_load() -> Option<StoredSession> {
-    let json = keychain_entry().ok()?.get_password().ok()?;
-    serde_json::from_str(&json).ok()
-}
-
-fn keychain_store(s: &StoredSession) -> Result<(), DataError> {
-    let json = serde_json::to_string(s).map_err(|e| DataError::Auth(e.to_string()))?;
-    keychain_entry()?
-        .set_password(&json)
-        .map_err(|e| DataError::Auth(e.to_string()))
-}
-
-fn keychain_clear() {
-    if let Ok(e) = keychain_entry() {
-        let _ = e.delete_credential();
-    }
-}
-
-/// POST credentials to the backend's JSON auth route; on success returns the session to store. The
-/// backend serializes `user` in snake_case (`email_verified`) while the bindings type `AuthUser` is
-/// camelCase, so we parse into a wire-shaped struct and map it over — ttipc forbids a deserialize-only
-/// `#[serde(alias)]` on a bindings type, and these wire structs aren't bindings types.
-fn post_auth(path: &str, body: serde_json::Value) -> Result<StoredSession, DataError> {
-    #[derive(Deserialize)]
-    struct WireUser {
-        id: String,
-        name: String,
-        #[serde(default)]
-        username: String,
-        email: String,
-        #[serde(default)]
-        email_verified: bool,
-    }
-    #[derive(Deserialize)]
-    struct WireSession {
-        token: String,
-        user: WireUser,
-    }
-    let url = format!("{}/api/auth/{path}", auth_base_url());
-    match ureq::post(&url).send_json(body) {
-        Ok(resp) => resp
-            .into_json::<WireSession>()
-            .map(|w| StoredSession {
-                token: w.token,
-                user: AuthUser {
-                    id: w.user.id,
-                    name: w.user.name,
-                    username: w.user.username,
-                    email: w.user.email,
-                    email_verified: w.user.email_verified,
-                },
-            })
-            .map_err(|e| DataError::Auth(e.to_string())),
-        Err(ureq::Error::Status(_, resp)) => {
-            let msg = resp
-                .into_json::<AuthErrorBody>()
-                .map(|e| e.error)
-                .unwrap_or_else(|_| "Authentication failed.".to_string());
-            Err(DataError::Auth(msg))
-        }
-        Err(e) => Err(DataError::Auth(format!("Network error: {e}"))),
-    }
-}
-
-/// Content-API HTTP client — the sync transport. Mirrors `post_auth`: ureq + a Bearer session token,
-/// with the server's JSON `error` surfaced on non-2xx. `pull` reads the viewer's listed world in
-/// mutation shape; `post`/`delete` drain a local write to the server.
-mod content_client {
-    use super::{auth_base_url, AuthErrorBody, DataError, Visibility};
-    use serde::Deserialize;
-
-    // The /api/content/pull payload, in @vegify/db mutation shape + each row's owner (see the web's
-    // PullContent). The sync engine maps these to SaveRecipeInput/SaveIngredientInput for the apply.
-    #[derive(Deserialize)]
-    pub struct PullPayload {
-        pub recipes: Vec<PullRecipe>,
-        pub ingredients: Vec<PullIngredient>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PullRecipe {
-        pub id: String,
-        pub as_ingredient_id: String,
-        pub user_id: Option<String>,
-        pub visibility: Visibility,
-        pub name: String,
-        pub subtitle: Option<String>,
-        pub directions: Option<String>,
-        pub serving_grams: Option<f64>,
-        pub batch_grams: Option<f64>,
-        pub items: Vec<PullItem>,
-        #[serde(default)]
-        pub slug: Option<String>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PullItem {
-        pub ingredient_id: String,
-        pub grams: f64,
-        pub unit: Option<String>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PullIngredient {
-        pub id: String,
-        pub user_id: Option<String>,
-        pub visibility: Visibility,
-        pub name: String,
-        pub description: Option<String>,
-        pub price: Option<i32>,
-        pub calories_per_100g: Option<f64>,
-        pub serving_grams: Option<f64>,
-        pub package_grams: Option<f64>,
-        pub nutrients: Vec<PullReading>,
-        #[serde(default)]
-        pub slug: Option<String>,
-        /// Soft-delete tombstone (ms) — mirrored verbatim so local list/search filtering matches the server.
-        #[serde(default)]
-        pub deleted_at: Option<i64>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PullReading {
-        pub name: String,
-        pub amount_per_100g: f64,
-        pub unit: String,
-    }
-
-    fn url(path: &str) -> String {
-        format!("{}/api/content/{path}", auth_base_url())
-    }
-
-    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
-        req.set("authorization", &format!("Bearer {token}"))
-    }
-
-    /// Map a ureq error → DataError, surfacing the server's JSON `error` message on non-2xx.
-    fn err(e: ureq::Error) -> DataError {
-        match e {
-            ureq::Error::Status(_, resp) => {
-                let msg = resp
-                    .into_json::<AuthErrorBody>()
-                    .map(|b| b.error)
-                    .unwrap_or_else(|_| "Request failed.".to_string());
-                DataError::Db(msg)
-            }
-            e => DataError::Db(format!("Network error: {e}")),
-        }
-    }
-
-    /// GET /api/content/pull → the viewer's listed world in mutation shape. With a token: public + own.
-    /// Without one (anonymous): public only — this is how a logged-out desktop fills its local cache.
-    pub fn pull(token: Option<&str>) -> Result<PullPayload, DataError> {
-        tracing::debug!("GET /api/content/pull");
-        let mut req = ureq::get(&url("pull"));
-        if let Some(token) = token {
-            req = bearer(req, token);
-        }
-        let payload = req
-            .call()
-            .map_err(err)?
-            .into_json::<PullPayload>()
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        tracing::debug!(
-            recipes = payload.recipes.len(),
-            ingredients = payload.ingredients.len(),
-            "pull received"
-        );
-        Ok(payload)
-    }
-
-    /// POST /api/content/{collection} with a save payload. The server upserts by id and stamps userId
-    /// from the session (so the body omits it). `collection` ∈ {"recipes", "ingredients"}.
-    pub fn post(token: &str, collection: &str, body: &serde_json::Value) -> Result<(), DataError> {
-        tracing::debug!(collection, "POST content");
-        bearer(ureq::post(&url(collection)), token).send_json(body).map_err(err)?;
-        Ok(())
-    }
-
-    /// DELETE /api/content/{collection}?id=… — idempotent server-side (deleting a missing id no-ops).
-    pub fn delete(token: &str, collection: &str, id: &str) -> Result<(), DataError> {
-        tracing::debug!(collection, id, "DELETE content");
-        bearer(ureq::delete(&format!("{}?id={id}", url(collection))), token)
-            .call()
-            .map_err(err)?;
-        Ok(())
-    }
-
-    /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
-    pub fn restore_ingredient(token: &str, id: &str) -> Result<(), DataError> {
-        tracing::debug!(id, "POST ingredient-restore");
-        bearer(ureq::post(&format!("{}?id={id}", url("ingredient-restore"))), token)
-            .send_json(serde_json::json!({}))
-            .map_err(err)?;
-        Ok(())
-    }
-}
-
-/// /api/messages/* client (1:1 DMs) — content_client's ureq idiom against the messages routes. All
-/// calls require the session token; the server computes viewer-relative flags, so responses map
-/// straight onto the Dm* shapes.
-mod messages_client {
-    use super::{auth_base_url, AuthErrorBody, DataError, DmConversation, DmMessage, DmThread};
-    use serde::Deserialize;
-
-    fn url(path: &str) -> String {
-        format!("{}/api/messages/{path}", auth_base_url())
-    }
-
-    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
-        req.set("authorization", &format!("Bearer {token}"))
-    }
-
-    fn err(e: ureq::Error) -> DataError {
-        match e {
-            ureq::Error::Status(_, resp) => {
-                let msg = resp
-                    .into_json::<AuthErrorBody>()
-                    .map(|b| b.error)
-                    .unwrap_or_else(|_| "Request failed.".to_string());
-                DataError::Db(msg)
-            }
-            e => DataError::Db(format!("Network error: {e}")),
-        }
-    }
-
-    fn json<T: serde::de::DeserializeOwned>(resp: ureq::Response) -> Result<T, DataError> {
-        resp.into_json::<T>().map_err(|e| DataError::Db(e.to_string()))
-    }
-
-    pub fn conversations(token: &str) -> Result<Vec<DmConversation>, DataError> {
-        json(bearer(ureq::get(&url("conversations")), token).call().map_err(err)?)
-    }
-
-    pub fn thread(token: &str, with: &str) -> Result<DmThread, DataError> {
-        json(bearer(ureq::get(&url("thread")).query("with", with), token).call().map_err(err)?)
-    }
-
-    pub fn send(token: &str, to: &str, body: &str) -> Result<DmMessage, DataError> {
-        json(
-            bearer(ureq::post(&url("send")), token)
-                .send_json(serde_json::json!({ "to": to, "body": body }))
-                .map_err(err)?,
-        )
-    }
-
-    pub fn unread(token: &str) -> Result<f64, DataError> {
-        #[derive(Deserialize)]
-        struct Count {
-            count: f64,
-        }
-        Ok(json::<Count>(bearer(ureq::get(&url("unread")), token).call().map_err(err)?)?.count)
-    }
-}
-
-/// /api/notifications client (the bell) — same idiom as messages_client. The server sends `payload`
-/// as parsed JSON; it's re-serialized to a string for the IPC shape (see DmNotification).
-mod notifications_client {
-    use super::{auth_base_url, AuthErrorBody, DataError, DmNotification};
-    use serde::Deserialize;
-
-    fn url(path: &str) -> String {
-        format!("{}/api/notifications{path}", auth_base_url())
-    }
-
-    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
-        req.set("authorization", &format!("Bearer {token}"))
-    }
-
-    fn err(e: ureq::Error) -> DataError {
-        match e {
-            ureq::Error::Status(_, resp) => {
-                let msg = resp
-                    .into_json::<AuthErrorBody>()
-                    .map(|b| b.error)
-                    .unwrap_or_else(|_| "Request failed.".to_string());
-                DataError::Db(msg)
-            }
-            e => DataError::Db(format!("Network error: {e}")),
-        }
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct WireNotification {
-        id: String,
-        kind: String,
-        payload: serde_json::Value,
-        created_at: f64,
-        read: bool,
-    }
-
-    pub fn list(token: &str) -> Result<Vec<DmNotification>, DataError> {
-        let rows: Vec<WireNotification> = bearer(ureq::get(&url("")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        Ok(rows
-            .into_iter()
-            .map(|n| DmNotification {
-                id: n.id,
-                kind: n.kind,
-                payload: n.payload.to_string(),
-                created_at: n.created_at,
-                read: n.read,
-            })
-            .collect())
-    }
-
-    pub fn unread(token: &str) -> Result<f64, DataError> {
-        #[derive(Deserialize)]
-        struct Count {
-            count: f64,
-        }
-        let c: Count = bearer(ureq::get(&url("/unread")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| DataError::Db(e.to_string()))?;
-        Ok(c.count)
-    }
-
-    pub fn mark_all_read(token: &str) -> Result<(), DataError> {
-        bearer(ureq::post(&url("/read")), token)
-            .send_json(serde_json::json!({}))
-            .map_err(err)?;
-        Ok(())
-    }
-}
-
 /// Extract the `id` from a delete outbox payload (`{ "id": "…" }`).
 fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
     p.get("id")
@@ -612,7 +189,7 @@ fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
 /// vegify-core's do_save_* stamped with its REAL owner (so per-viewer gates mirror the server).
 /// Pruning falls out: anything the pull no longer returns simply isn't recreated. The caller pushes
 /// first, so no unpushed local create is lost. Atomic: any error rolls back, leaving the cache intact.
-fn apply_pull(conn: &mut Connection, payload: &content_client::PullPayload) -> Result<(), DataError> {
+fn apply_pull(conn: &mut Connection, payload: &vegify_client::PullPayload) -> Result<(), DataError> {
     let tx = conn.transaction()?;
     tx.execute_batch(
         "DELETE FROM ingredient_in_recipe;
@@ -744,7 +321,7 @@ fn to_json<T: Serialize>(v: &T) -> Result<serde_json::Value, DataError> {
 
 pub struct Db {
     conn: Mutex<Connection>,
-    auth: Mutex<Option<StoredSession>>,
+    auth: Mutex<Option<Session>>,
 }
 
 impl Db {
@@ -754,7 +331,7 @@ impl Db {
             .ok();
         init_meta_tables(&conn)?;
         ensure_content_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn), auth: Mutex::new(keychain_load()) })
+        Ok(Self { conn: Mutex::new(conn), auth: Mutex::new(session_store().load()) })
     }
 
     /// Run a write with the connection locked. (Formerly captured a SQLite changeset for the S3 sync
@@ -825,12 +402,13 @@ impl Db {
             let payload: serde_json::Value =
                 serde_json::from_str(&payload_json).map_err(|e| DataError::Db(e.to_string()))?;
             tracing::info!(seq, op = %op, "push: sending outbox item");
+            let client = client();
             match op.as_str() {
-                "saveRecipe" => content_client::post(&token, "recipes", &payload)?,
-                "saveIngredient" => content_client::post(&token, "ingredients", &payload)?,
-                "deleteRecipe" => content_client::delete(&token, "recipes", payload_id(&payload)?)?,
-                "deleteIngredient" => content_client::delete(&token, "ingredients", payload_id(&payload)?)?,
-                "restoreIngredient" => content_client::restore_ingredient(&token, payload_id(&payload)?)?,
+                "saveRecipe" => client.content_post(&token, "recipes", &payload)?,
+                "saveIngredient" => client.content_post(&token, "ingredients", &payload)?,
+                "deleteRecipe" => client.content_delete(&token, "recipes", payload_id(&payload)?)?,
+                "deleteIngredient" => client.content_delete(&token, "ingredients", payload_id(&payload)?)?,
+                "restoreIngredient" => client.restore_ingredient(&token, payload_id(&payload)?)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
             self.conn.lock().unwrap().execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
@@ -844,7 +422,7 @@ impl Db {
         // Anonymous-capable: signed in → public + own; logged out → public only. A logged-out desktop
         // still fills and rebuilds its local cache from the server's public content this way.
         let token = self.current_token();
-        let payload = content_client::pull(token.as_deref())?;
+        let payload = client().content_pull(token.as_deref())?;
         tracing::info!(
             recipes = payload.recipes.len(),
             ingredients = payload.ingredients.len(),
@@ -1074,94 +652,82 @@ impl VegifyData for Db {
     }
 
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError> {
-        let session = post_auth(
-            "login",
-            serde_json::json!({ "email": input.email, "password": input.password }),
-        )?;
+        let session = client().sign_in(&input.email, &input.password)?;
         let user = session.user.clone();
         self.ensure_user_local(&user)?;
-        keychain_store(&session)?;
+        session_store().store(&session)?;
         *self.auth.lock().unwrap() = Some(session);
         tracing::info!(user = %user.id, "signed in");
         Ok(user)
     }
 
     fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError> {
-        let session = post_auth(
-            "signup",
-            serde_json::json!({ "name": input.name, "email": input.email, "password": input.password }),
-        )?;
+        let session = client().sign_up(&input.name, &input.email, &input.password)?;
         let user = session.user.clone();
         self.ensure_user_local(&user)?;
-        keychain_store(&session)?;
+        session_store().store(&session)?;
         *self.auth.lock().unwrap() = Some(session);
         tracing::info!(user = %user.id, "signed up");
         Ok(user)
     }
 
     fn sign_out(&self) -> Result<(), DataError> {
-        let token = self.current_token();
-        if let Some(token) = token {
-            // best-effort server-side revoke; ignore network errors so logout always works locally
-            let _ = ureq::post(&format!("{}/api/auth/logout", auth_base_url()))
-                .set("authorization", &format!("Bearer {token}"))
-                .call();
+        if let Some(token) = self.current_token() {
+            // best-effort server-side revoke; the SDK swallows errors so logout always works locally
+            client().logout(&token);
         }
-        keychain_clear();
+        session_store().clear();
         *self.auth.lock().unwrap() = None;
         Ok(())
     }
 
     fn request_password_reset(&self, input: ResetRequestInput) -> Result<(), DataError> {
-        // Enumeration-safe: the backend always 200s; swallow transport errors too so the UI shows the
-        // same "check your email" result regardless of whether the address has an account. The reset
-        // is finished in the browser via the email link (no token comes back to the desktop).
-        let url = format!("{}/api/auth/password-reset/request", auth_base_url());
-        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
+        // Enumeration-safe; the SDK swallows transport errors too, so the UI shows the same
+        // "check your email" result regardless. The reset finishes in the browser via the link.
+        client().request_password_reset(&input.email);
         Ok(())
     }
 
     fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError> {
-        // Same shape as request_password_reset: enumeration-safe, errors swallowed. The verify link in
-        // the email opens vegify.app/verify in the browser — the desktop never holds the token.
-        let url = format!("{}/api/auth/email-verification/request", auth_base_url());
-        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": input.email }));
+        // Same contract as request_password_reset. The verify link opens the browser; the desktop
+        // never holds the token.
+        client().request_email_verification(&input.email);
         Ok(())
     }
 
     fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError> {
         let token = self.require_token()?;
-        messages_client::conversations(&token)
+        Ok(client().conversations(&token)?)
     }
 
     fn message_thread(&self, username: String) -> Result<DmThread, DataError> {
         let token = self.require_token()?;
-        messages_client::thread(&token, &username)
+        Ok(client().thread(&token, &username)?)
     }
 
     fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError> {
         let token = self.require_token()?;
-        messages_client::send(&token, &input.to, &input.body)
+        Ok(client().send_message(&token, &input.to, &input.body)?)
     }
 
     fn messages_unread(&self) -> Result<f64, DataError> {
         let token = self.require_token()?;
-        messages_client::unread(&token)
+        Ok(client().messages_unread(&token)?)
     }
 
     fn notifications(&self) -> Result<Vec<DmNotification>, DataError> {
         let token = self.require_token()?;
-        notifications_client::list(&token)
+        Ok(client().notifications(&token)?)
     }
 
     fn notifications_unread(&self) -> Result<f64, DataError> {
         let token = self.require_token()?;
-        notifications_client::unread(&token)
+        Ok(client().notifications_unread(&token)?)
     }
 
     fn notifications_mark_read(&self) -> Result<(), DataError> {
         let token = self.require_token()?;
-        notifications_client::mark_all_read(&token)
+        Ok(client().notifications_mark_all_read(&token)?)
     }
 }
 
@@ -1181,7 +747,7 @@ mod tests {
 
     /// Stamp the in-memory session as `id` (writes get owned by it; reads scope to it).
     fn set_auth(db: &Db, id: &str, name: &str) {
-        *db.auth.lock().unwrap() = Some(StoredSession {
+        *db.auth.lock().unwrap() = Some(Session {
             token: "t".into(),
             user: AuthUser {
                 id: id.into(),
@@ -1908,7 +1474,7 @@ mod tests {
         let token = db.current_token().expect("token after sign in");
 
         // pull: the seed world comes back in mutation shape (recipes carry their as-ingredient id).
-        let p = content_client::pull(Some(&token)).expect("pull");
+        let p = client().content_pull(Some(&token)).expect("pull");
         eprintln!("pull: {} recipes, {} ingredients", p.recipes.len(), p.ingredients.len());
         assert!(!p.recipes.is_empty() && !p.ingredients.is_empty(), "seed content pulled");
         assert!(p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()), "recipes carry as-ingredient id");
@@ -1919,16 +1485,16 @@ mod tests {
             "id": rid, "asIngredientId": new_id(), "name": "Client Posted Loaf", "visibility": "public",
             "servingGrams": 100.0, "batchGrams": 200.0, "items": []
         });
-        content_client::post(&token, "recipes", &body).expect("post recipe");
-        let p2 = content_client::pull(Some(&token)).expect("pull2");
+        client().content_post(&token, "recipes", &body).expect("post recipe");
+        let p2 = client().content_pull(Some(&token)).expect("pull2");
         assert!(
             p2.recipes.iter().any(|r| r.id == rid && r.name == "Client Posted Loaf"),
             "posted recipe appears in the pull"
         );
 
         // delete via the client → gone from the next pull.
-        content_client::delete(&token, "recipes", &rid).expect("delete recipe");
-        let p3 = content_client::pull(Some(&token)).expect("pull3");
+        client().content_delete(&token, "recipes", &rid).expect("delete recipe");
+        let p3 = client().content_pull(Some(&token)).expect("pull3");
         assert!(!p3.recipes.iter().any(|r| r.id == rid), "deleted recipe is gone");
         VegifyData::sign_out(&db).ok();
         eprintln!("content client round-trip OK: pull → post → pull → delete → pull");

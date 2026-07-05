@@ -173,15 +173,12 @@ export const vegifyData = {
   currentUser(): Promise<{
 	id: string,
 	name: string,
-	/**
-	 *  Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
-	 *  recipe `creator` resolves on-device.
-	 */
+	/**  Public handle backing `/<username>`. */
 	username: string,
 	email: string,
 	/**
-	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
-	 *  `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
+	 *  Whether the account's email is verified (serialized `emailVerified`; the auth response's
+	 *  snake_case `email_verified` is mapped in [`VegifyClient::sign_in`]/[`sign_up`]).
 	 */
 	emailVerified: boolean,
 } | null> {
@@ -262,22 +259,16 @@ export type Amount = {
 	grams: number | null,
 };
 
-/**
- *  The current user, mirrored from the web auth response. Stamped on local writes, and upserted
- *  into the local `users` table so the foreign key (and the recipe `creator`) resolves on-device.
- */
+/**  The signed-in user, as the auth routes return it. */
 export type AuthUser = {
 	id: string,
 	name: string,
-	/**
-	 *  Public handle backing `/<username>`; mirrored from the auth response and stored locally so the
-	 *  recipe `creator` resolves on-device.
-	 */
+	/**  Public handle backing `/<username>`. */
 	username: string,
 	email: string,
 	/**
-	 *  Whether the account's email is verified. Serialized as `emailVerified` (keychain + TS bindings);
-	 *  `post_auth` maps the backend's snake_case `email_verified` into it. Drives the verify banner.
+	 *  Whether the account's email is verified (serialized `emailVerified`; the auth response's
+	 *  snake_case `email_verified` is mapped in [`VegifyClient::sign_in`]/[`sign_up`]).
 	 */
 	emailVerified: boolean,
 };
@@ -300,7 +291,7 @@ export type DmMessage = {
 
 /**
  *  One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
- *  type) — App.tsx parses it into the shared screens' NotificationVM.
+ *  type on this line) — consumers parse it themselves.
  */
 export type DmNotification = {
 	id: string,

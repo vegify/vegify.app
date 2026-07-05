@@ -5,6 +5,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/vegify-client-rs",
   "crates/vegify-typegen",
   "crates/usda-importer",
   "crates/vegify-admin",

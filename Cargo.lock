@@ -6083,7 +6083,6 @@ name = "vegify"
 version = "0.0.0"
 dependencies = [
  "futures-util",
- "keyring",
  "rusqlite",
  "serde",
  "serde_json",
@@ -6098,7 +6097,7 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
- "ureq",
+ "vegify-client-rs",
  "vegify-config",
  "vegify-core",
 ]
@@ -6119,6 +6118,19 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "vegify-core",
+]
+
+[[package]]
+name = "vegify-client-rs"
+version = "0.1.0"
+dependencies = [
+ "keyring",
+ "serde",
+ "serde_json",
+ "specta",
+ "tracing",
+ "ureq",
  "vegify-core",
 ]
 
