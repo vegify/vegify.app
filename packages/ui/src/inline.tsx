@@ -471,7 +471,10 @@ function ScrubButton({
 }) {
   // Drag bookkeeping in a ref so the pointer handlers don't re-render mid-scrub.
   const drag = React.useRef<{ startX: number; startVal: number; last: number; moved: boolean } | null>(null);
-  const [scrubbing, setScrubbing] = React.useState(false);
+  // The value shown WHILE dragging (null = not scrubbing → show the committed `display`). State, so
+  // the number in the field itself tracks the drag — not only the external preview consumer.
+  const [scrubValue, setScrubValue] = React.useState<number | null>(null);
+  const scrubbing = scrubValue !== null;
 
   // ~6 horizontal px per step, stepped smart to the value's scale — so a small number nudges by 1s
   // and a large one by 25s, matching the keyboard ↑/↓ feel. Sub-min is clamped.
@@ -504,11 +507,11 @@ function ScrubButton({
         const dx = e.clientX - d.startX;
         if (!d.moved && Math.abs(dx) < 4) return; // dead zone: distinguishes click from drag
         d.moved = true;
-        if (!scrubbing) setScrubbing(true);
         const next = valueAt(dx, d.startVal);
-        if (next !== d.last) {
+        if (next !== d.last || scrubValue === null) {
           d.last = next;
-          onScrub(next); // LIVE preview as you drag
+          setScrubValue(next); // the field's own number tracks the drag
+          onScrub(next); // and the external consumer (nutrition panel) updates live too
         }
       }}
       onPointerUp={(e) => {
@@ -517,7 +520,7 @@ function ScrubButton({
         if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
         if (!d) return;
         if (d.moved) {
-          setScrubbing(false);
+          setScrubValue(null);
           onScrubCommit(d.last); // persist the scrubbed value
         } else {
           onOpen(); // a click, not a drag → type mode
@@ -530,7 +533,7 @@ function ScrubButton({
         }
       }}
     >
-      {fmt(display)}
+      {fmt(scrubValue ?? display)}
       {suffix ? ` ${suffix}` : null}
       {errorLive(error)}
     </button>
