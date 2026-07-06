@@ -23,6 +23,10 @@ concurrency:
   group: ios-testflight
   cancel-in-progress: false
 
+env:
+  APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
+  APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+
 jobs:
   testflight:
     runs-on: macos-latest
@@ -71,11 +75,25 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
-      - name: Inject the marketing version (if provided)
-        # The committed tauri.conf.json version is vestigial; a dispatched version overrides it via a
-        # --config merge file (same mechanism as the desktop's tauri.version.json).
-        if: ${{ inputs.version != '' }}
-        run: printf '{"version":"%s"}\n' "${{ inputs.version }}" > apps/desktop/src-tauri/tauri.version.json
+      - name: Inject the version + signing team (via a --config merge, so the team stays out of the repo)
+        # The committed tauri.conf.json version is vestigial (0.0.0) and it has NO iOS bundle config, so
+        # the Xcode project signs as the placeholder team "Tauri (unset)". Both are supplied here via a
+        # --config merge file (like the desktop's tauri.version.json): a real version (dispatched, else
+        # the latest release tag) AND bundle.iOS.developmentTeam (the reliable way to set the Apple team
+        # in Tauri v2 — the env var alone didn't reach the generated project). Team id comes from the
+        # ASC secret above, never the repo.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then
+            v=$(gh release view --json tagName -q .tagName | sed 's/^v//')
+          fi
+          jq -n --arg v "$v" --arg team "$APPLE_TEAM_ID" \
+            '{version: $v, bundle: {iOS: {developmentTeam: $team}}}' \
+            > apps/desktop/src-tauri/tauri.version.json
+          echo "iOS build version: $v (team ${APPLE_TEAM_ID:+set})"
       - name: Build + upload to TestFlight
         env:
           # Baked into the binary via option_env! so the shipped app points at the real backend.
@@ -83,16 +101,32 @@ jobs:
           # The provisioning profile for the restricted associated-domains entitlement (same secret the
           # desktop uses). Written where tauri's bundler expects it.
           VEGIFY_PROVISION_PROFILE_B64: ${{ secrets.VEGIFY_PROVISION_PROFILE_B64 }}
+          # `tauri ios build` reads the Apple team from APPLE_DEVELOPMENT_TEAM (NOT APPLE_TEAM_ID, which
+          # is tauri-action's macOS-notarization var). Without it the export signs as the placeholder
+          # team "Tauri (unset)" and fails: "No Account for Team Tauri / No profiles for app.vegify.ios".
+          APPLE_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+          # ASC API key → automatic (cloud) signing: Xcode creates/fetches the App Store provisioning
+          # profile for app.vegify.ios on the fly, so there's no cert/profile to manage in the repo.
           APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
           cd apps/desktop
-          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_TEAM_ID + the ASC
-          # API key, then --export-method app-store-connect produces + uploads the TestFlight build.
+          # `tauri ios build` archives with automatic (cloud) signing keyed by APPLE_DEVELOPMENT_TEAM + the
+          # ASC API key, then --export-method app-store-connect EXPORTS an App Store IPA. It does NOT
+          # upload — tauri leaves that to altool (below), which is why Tauri's App Store docs show a
+          # separate upload command. Skipping it is why a "successful" run left TestFlight with No Builds.
           # The version override (if injected above) rides in as an extra --config arg.
           if [ -f src-tauri/tauri.version.json ]; then
             pnpm exec tauri ios build --export-method app-store-connect --config src-tauri/tauri.version.json
           else
             pnpm exec tauri ios build --export-method app-store-connect
           fi
+          # Push the exported IPA to App Store Connect → TestFlight. altool authenticates with the ASC
+          # API key, which it discovers as AuthKey_<keyid>.p8 under ~/.appstoreconnect/private_keys.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$APPLE_API_KEY_PATH" "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          ipa=$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)
+          test -n "$ipa" || { echo "::error::tauri ios build produced no .ipa"; exit 1; }
+          echo "uploading $ipa to App Store Connect"
+          xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
