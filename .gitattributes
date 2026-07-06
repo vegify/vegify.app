@@ -1,0 +1,6 @@
+# Tauri-generated native mobile project (`tauri ios init`): the CocoaPods Podfile (Ruby) + the
+# generated Xcode scaffolding (Objective-C++/C++). Mark it generated so GitHub excludes it from the
+# language stats AND from code scanning — otherwise CodeQL detects "Ruby" from the Podfile and spins
+# up a Ruby analyzer that has no real code to scan and fails the run. This is hand-tweaked in places
+# (entitlements, Info.plist) but still Tauri-owned generated scaffolding.
+apps/desktop/src-tauri/gen/** linguist-generated=true
