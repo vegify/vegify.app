@@ -460,7 +460,11 @@ export class ServerStack extends Stack {
         threshold: 1,
         evaluationPeriods: 2,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+        // MISSING, not BREACHING: a running-but-unhealthy instance emits StatusCheckFailed=1 (a real
+        // datapoint that fires this regardless), whereas a just-replaced instance emits NO data for its
+        // first ~10 min — BREACHING turned that into a false alarm on every deploy. A truly dead +
+        // unreplaced instance still surfaces via the site's CloudFront 5xx alarm.
+        treatMissingData: cloudwatch.TreatMissingData.MISSING,
       }),
       // SUSTAINED high CPU is the real overload signal — NOT CPUCreditBalance. This t4g.nano runs in
       // `unlimited` credit mode (the T-family default), where a 0 credit balance means "bursting on

@@ -9,8 +9,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::Engine;
-use rand::rngs::OsRng;
-use rand::RngCore;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
@@ -31,6 +29,16 @@ fn normalize_email(email: &str) -> String {
     email.trim().to_lowercase()
 }
 
+/// N cryptographically-secure random bytes straight from the OS CSPRNG (`getrandom` — the same
+/// source `rand`'s `OsRng` wraps, used directly so auth carries no `rand`/`rand_core` version
+/// coupling with argon2's pinned `rand_core`). A failure here means the OS entropy source is
+/// unavailable, which is unrecoverable for auth — panic rather than mint a weak token/salt.
+fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut bytes = [0u8; N];
+    getrandom::fill(&mut bytes).expect("OS CSPRNG unavailable");
+    bytes
+}
+
 /// OWASP argon2id minimum, matching hash-wasm's params: m=19 MiB (19456 KiB), t=2, p=1, 32-byte output.
 fn hasher() -> Argon2<'static> {
     Argon2::new(
@@ -41,7 +49,10 @@ fn hasher() -> Argon2<'static> {
 }
 
 pub fn hash_password(password: &str) -> Result<String, AppError> {
-    let salt = SaltString::generate(&mut OsRng);
+    // 16-byte random salt (argon2's default), b64-encoded into the PHC salt — equivalent to what
+    // `SaltString::generate` did, but sourced from getrandom so it doesn't need argon2's rand_core.
+    let salt = SaltString::encode_b64(&random_bytes::<16>())
+        .map_err(|e| AppError::Internal(format!("salt: {e}")))?;
     hasher()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
@@ -150,8 +161,7 @@ fn token_hash(token: &str) -> String {
 
 /// Mint a session; returns the raw token (only its sha256 hash is persisted).
 pub fn create_session(conn: &Connection, user_id: &str) -> Result<String, AppError> {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    let bytes = random_bytes::<32>();
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let now = now_ms();
     conn.execute(
@@ -256,8 +266,7 @@ pub fn create_password_reset(
         })
         .optional()?;
     let Some((user_id, name)) = row else { return Ok(None) };
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    let bytes = random_bytes::<32>();
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let now = now_ms();
     conn.execute(
@@ -319,8 +328,7 @@ pub fn create_email_verification(
     if verified_at.is_some() {
         return Ok(None); // already verified — nothing to send
     }
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    let bytes = random_bytes::<32>();
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let now = now_ms();
     conn.execute(

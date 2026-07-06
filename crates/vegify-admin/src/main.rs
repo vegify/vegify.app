@@ -51,33 +51,55 @@ fn base_url() -> String {
     std::env::var("VEGIFY_API_URL").unwrap_or_else(|_| "http://localhost:8787".to_string())
 }
 
+/// A ureq agent that hands back non-2xx responses (with their JSON error body) rather than dropping
+/// the body into a bare status error — so [`read`]/[`expect_ok`] can surface the server's message.
+fn client() -> ureq::Agent {
+    ureq::Agent::config_builder().http_status_as_error(false).build().into()
+}
+
+/// A ureq transport failure → a message. With `http_status_as_error(false)`, a non-2xx is NOT an
+/// `Err` here (it's `Ok(response)`, handled by [`read`]/[`expect_ok`]), so this is always network.
 fn err_msg(e: ureq::Error) -> String {
-    match e {
-        ureq::Error::Status(code, resp) => resp
-            .into_json::<ApiError>()
-            .map(|b| b.error)
-            .unwrap_or_else(|_| format!("HTTP {code}")),
-        e => format!("network error: {e}"),
+    format!("network error: {e}")
+}
+
+/// Read a 2xx JSON body, else the server's `{error}` message (or `HTTP <code>`) as a String error.
+fn read<T: serde::de::DeserializeOwned>(mut resp: ureq::http::Response<ureq::Body>) -> Result<T, String> {
+    if resp.status().is_success() {
+        resp.body_mut().read_json::<T>().map_err(|e| e.to_string())
+    } else {
+        let code = resp.status().as_u16();
+        Err(resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}")))
+    }
+}
+
+/// Assert a 2xx (body discarded), else the server's `{error}` message as a String error.
+fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), String> {
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let code = resp.status().as_u16();
+        Err(resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}")))
     }
 }
 
 pub fn login() -> Result<ApiSession, String> {
     let email = std::env::var("VEGIFY_EMAIL").map_err(|_| "set VEGIFY_EMAIL".to_string())?;
     let password = std::env::var("VEGIFY_PASSWORD").map_err(|_| "set VEGIFY_PASSWORD".to_string())?;
-    ureq::post(&format!("{}/api/auth/login", base_url()))
+    let resp = client()
+        .post(format!("{}/api/auth/login", base_url()))
         .send_json(serde_json::json!({ "email": email, "password": password }))
-        .map_err(err_msg)?
-        .into_json()
-        .map_err(|e| e.to_string())
+        .map_err(err_msg)?;
+    read(resp)
 }
 
 pub fn pull(token: &str) -> Result<PullPayload, String> {
-    ureq::get(&format!("{}/api/content/pull", base_url()))
-        .set("authorization", &format!("Bearer {token}"))
+    let resp = client()
+        .get(format!("{}/api/content/pull", base_url()))
+        .header("authorization", &format!("Bearer {token}"))
         .call()
-        .map_err(err_msg)?
-        .into_json()
-        .map_err(|e| e.to_string())
+        .map_err(err_msg)?;
+    read(resp)
 }
 
 impl ApiSession {
@@ -87,22 +109,22 @@ impl ApiSession {
         struct Created {
             id: String,
         }
-        ureq::post(&format!("{}/api/content/{collection}", base_url()))
-            .set("authorization", &format!("Bearer {}", self.token))
+        let resp = client()
+            .post(format!("{}/api/content/{collection}", base_url()))
+            .header("authorization", &format!("Bearer {}", self.token))
             .send_json(body)
-            .map_err(err_msg)?
-            .into_json::<Created>()
-            .map(|c| c.id)
-            .map_err(|e| e.to_string())
+            .map_err(err_msg)?;
+        read::<Created>(resp).map(|c| c.id)
     }
 }
 
 fn delete(token: &str, collection: &str, id: &str) -> Result<(), String> {
-    ureq::delete(&format!("{}/api/content/{collection}?id={id}", base_url()))
-        .set("authorization", &format!("Bearer {token}"))
+    let resp = client()
+        .delete(format!("{}/api/content/{collection}?id={id}", base_url()))
+        .header("authorization", &format!("Bearer {token}"))
         .call()
         .map_err(err_msg)?;
-    Ok(())
+    expect_ok(resp)
 }
 
 fn purge(execute: bool) {
@@ -205,16 +227,23 @@ fn invite(args: &[String]) {
     struct InvitedUser {
         username: String,
     }
-    match ureq::post(&format!("{}/api/auth/invite", base_url()))
-        .set("authorization", &format!("Bearer {}", session.token))
+    match client()
+        .post(format!("{}/api/auth/invite", base_url()))
+        .header("authorization", &format!("Bearer {}", session.token))
         .send_json(serde_json::json!({ "name": name, "email": email, "password": password }))
     {
-        Ok(resp) => {
-            let username = resp.into_json::<Invited>().map(|i| i.user.username).unwrap_or_default();
+        Ok(mut resp) if resp.status().is_success() => {
+            let username = resp.body_mut().read_json::<Invited>().map(|i| i.user.username).unwrap_or_default();
             println!("invited @{username}\n");
             println!("  email:    {email}");
             println!("  password: {password}");
             println!("\nHand these to the invitee (or App Review). Public signups stay disabled.");
+        }
+        Ok(mut resp) => {
+            let code = resp.status().as_u16();
+            let msg = resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}"));
+            eprintln!("invite failed: {msg}");
+            std::process::exit(1);
         }
         Err(e) => {
             eprintln!("invite failed: {}", err_msg(e));
