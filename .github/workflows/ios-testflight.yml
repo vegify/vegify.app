@@ -35,6 +35,16 @@ jobs:
       id-token: write # AWS OIDC, to read the shared Apple signing secret
     steps:
       - uses: actions/checkout@v7
+      - name: Select the newest Xcode 26 (App Store Connect requires the iOS 26 SDK)
+        # macos-latest still DEFAULTS to Xcode 16.4 / iOS 18.5 SDK, which ASC rejects at upload
+        # (altool 409: "must be built with the iOS 26 SDK or later"). The image ships several 26.x
+        # versions; pick the newest present so image updates keep working without edits here.
+        run: |
+          set -euo pipefail
+          xcode=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode"
+          echo "selected $xcode"
+          xcodebuild -version
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -128,5 +138,12 @@ jobs:
           cp "$APPLE_API_KEY_PATH" "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           ipa=$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)
           test -n "$ipa" || { echo "::error::tauri ios build produced no .ipa"; exit 1; }
+          # Prove which identity actually signed the shipped app: tauri's interim codesign uses a
+          # placeholder ("Apple Distribution: Tauri (unset)") that the App Store export re-signs with
+          # the cloud-managed distribution identity — surface the final Authority + TeamIdentifier in
+          # the log so a signing regression is visible right next to the upload result.
+          unzip -qo "$ipa" -d "$RUNNER_TEMP/ipa-inspect"
+          codesign -dvv "$RUNNER_TEMP/ipa-inspect/Payload/"*.app 2>&1 | grep -E 'Authority|TeamIdentifier' \
+            || echo "::warning::could not read the ipa's code signature"
           echo "uploading $ipa to App Store Connect"
           xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
