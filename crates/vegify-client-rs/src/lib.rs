@@ -38,17 +38,39 @@ struct ApiErrorBody {
     error: String,
 }
 
-/// Map a ureq error → [`Error`], surfacing the server's JSON `error` message on non-2xx.
-fn err(e: ureq::Error) -> Error {
-    match e {
-        ureq::Error::Status(_, resp) => {
-            let msg = resp
-                .into_json::<ApiErrorBody>()
-                .map(|b| b.error)
-                .unwrap_or_else(|_| "Request failed.".to_string());
-            Error::Api(msg)
-        }
-        e => Error::Network(format!("Network error: {e}")),
+/// A ureq transport failure → [`Error::Network`]. The agent is built with
+/// `http_status_as_error(false)`, so a non-2xx status is NOT an `Err` here — it comes back as
+/// `Ok(response)` and is handled by [`read_json`]/[`expect_ok`]. So a ureq error is always a genuine
+/// transport/network problem.
+fn net(e: ureq::Error) -> Error {
+    Error::Network(format!("Network error: {e}"))
+}
+
+/// The server's JSON `{error}` message from a non-2xx response, or a generic fallback.
+fn status_error(resp: &mut ureq::http::Response<ureq::Body>) -> String {
+    resp.body_mut()
+        .read_json::<ApiErrorBody>()
+        .map(|b| b.error)
+        .unwrap_or_else(|_| "Request failed.".to_string())
+}
+
+/// Read a typed body from a 2xx response; a non-2xx becomes [`Error::Api`] carrying the server's
+/// JSON `error` message (or a generic fallback if the body isn't the expected shape).
+fn read_json<T: serde::de::DeserializeOwned>(mut resp: ureq::http::Response<ureq::Body>) -> Result<T, Error> {
+    if resp.status().is_success() {
+        resp.body_mut().read_json::<T>().map_err(|e| Error::Api(e.to_string()))
+    } else {
+        Err(Error::Api(status_error(&mut resp)))
+    }
+}
+
+/// Assert a 2xx (body discarded), else [`Error::Api`] carrying the server's message. For the
+/// fire-and-forget writes that don't read a response body but must still surface a rejection.
+fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), Error> {
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(Error::Api(status_error(&mut resp)))
     }
 }
 
@@ -254,12 +276,18 @@ impl SessionStore {
 /// [`SessionStore`]).
 pub struct VegifyClient {
     base: String,
+    agent: ureq::Agent,
 }
 
 impl VegifyClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         let base = base_url.into().trim_end_matches('/').to_string();
-        Self { base }
+        // http_status_as_error(false): the server returns JSON `{error}` bodies on 4xx/5xx that the
+        // SDK surfaces to the user; ureq 3 otherwise collapses a non-2xx into a bare StatusCode error
+        // with no body. So take every response as-is and inspect the status ourselves (see read_json /
+        // expect_ok). Default agent config otherwise.
+        let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into();
+        Self { base, agent }
     }
 
     /// The `/ws` WebSocket URL derived from the base (https→wss, http→ws) — the realtime change feed.
@@ -274,8 +302,10 @@ impl VegifyClient {
         format!("{}/ws", ws.trim_end_matches('/'))
     }
 
-    fn bearer(req: ureq::Request, token: &str) -> ureq::Request {
-        req.set("authorization", &format!("Bearer {token}"))
+    /// Generic over the builder's body-state (`WithBody`/`WithoutBody`) so it decorates both GETs and
+    /// POSTs. `.header()` lives on `impl<Any> RequestBuilder<Any>`, so one signature covers both.
+    fn bearer<B>(req: ureq::RequestBuilder<B>, token: &str) -> ureq::RequestBuilder<B> {
+        req.header("authorization", &format!("Bearer {token}"))
     }
 
     // ---- auth ----
@@ -301,9 +331,13 @@ impl VegifyClient {
             user: WireUser,
         }
         let url = format!("{}/api/auth/{path}", self.base);
-        match ureq::post(&url).send_json(body) {
-            Ok(resp) => resp
-                .into_json::<WireSession>()
+        // Auth surfaces ALL failures as Error::Auth (not Api/Network): a transport failure, a
+        // credential rejection (the server's message), and a malformed body all read as "couldn't sign
+        // you in" to the caller.
+        let mut resp = self.agent.post(&url).send_json(body).map_err(|e| Error::Auth(format!("Network error: {e}")))?;
+        if resp.status().is_success() {
+            resp.body_mut()
+                .read_json::<WireSession>()
                 .map(|w| Session {
                     token: w.token,
                     user: AuthUser {
@@ -314,15 +348,9 @@ impl VegifyClient {
                         email_verified: w.user.email_verified,
                     },
                 })
-                .map_err(|e| Error::Auth(e.to_string())),
-            Err(ureq::Error::Status(_, resp)) => {
-                let msg = resp
-                    .into_json::<ApiErrorBody>()
-                    .map(|e| e.error)
-                    .unwrap_or_else(|_| "Authentication failed.".to_string());
-                Err(Error::Auth(msg))
-            }
-            Err(e) => Err(Error::Auth(format!("Network error: {e}"))),
+                .map_err(|e| Error::Auth(e.to_string()))
+        } else {
+            Err(Error::Auth(status_error(&mut resp)))
         }
     }
 
@@ -339,20 +367,20 @@ impl VegifyClient {
 
     /// Best-effort server-side session revoke — errors are swallowed so a local logout always works.
     pub fn logout(&self, token: &str) {
-        let _ = Self::bearer(ureq::post(&format!("{}/api/auth/logout", self.base)), token).call();
+        let _ = Self::bearer(self.agent.post(format!("{}/api/auth/logout", self.base)), token).send_empty();
     }
 
     /// Enumeration-safe: the backend always 200s; transport errors are swallowed too, so the caller
     /// shows the same "check your email" result regardless. The reset finishes in the browser.
     pub fn request_password_reset(&self, email: &str) {
         let url = format!("{}/api/auth/password-reset/request", self.base);
-        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": email }));
+        let _ = self.agent.post(&url).send_json(serde_json::json!({ "email": email }));
     }
 
     /// Same contract as [`request_password_reset`](Self::request_password_reset).
     pub fn request_email_verification(&self, email: &str) {
         let url = format!("{}/api/auth/email-verification/request", self.base);
-        let _ = ureq::post(&url).send_json(serde_json::json!({ "email": email }));
+        let _ = self.agent.post(&url).send_json(serde_json::json!({ "email": email }));
     }
 
     // ---- content sync ----
@@ -365,15 +393,11 @@ impl VegifyClient {
     /// own. Without one (anonymous): public only.
     pub fn content_pull(&self, token: Option<&str>) -> Result<PullPayload, Error> {
         tracing::debug!("GET /api/content/pull");
-        let mut req = ureq::get(&self.content_url("pull"));
+        let mut req = self.agent.get(self.content_url("pull"));
         if let Some(token) = token {
             req = Self::bearer(req, token);
         }
-        let payload = req
-            .call()
-            .map_err(err)?
-            .into_json::<PullPayload>()
-            .map_err(|e| Error::Api(e.to_string()))?;
+        let payload: PullPayload = read_json(req.call().map_err(net)?)?;
         tracing::debug!(
             recipes = payload.recipes.len(),
             ingredients = payload.ingredients.len(),
@@ -386,28 +410,27 @@ impl VegifyClient {
     /// owner from the session). `collection` ∈ {"recipes", "ingredients"}.
     pub fn content_post(&self, token: &str, collection: &str, body: &serde_json::Value) -> Result<(), Error> {
         tracing::debug!(collection, "POST content");
-        Self::bearer(ureq::post(&self.content_url(collection)), token)
-            .send_json(body)
-            .map_err(err)?;
-        Ok(())
+        expect_ok(Self::bearer(self.agent.post(self.content_url(collection)), token).send_json(body).map_err(net)?)
     }
 
     /// DELETE /api/content/{collection}?id=… — idempotent server-side.
     pub fn content_delete(&self, token: &str, collection: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(collection, id, "DELETE content");
-        Self::bearer(ureq::delete(&format!("{}?id={id}", self.content_url(collection))), token)
-            .call()
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.delete(format!("{}?id={id}", self.content_url(collection))), token)
+                .call()
+                .map_err(net)?,
+        )
     }
 
     /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");
-        Self::bearer(ureq::post(&format!("{}?id={id}", self.content_url("ingredient-restore"))), token)
-            .send_json(serde_json::json!({}))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(format!("{}?id={id}", self.content_url("ingredient-restore"))), token)
+                .send_json(serde_json::json!({}))
+                .map_err(net)?,
+        )
     }
 
     // ---- messages (1:1 DMs; auth required, viewer-relative shapes) ----
@@ -417,27 +440,23 @@ impl VegifyClient {
     }
 
     pub fn conversations(&self, token: &str) -> Result<Vec<DmConversation>, Error> {
-        Self::bearer(ureq::get(&self.messages_url("conversations")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))
+        read_json(Self::bearer(self.agent.get(self.messages_url("conversations")), token).call().map_err(net)?)
     }
 
     pub fn thread(&self, token: &str, with: &str) -> Result<DmThread, Error> {
-        Self::bearer(ureq::get(&self.messages_url("thread")).query("with", with), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))
+        read_json(
+            Self::bearer(self.agent.get(self.messages_url("thread")).query("with", with), token)
+                .call()
+                .map_err(net)?,
+        )
     }
 
     pub fn send_message(&self, token: &str, to: &str, body: &str) -> Result<DmMessage, Error> {
-        Self::bearer(ureq::post(&self.messages_url("send")), token)
-            .send_json(serde_json::json!({ "to": to, "body": body }))
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))
+        read_json(
+            Self::bearer(self.agent.post(self.messages_url("send")), token)
+                .send_json(serde_json::json!({ "to": to, "body": body }))
+                .map_err(net)?,
+        )
     }
 
     pub fn messages_unread(&self, token: &str) -> Result<f64, Error> {
@@ -445,11 +464,8 @@ impl VegifyClient {
         struct Count {
             count: f64,
         }
-        let c: Count = Self::bearer(ureq::get(&self.messages_url("unread")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))?;
+        let c: Count =
+            read_json(Self::bearer(self.agent.get(self.messages_url("unread")), token).call().map_err(net)?)?;
         Ok(c.count)
     }
 
@@ -471,11 +487,8 @@ impl VegifyClient {
             created_at: f64,
             read: bool,
         }
-        let rows: Vec<WireNotification> = Self::bearer(ureq::get(&self.notifications_url("")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))?;
+        let rows: Vec<WireNotification> =
+            read_json(Self::bearer(self.agent.get(self.notifications_url("")), token).call().map_err(net)?)?;
         Ok(rows
             .into_iter()
             .map(|n| DmNotification {
@@ -493,19 +506,18 @@ impl VegifyClient {
         struct Count {
             count: f64,
         }
-        let c: Count = Self::bearer(ureq::get(&self.notifications_url("/unread")), token)
-            .call()
-            .map_err(err)?
-            .into_json()
-            .map_err(|e| Error::Api(e.to_string()))?;
+        let c: Count = read_json(
+            Self::bearer(self.agent.get(self.notifications_url("/unread")), token).call().map_err(net)?,
+        )?;
         Ok(c.count)
     }
 
     pub fn notifications_mark_all_read(&self, token: &str) -> Result<(), Error> {
-        Self::bearer(ureq::post(&self.notifications_url("/read")), token)
-            .send_json(serde_json::json!({}))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(self.notifications_url("/read")), token)
+                .send_json(serde_json::json!({}))
+                .map_err(net)?,
+        )
     }
 
     // ---- UGC safety (App Review 1.2) + account deletion (5.1.1(v)) ----
@@ -519,35 +531,39 @@ impl VegifyClient {
         reason: &str,
         note: &str,
     ) -> Result<(), Error> {
-        Self::bearer(ureq::post(&self.content_url("report")), token)
-            .send_json(serde_json::json!({
-                "targetType": target_type, "targetId": target_id, "reason": reason,
-                "note": if note.is_empty() { serde_json::Value::Null } else { serde_json::json!(note) },
-            }))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(self.content_url("report")), token)
+                .send_json(serde_json::json!({
+                    "targetType": target_type, "targetId": target_id, "reason": reason,
+                    "note": if note.is_empty() { serde_json::Value::Null } else { serde_json::json!(note) },
+                }))
+                .map_err(net)?,
+        )
     }
 
     pub fn block_user(&self, token: &str, username: &str) -> Result<(), Error> {
-        Self::bearer(ureq::post(&format!("{}/api/users/block", self.base)), token)
-            .send_json(serde_json::json!({ "username": username }))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(format!("{}/api/users/block", self.base)), token)
+                .send_json(serde_json::json!({ "username": username }))
+                .map_err(net)?,
+        )
     }
 
     pub fn unblock_user(&self, token: &str, username: &str) -> Result<(), Error> {
-        Self::bearer(ureq::post(&format!("{}/api/users/unblock", self.base)), token)
-            .send_json(serde_json::json!({ "username": username }))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(format!("{}/api/users/unblock", self.base)), token)
+                .send_json(serde_json::json!({ "username": username }))
+                .map_err(net)?,
+        )
     }
 
     /// Delete the signed-in account (password-reconfirmed). Irreversible.
     pub fn delete_account(&self, token: &str, password: &str) -> Result<(), Error> {
-        Self::bearer(ureq::post(&format!("{}/api/auth/delete-account", self.base)), token)
-            .send_json(serde_json::json!({ "password": password }))
-            .map_err(err)?;
-        Ok(())
+        expect_ok(
+            Self::bearer(self.agent.post(format!("{}/api/auth/delete-account", self.base)), token)
+                .send_json(serde_json::json!({ "password": password }))
+                .map_err(net)?,
+        )
     }
 }
 

@@ -14,7 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Blocking HTTP — deliberate: the desktop's sync engine runs on its own thread and wants
 # sequential, simple calls (no async runtime in the transport).
-ureq = { version = "2", features = ["json", "gzip"] }
+ureq = { version = "3", features = ["json", "gzip"] }
 # OS keychain session storage; in-memory mock under test/debug builds (see SessionStore).
 keyring = { version = "3", features = ["apple-native"] }
 tracing = "0.1"
