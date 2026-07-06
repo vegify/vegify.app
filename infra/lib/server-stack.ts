@@ -462,12 +462,19 @@ export class ServerStack extends Stack {
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       }),
-      new cloudwatch.Alarm(this, "CpuCreditAlarm", {
-        alarmDescription: "t4g.nano CPU credit balance low — sustained load is about to be throttled.",
-        metric: ec2Metric("CPUCreditBalance", { statistic: "Minimum" }),
-        threshold: 20,
-        evaluationPeriods: 3,
-        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      // SUSTAINED high CPU is the real overload signal — NOT CPUCreditBalance. This t4g.nano runs in
+      // `unlimited` credit mode (the T-family default), where a 0 credit balance means "bursting on
+      // surplus credits," not "throttled" — so a low-credit alarm false-fires on every freshly
+      // launched instance (a new box starts near 0 and the boot work — litestream restore, USDA
+      // ingest, the CW-agent install — spends what little it has) while the site stays perfectly
+      // healthy. 20 min of >85% average CPU catches genuine overload in either credit mode and rides
+      // out brief boot spikes.
+      new cloudwatch.Alarm(this, "CpuHighAlarm", {
+        alarmDescription: "Server CPU > 85% sustained (20 min) — genuine overload (credit mode aside).",
+        metric: ec2Metric("CPUUtilization", { statistic: "Average" }),
+        threshold: 85,
+        evaluationPeriods: 4,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "MemoryAlarm", {
