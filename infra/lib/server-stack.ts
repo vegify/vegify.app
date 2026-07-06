@@ -453,6 +453,24 @@ export class ServerStack extends Stack {
       defaultValue: 0,
     });
 
+    // Abuse signal: the server logs a `rate_limited` warn every time it rejects a request (auth-endpoint
+    // limits + the general per-IP cap). A sustained burst = credential stuffing, scraping, or a
+    // misconfigured client — the visibility the read-endpoint limits alone don't give.
+    const rateLimitMetric = new cloudwatch.Metric({
+      namespace: SERVER_METRIC_NS,
+      metricName: "RateLimitHits",
+      statistic: "Sum",
+      period: Duration.minutes(5),
+    });
+    new logs.MetricFilter(this, "RateLimitFilter", {
+      logGroup: serverLogGroup,
+      filterPattern: logs.FilterPattern.anyTerm("rate_limited"),
+      metricNamespace: SERVER_METRIC_NS,
+      metricName: "RateLimitHits",
+      metricValue: "1",
+      defaultValue: 0,
+    });
+
     const alarms: cloudwatch.Alarm[] = [
       new cloudwatch.Alarm(this, "InstanceStatusAlarm", {
         alarmDescription: "EC2 instance/system status check failing — the backend host is unhealthy.",
@@ -521,6 +539,14 @@ export class ServerStack extends Stack {
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
+      new cloudwatch.Alarm(this, "RateLimitAbuseAlarm", {
+        alarmDescription: "Sustained rate-limit rejections (>100/5min) — credential stuffing, scraping, or a misconfigured client.",
+        metric: rateLimitMetric,
+        threshold: 100,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
     ];
     for (const a of alarms) notify(a, alarmTopic);
 
@@ -562,6 +588,13 @@ export class ServerStack extends Stack {
             title: "Server ERROR log lines",
             left: [errorMetric],
             width: 8,
+          }),
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: "Rate-limit rejections (abuse signal)",
+            left: [rateLimitMetric],
+            width: 24,
           }),
         ],
       ],
