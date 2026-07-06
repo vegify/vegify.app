@@ -27,7 +27,7 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -105,7 +105,7 @@ async fn login(
     ClientIp(ip): ClientIp,
     Json(body): Json<LoginBody>,
 ) -> Result<Json<Value>, AppError> {
-    state.rate.hit(ratelimit::LOGIN_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::LOGIN_IP, &ip).map_err(AppError::RateLimited)?;
     let (email, password) = match (body.email, body.password) {
         (Some(e), Some(p)) if !e.is_empty() && !p.is_empty() => (e, p),
         _ => return Err(AppError::BadRequest("Email and password are required.".into())),
@@ -115,6 +115,8 @@ async fn login(
     // against a distributed attacker. Only FAILURES count; a success clears the bucket.
     let fail_key = email.trim().to_lowercase();
     if let Some(retry) = state.rate.over(ratelimit::LOGIN_FAILS, &fail_key) {
+        // Same greppable signal `guard` emits — a locked identifier IS the credential-stuffing tell.
+        tracing::warn!(limit = ratelimit::LOGIN_FAILS.name, retry_after = retry, "rate_limited");
         return Err(AppError::RateLimited(retry));
     }
     let out = db(&state, move |conn| match auth::authenticate(conn, &email, &password)? {
@@ -153,7 +155,7 @@ async fn signup(
     if !vegify_config::server::signups_open() {
         return Err(AppError::Forbidden("Signups are disabled.".into()));
     }
-    state.rate.hit(ratelimit::SIGNUP_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::SIGNUP_IP, &ip).map_err(AppError::RateLimited)?;
     let name = body.name.unwrap_or_default().trim().to_string();
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
@@ -246,7 +248,7 @@ async fn bootstrap(
     Json(body): Json<BootstrapBody>,
 ) -> Result<Json<Value>, AppError> {
     // Claiming an invited (passwordless) account is a guessing surface — small per-IP budget.
-    state.rate.hit(ratelimit::BOOTSTRAP_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::BOOTSTRAP_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
     if email.is_empty() || password.chars().count() < 8 {
@@ -281,12 +283,10 @@ async fn request_password_reset(
     // Outbound-email budgets (per IP + per requested address) protect the target inbox and SES
     // reputation. Both fire identically whether or not the address has an account, so the 429
     // carries no registration signal — the 200 below stays enumeration-proof.
-    state.rate.hit(ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     if !email.is_empty() {
-        state
-            .rate
-            .hit(ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
+        ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
             .map_err(AppError::RateLimited)?;
         let to = email.clone();
         if let Some((name, token)) =
@@ -311,7 +311,7 @@ async fn confirm_password_reset(
     ClientIp(ip): ClientIp,
     Json(body): Json<ResetConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
-    state.rate.hit(ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     let password = body.password.unwrap_or_default();
     if token.is_empty() {
@@ -330,12 +330,10 @@ async fn request_email_verification(
     Json(body): Json<ResetRequestBody>,
 ) -> Result<Json<Value>, AppError> {
     // Same outbound-email budgets (and the same no-enumeration-signal property) as the reset request.
-    state.rate.hit(ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     if !email.is_empty() {
-        state
-            .rate
-            .hit(ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
+        ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
             .map_err(AppError::RateLimited)?;
         let to = email.clone();
         if let Some((name, token)) =
@@ -359,7 +357,7 @@ async fn confirm_email_verification(
     ClientIp(ip): ClientIp,
     Json(body): Json<VerifyConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
-    state.rate.hit(ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     if token.is_empty() {
         return Err(AppError::BadRequest("A verification token is required.".into()));
@@ -1225,6 +1223,24 @@ async fn health() -> &'static str {
     "ok"
 }
 
+/// A general per-IP request cap across EVERY route (the auth endpoints layer their stricter limits on
+/// top in the handlers). This is what protects the public READ endpoints — content pull, search,
+/// profiles — which are otherwise unthrottled: no single source can overwhelm the nano or scrape it at
+/// speed. `/health` is exempt so the deploy's liveness poll is never throttled.
+async fn rate_limit_mw(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if req.uri().path() != "/health" {
+        if let Err(retry) = ratelimit::guard(&state.rate, ratelimit::GENERAL_IP, &ip) {
+            return AppError::RateLimited(retry).into_response();
+        }
+    }
+    next.run(req).await
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Structured logs (RUST_LOG overrides the default). Emits to stdout → the systemd journal on the
@@ -1331,6 +1347,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Gzip responses when the client asks (ureq/fetch both do): the USDA catalog pushed the full
         // content pull to ~3.6 MB raw — ~10x smaller on the wire. Skips WS upgrades automatically.
         .layer(tower_http::compression::CompressionLayer::new())
+        // General per-IP cap over every route (auth endpoints add stricter limits in-handler). Inside
+        // the TraceLayer above, so a throttled request is still logged. state is cloned in — the router
+        // takes ownership of the original just below.
+        .layer(axum::middleware::from_fn_with_state(state.clone(), rate_limit_mw))
         .with_state(state);
 
     // Bind all interfaces so CloudFront can reach the origin (the SG locks the port to CloudFront's

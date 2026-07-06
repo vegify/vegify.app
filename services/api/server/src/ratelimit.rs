@@ -41,6 +41,22 @@ pub const EMAIL_SEND_IP: Limit = Limit { name: "email-ip", max: 10, window: Dura
 pub const EMAIL_SEND_ID: Limit = Limit { name: "email-id", max: 3, window: Duration::from_secs(60 * 60) };
 /// Token-consuming endpoints (reset/verification confirm) per IP — token-guessing budget.
 pub const TOKEN_CONFIRM_IP: Limit = Limit { name: "confirm-ip", max: 10, window: Duration::from_secs(60) };
+/// A GENERAL per-IP budget across EVERY endpoint (applied as middleware) — defense-in-depth beyond
+/// the auth-specific limits above. It bounds any single source's load on the nano and slows naive
+/// scrapers of the public read endpoints (content pull, search, profiles), while staying generous
+/// enough that legit native-app traffic and the SSR Lambda's IP-aggregated reads never brush it
+/// (600/min = 10 req/s sustained per IP). Distributed scraping is an edge-WAF concern, not this.
+pub const GENERAL_IP: Limit = Limit { name: "general-ip", max: 600, window: Duration::from_secs(60) };
+
+/// Enforce a limit and, on rejection, emit a greppable `rate_limited` warn (the CloudWatch abuse
+/// metric filter counts these) before returning the retry-after seconds. Use this at every
+/// enforcement point so a rejection is both a 429 AND an abuse signal. The key is NOT logged — it can
+/// be an email (PII); the limit name is enough for the alarm, and the request log carries the IP.
+pub fn guard(rl: &RateLimiter, limit: Limit, key: &str) -> Result<(), u64> {
+    rl.hit(limit, key).inspect_err(|&retry| {
+        tracing::warn!(limit = limit.name, retry_after = retry, "rate_limited");
+    })
+}
 
 struct Entry {
     window_start: Instant,
