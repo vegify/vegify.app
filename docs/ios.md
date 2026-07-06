@@ -33,14 +33,14 @@ Prereqs (all present on this machine): full Xcode with an iOS runtime, CocoaPods
 
 ## App Store / TestFlight
 
-`.github/workflows/ios-testflight.yml` builds the iOS app and uploads it to TestFlight — **manually dispatched** (Actions tab), NOT on the release cascade, so it can't fail a deploy before the App Store side exists. It reuses the SAME Apple ASC API key the desktop notarization uses (Secrets Manager via SSM) — no new secret — and signs via Xcode **cloud (automatic) signing** keyed by the team id + ASC key, so there's no distribution cert/profile to manage in the repo.
+iOS ships **on the release cascade** (`deploy.yml`, since the App Store Connect side proved out 2026-07-06): `build-ios` archives + exports the signed `.ipa` at build time and stages it as a workflow artifact, and `publish-ios` uploads it to TestFlight only after `deploy-server` is live — TestFlight has no draft state, so this sequencing is what keeps a failed deploy away from testers. It reuses the SAME Apple ASC API key the desktop notarization uses (Secrets Manager via SSM) — no new secret — and signs via Xcode **cloud (automatic) signing** keyed by the team id + ASC key, so there's no distribution cert/profile to manage in the repo. Builds skip the per-build export-compliance question via `ITSAppUsesNonExemptEncryption=false` in Info.plist (the app's only crypto is TLS + the OS keychain). `just redeploy vX.Y.Z` re-runs a tag end-to-end; a build already on ASC makes `publish-ios` a tolerated no-op.
 
 **One-time App Store Connect setup (John):**
 1. Create the app record for bundle id **`app.vegify.ios`**.
 2. Confirm the ASC API key in Secrets Manager has the **App Manager** role (it signs + uploads).
 3. Fill the App Store listing surface that lives outside code: **App Privacy** labels (email, user content, messages), screenshots, description, age rating, and set the **support/marketing URLs** to `https://vegify.app` (the /terms + /privacy pages are live). Provide a **demo account** or open signups for review.
 
-Then dispatch the workflow (optionally pass a version). Device release builds use the per-user app-data DB dir and the real iOS keychain (the mock is debug-only), so no device-specific code path is needed for the shipped app.
+Then every released merge uploads a TestFlight build automatically (the version is the release tag's). Device release builds use the per-user app-data DB dir and the real iOS keychain (the mock is debug-only), so no device-specific code path is needed for the shipped app.
 
 ## Resolved gaps
 
