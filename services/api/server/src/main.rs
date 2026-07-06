@@ -20,6 +20,9 @@ mod usda;
 #[allow(dead_code)]
 mod handles;
 mod media;
+mod ratelimit;
+
+use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
@@ -37,6 +40,7 @@ use tracing::Level;
 
 use crate::auth::{bearer_token, User};
 use crate::error::AppError;
+use crate::ratelimit::{ClientIp, RateLimiter};
 
 type Pool = r2d2::Pool<SqliteConnectionManager>;
 
@@ -47,6 +51,8 @@ struct AppState {
     /// commits — the push that replaces the desktop's poll. Best-effort: a send error just means nobody
     /// is listening. State holds only the Sender; each /ws connection `.subscribe()`s its own Receiver.
     change_tx: tokio::sync::broadcast::Sender<String>,
+    /// In-process budgets for the auth surface (single-instance server → in-memory is authoritative).
+    rate: Arc<RateLimiter>,
 }
 
 impl AppState {
@@ -94,11 +100,23 @@ struct LoginBody {
     password: Option<String>,
 }
 
-async fn login(State(state): State<AppState>, Json(body): Json<LoginBody>) -> Result<Json<Value>, AppError> {
+async fn login(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(body): Json<LoginBody>,
+) -> Result<Json<Value>, AppError> {
+    state.rate.hit(ratelimit::LOGIN_IP, &ip).map_err(AppError::RateLimited)?;
     let (email, password) = match (body.email, body.password) {
         (Some(e), Some(p)) if !e.is_empty() && !p.is_empty() => (e, p),
         _ => return Err(AppError::BadRequest("Email and password are required.".into())),
     };
+    // The per-identifier failure budget is the actual credential-stuffing guard: keyed on the
+    // account, not the address, so it holds through the SSR Lambda's egress aggregation and
+    // against a distributed attacker. Only FAILURES count; a success clears the bucket.
+    let fail_key = email.trim().to_lowercase();
+    if let Some(retry) = state.rate.over(ratelimit::LOGIN_FAILS, &fail_key) {
+        return Err(AppError::RateLimited(retry));
+    }
     let out = db(&state, move |conn| match auth::authenticate(conn, &email, &password)? {
         Some(user) => {
             let token = auth::create_session(conn, &user.id)?;
@@ -107,8 +125,15 @@ async fn login(State(state): State<AppState>, Json(body): Json<LoginBody>) -> Re
         }
         None => Err(AppError::InvalidCredentials),
     })
-    .await?;
-    Ok(Json(out))
+    .await;
+    match &out {
+        Err(AppError::InvalidCredentials) => {
+            let _ = state.rate.hit(ratelimit::LOGIN_FAILS, &fail_key);
+        }
+        Ok(_) => state.rate.clear(ratelimit::LOGIN_FAILS, &fail_key),
+        Err(_) => {}
+    }
+    out.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -118,12 +143,17 @@ struct SignupBody {
     password: Option<String>,
 }
 
-async fn signup(State(state): State<AppState>, Json(body): Json<SignupBody>) -> Result<Json<Value>, AppError> {
+async fn signup(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(body): Json<SignupBody>,
+) -> Result<Json<Value>, AppError> {
     // Signups are disabled by default (invite-only while the app isn't open to the public). The server
     // is the authority — set VEGIFY_SIGNUPS_OPEN=1 to re-open (and flip SIGNUPS_ENABLED in @vegify/ui).
     if !vegify_config::server::signups_open() {
         return Err(AppError::Forbidden("Signups are disabled.".into()));
     }
+    state.rate.hit(ratelimit::SIGNUP_IP, &ip).map_err(AppError::RateLimited)?;
     let name = body.name.unwrap_or_default().trim().to_string();
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
@@ -210,7 +240,13 @@ struct BootstrapBody {
     password: Option<String>,
 }
 
-async fn bootstrap(State(state): State<AppState>, Json(body): Json<BootstrapBody>) -> Result<Json<Value>, AppError> {
+async fn bootstrap(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(body): Json<BootstrapBody>,
+) -> Result<Json<Value>, AppError> {
+    // Claiming an invited (passwordless) account is a guessing surface — small per-IP budget.
+    state.rate.hit(ratelimit::BOOTSTRAP_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
     if email.is_empty() || password.chars().count() < 8 {
@@ -239,10 +275,19 @@ struct ResetRequestBody {
 /// the SES send runs on the async side (best-effort, logged on failure).
 async fn request_password_reset(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(body): Json<ResetRequestBody>,
 ) -> Result<Json<Value>, AppError> {
+    // Outbound-email budgets (per IP + per requested address) protect the target inbox and SES
+    // reputation. Both fire identically whether or not the address has an account, so the 429
+    // carries no registration signal — the 200 below stays enumeration-proof.
+    state.rate.hit(ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     if !email.is_empty() {
+        state
+            .rate
+            .hit(ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
+            .map_err(AppError::RateLimited)?;
         let to = email.clone();
         if let Some((name, token)) =
             db(&state, move |conn| auth::create_password_reset(conn, &email)).await?
@@ -263,8 +308,10 @@ struct ResetConfirmBody {
 /// sessions. 400 on a missing/invalid/expired/used token or a too-short password.
 async fn confirm_password_reset(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(body): Json<ResetConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
+    state.rate.hit(ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     let password = body.password.unwrap_or_default();
     if token.is_empty() {
@@ -279,10 +326,17 @@ async fn confirm_password_reset(
 /// email the link. ALWAYS 200 — like the reset request, the response never reveals registration state.
 async fn request_email_verification(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(body): Json<ResetRequestBody>,
 ) -> Result<Json<Value>, AppError> {
+    // Same outbound-email budgets (and the same no-enumeration-signal property) as the reset request.
+    state.rate.hit(ratelimit::EMAIL_SEND_IP, &ip).map_err(AppError::RateLimited)?;
     let email = body.email.unwrap_or_default().trim().to_string();
     if !email.is_empty() {
+        state
+            .rate
+            .hit(ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
+            .map_err(AppError::RateLimited)?;
         let to = email.clone();
         if let Some((name, token)) =
             db(&state, move |conn| auth::create_email_verification(conn, &email)).await?
@@ -302,8 +356,10 @@ struct VerifyConfirmBody {
 /// missing/invalid/expired/used token.
 async fn confirm_email_verification(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(body): Json<VerifyConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
+    state.rate.hit(ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     if token.is_empty() {
         return Err(AppError::BadRequest("A verification token is required.".into()));
@@ -1212,7 +1268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
-    let state = AppState { pool, change_tx };
+    let state = AppState { pool, change_tx, rate: Arc::new(RateLimiter::new()) };
 
     let app = Router::new()
         .route("/health", get(health))
