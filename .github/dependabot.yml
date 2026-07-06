@@ -1,0 +1,35 @@
+# Dependency updates as config-as-code. Version updates activate the moment this file lands;
+# Dependabot ALERTS (vulnerability scanning) are a repository setting flipped separately.
+# Grouping keeps the PR volume sane: minor+patch bumps arrive as ONE weekly PR per ecosystem
+# (each lands through the normal deploy cascade); majors stay individual so they get real review.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-all:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
