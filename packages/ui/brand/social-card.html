@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  GitHub social preview card (1280×640) → social-card.png in this dir.
+  Regenerate after editing this file (run from repo root; needs Google Chrome):
+    CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "$CHROME" --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+      --allow-file-access-from-files --window-size=1280,640 \
+      --screenshot=packages/ui/brand/social-card-2x.png \
+      "file://$PWD/packages/ui/brand/social-card.html"
+    sips -z 640 1280 packages/ui/brand/social-card-2x.png --out packages/ui/brand/social-card.png
+    rm packages/ui/brand/social-card-2x.png
+  Then upload social-card.png at repo Settings → General → Social preview (UI-only; no API).
+  The mark is ./app-icon.png (the brand master) — keeps this card in sync when the icon changes.
+-->
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1280px; height:640px; }
+  .card {
+    width:1280px; height:640px; position:relative; overflow:hidden;
+    font-family:'Avenir Next','Avenir',-apple-system,system-ui,sans-serif;
+    background:
+      radial-gradient(1100px 700px at 18% 38%, rgba(251,176,64,0.14), rgba(251,176,64,0) 60%),
+      radial-gradient(900px 700px at 92% 88%, rgba(76,150,56,0.10), rgba(76,150,56,0) 55%),
+      linear-gradient(180deg, #FCFBF7 0%, #F5F3EC 100%);
+  }
+  /* 40pt safe area (GitHub crops toward the edges on some surfaces) */
+  .safe { position:absolute; inset:40px; display:flex; align-items:center; gap:72px; padding:0 20px; }
+  .icon { width:376px; height:376px; flex:0 0 auto;
+    filter: drop-shadow(0 22px 44px rgba(120,88,20,0.28)); border-radius:84px; }
+  .text { display:flex; flex-direction:column; }
+  .word { font-size:118px; font-weight:700; letter-spacing:-0.03em; line-height:1; color:#26331d; }
+  .word .dot { color:#4C9638; }
+  .accent { width:132px; height:9px; border-radius:9px; margin:26px 0 30px 4px;
+    background:linear-gradient(90deg, #328432 0%, #65A73E 45%, #FFD400 100%); }
+  .tag { font-size:35px; font-weight:500; line-height:1.32; color:#54604b; max-width:640px; letter-spacing:-0.01em; }
+  .foot { position:absolute; left:40px; bottom:52px; font-size:23px; font-weight:600; color:#9aa08c; letter-spacing:0.01em; padding-left:20px; }
+</style></head><body>
+  <div class="card">
+    <div class="safe">
+      <img class="icon" src="./app-icon.png" alt="Vegify">
+      <div class="text">
+        <div class="word">vegify<span class="dot">.app</span></div>
+        <div class="accent"></div>
+        <div class="tag">Micronutrition tracking &amp; recipe sharing for plant-based cooking.</div>
+      </div>
+    </div>
+    <div class="foot">Rust · TanStack Start · Tauri — one screen set, web · desktop · iOS</div>
+  </div>
+</body></html>
