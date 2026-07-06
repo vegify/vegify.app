@@ -37,3 +37,15 @@ Textbook zero-downtime even during a server-binary change. Deferred because it c
 **Traffic flipping is already cheap:** the Elastic IP can be re-associated from blue to green in seconds, so no ALB is needed (a standing ALB was explicitly rejected). The EIP is the flip mechanism.
 
 **When to revisit:** real revenue, an uptime SLA, or traffic where a ~1-2 minute blip during a genuine server deploy actually costs something. Until then, option 1 keeps the user-visible impact at zero for the common case.
+
+## Observability (2026-07-06)
+
+Logs, metrics, dashboards, and email alarms — added pre-public. The design keeps the deploy cascade uncoupled: every alarm + dashboard lives in the stack that owns the resource it watches (so it refreshes on each deploy and never points at a replaced instance), and the one shared resource — the SNS alarm topic — is created by `VegifyServer` and discovered elsewhere by ARN through SSM (`/vegify/monitor/alarm-topic-arn`) at deploy time, a value lookup rather than a CDK export that could wedge a redeploy.
+
+**Logs → CloudWatch, with retention.** The server's stdout/stderr go to `/var/log/vegify/server.log` (logrotate-capped) and the on-box CloudWatch agent ships them to the `/vegify/server` group; the agent also publishes `mem_used_percent` + `disk_used_percent` (EC2 emits neither), rolled up to `{InstanceId, path}` so alarms need not guess per-boot device/fstype dimensions. The agent steps are tolerant (`|| true`) — telemetry must never block the server or the `/health` deploy gate. Every Lambda (web SSR, ingest, origin-secret) now has an explicit log group with retention (the implicit `/aws/lambda/*` groups never expire).
+
+**Alarms → email.** An SNS topic emails `VEGIFY_ALARM_EMAIL` → SSM `alarm-email` → derived `hello@<domain>`. The email subscription lands **PendingConfirmation**: AWS sends a one-time confirm link that must be clicked once before anything delivers. Alarms: EC2 status check, t4g CPU-credit floor, memory, root + `/data` disk, API CloudFront 5xx, server ERROR log lines (`VegifyServer`); web CloudFront 5xx, SSR Lambda errors + throttles (`VegifyWebStart`); ingest Lambda errors (`VegifyClientLogs`). All within the always-free alarm tier.
+
+**Dashboards.** `Vegify-Server` (EC2 CPU/credits/mem/disk, API requests + error rates, server ERROR lines) and `Vegify-Web` (site requests + error rates, SSR errors/throttles/invocations/duration).
+
+**Gotcha baked in:** CloudFront metrics need BOTH `DistributionId` AND `Region=Global` dimensions; CDK's `Distribution.metricXxx()` helpers omit `Region`, so their metrics silently read no data. `monitoring.ts`'s `cloudFrontMetric()` builds them correctly. CloudFront metrics live in us-east-1 — fine here (everything is us-east-1); a non-us-east-1 self-host would need the CloudFront alarms in us-east-1.

@@ -97,6 +97,9 @@ export interface DeployConfig {
   /** Secrets Manager id of the shared Apple signing secret (desktop notarization) —
    *  env APPLE_SIGNING_SECRET_ID → SSM apple-secret-id → placeholder. */
   appleSecretId: string
+  /** Where CloudWatch alarm notifications are emailed — env VEGIFY_ALARM_EMAIL → SSM alarm-email →
+   *  derived hello@<email domain> (the mailbox the domain forwarder already catches). */
+  alarmEmail: string
 }
 
 export interface DeployConfigOptions {
@@ -140,5 +143,6 @@ export async function deployConfig(opts: DeployConfigOptions = {}): Promise<Depl
     mailFromDomain: pick('VEGIFY_MAIL_FROM_DOMAIN', 'mail-from-domain') ?? `mail.${emailDomain}`,
     manageEmailDns: (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? '1') !== '0',
     appleSecretId: pick('APPLE_SIGNING_SECRET_ID', 'apple-secret-id') ?? 'your-org/apple-signing',
+    alarmEmail: pick('VEGIFY_ALARM_EMAIL', 'alarm-email') ?? `hello@${emailDomain}`,
   }
 }
