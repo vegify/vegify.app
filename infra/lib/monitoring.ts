@@ -66,10 +66,13 @@ export function cloudFrontMetric(
   });
 }
 
-/** Wire an alarm to notify the topic on ALARM and on the return to OK (so a resolved page is visible). */
+/**
+ * Notify the topic when an alarm fires. Deliberately NO OK action: the instance-keyed alarms (memory,
+ * disk, CPU credit, status) re-enter INSUFFICIENT_DATA on every server deploy (instance replacement
+ * changes the InstanceId dimension) and would email an "OK" as each re-settles — a recurring flurry on
+ * every server-path merge. Break alerts are what matter; recovery is visible on the dashboards.
+ */
 export function notify(alarm: cloudwatch.Alarm, topic: sns.ITopic): cloudwatch.Alarm {
-  const action = new cwActions.SnsAction(topic);
-  alarm.addAlarmAction(action);
-  alarm.addOkAction(action);
+  alarm.addAlarmAction(new cwActions.SnsAction(topic));
   return alarm;
 }
