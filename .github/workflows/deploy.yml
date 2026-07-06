@@ -230,7 +230,7 @@ jobs:
           mkdir -p infra/assets
           cp target/aarch64-unknown-linux-musl/release/vegify-server infra/assets/vegify-server
           cp .data/vegify.db infra/assets/seed.db
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server-asset
           path: infra/assets/
@@ -312,7 +312,7 @@ jobs:
           # verbatim in the AASA at /.well-known/apple-app-site-association).
           VEGIFY_APPLE_TEAM_ID: ${{ vars.VEGIFY_APPLE_TEAM_ID }}
         run: pnpm --filter web build:aws
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-bundle
           # BOTH assets WebStartStack references: the SSR Lambda bundle (.aws-lambda/) and the static
@@ -412,7 +412,7 @@ jobs:
         # The committed tauri.conf.json version is vestigial ("0.0.0") — the shipped bundle's version
         # comes from the release tag via a --config merge file, so no version-bump commit ever exists.
         run: printf '{"version":"%s"}\n' "${{ needs.release.outputs.version }}" > apps/desktop/src-tauri/tauri.version.json
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # VEGIFY_API_URL rides in from the resolve step (GITHUB_ENV) and is baked into the binary
@@ -522,7 +522,7 @@ jobs:
           codesign -dvv "$RUNNER_TEMP/ipa-inspect/Payload/"*.app 2>&1 | grep -E 'Authority|TeamIdentifier' \
             || echo "::warning::could not read the ipa's code signature"
           cp "$ipa" "$RUNNER_TEMP/vegify.ipa"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ios-ipa
           path: ${{ runner.temp }}/vegify.ipa
@@ -553,11 +553,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # cdk synth is whole-app, so every stack's asset must exist even though we deploy only the
       # server here: restore the server binary + the web bundle the upstream jobs already built.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server-asset
           path: infra/assets/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: web-bundle
           # Rooted at apps/web (the upload's LCA) → restores apps/web/.aws-lambda/ + apps/web/dist/client/.
@@ -610,11 +610,11 @@ jobs:
           node-version: "lts/*"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server-asset
           path: infra/assets/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: web-bundle
           path: apps/web
@@ -659,7 +659,7 @@ jobs:
       contents: read
       id-token: write # AWS OIDC, to read the ASC API key
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ios-ipa
           path: ${{ runner.temp }}
