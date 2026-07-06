@@ -18,6 +18,8 @@ pub enum AppError {
     Forbidden(String),
     Conflict(String),
     NotFound(String),
+    /// Over a rate-limit budget → 429 `{error}` plus a `Retry-After` header (seconds).
+    RateLimited(u64),
     Internal(String),
 }
 
@@ -31,6 +33,16 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, msg) = match self {
+            AppError::RateLimited(secs) => {
+                let mut resp = (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({ "error": format!("Too many attempts — try again in {secs} seconds.") })),
+                )
+                    .into_response();
+                resp.headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(secs));
+                return resp;
+            }
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized.".to_string()),
             AppError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid email or password.".to_string())
