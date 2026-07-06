@@ -167,7 +167,7 @@ jobs:
           # web-start/client-logs stacks — that's web infra.
           if git diff --quiet "$before" "$GITHUB_SHA" -- \
             services/api/ crates/ packages/db/ packages/config/ \
-            infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/bin/ \
+            infra/lib/server-stack.ts infra/lib/vpc-stack.ts infra/lib/monitoring.ts infra/bin/ \
             Cargo.toml Cargo.lock; then
             echo "server=false" >> "$GITHUB_OUTPUT"; echo "→ server unchanged (no instance replacement)"
           else
@@ -176,7 +176,7 @@ jobs:
           # Web-relevant: the web app, every shared package, the web-side stacks/lambdas + app wiring.
           if git diff --quiet "$before" "$GITHUB_SHA" -- \
             apps/web/ packages/ \
-            infra/lib/web-start-stack.ts infra/lib/client-logs-stack.ts infra/lib/zone.ts \
+            infra/lib/web-start-stack.ts infra/lib/client-logs-stack.ts infra/lib/zone.ts infra/lib/monitoring.ts \
             infra/lambda/ infra/bin/ pnpm-lock.yaml; then
             echo "web=false" >> "$GITHUB_OUTPUT"; echo "→ web unchanged"
           else
