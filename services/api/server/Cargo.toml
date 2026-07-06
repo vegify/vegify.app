@@ -24,7 +24,7 @@ serde_json = "1"
 # Auth port: argon2id (PHC strings cross-compatible with hash-wasm) + sha256-hashed opaque tokens.
 argon2 = "0.5"
 rand = "0.8"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 base64 = "0.22"
 # Structured observability: tower-http TraceLayer emits a per-request span (method/path/status/latency),
