@@ -1,8 +1,10 @@
 import * as path from "node:path";
 import { CfnOutput, Duration, Fn, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
@@ -10,6 +12,7 @@ import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import type { Construct } from "constructs";
 import { resolveZone } from "./zone.js";
+import { cloudFrontMetric, importAlarmTopic, notify } from "./monitoring.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const webStart = path.join(repoRoot, "apps/web");
@@ -81,6 +84,11 @@ export class WebStartStack extends Stack {
       code: lambda.Code.fromAsset(path.join(webStart, ".aws-lambda")),
       memorySize: 1024,
       timeout: Duration.seconds(30),
+      // Explicit log group with retention — the implicit /aws/lambda/<name> group never expires.
+      logGroup: new logs.LogGroup(this, "ServerFnLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
       environment: {
         VEGIFY_API_URL: apiUrl,
         // Canonical public origin for generated URLs (the sitemap): behind CloudFront the Lambda
@@ -208,5 +216,82 @@ export class WebStartStack extends Stack {
     new CfnOutput(this, "Url", { value: `https://${distribution.distributionDomainName}` });
     new CfnOutput(this, "CustomDomain", { value: `https://${domainNames[0]}` });
     new CfnOutput(this, "FunctionUrl", { value: fnUrl.url });
+
+    // ── Observability ────────────────────────────────────────────────────────────────────────────
+    // Alarms + a web dashboard on THIS stack's own resources (SSR Lambda + web CloudFront); the shared
+    // alarm topic is discovered by ARN from SSM (ServerStack created it earlier in the cascade).
+    const alarmTopic = importAlarmTopic(this, "AlarmTopic");
+    const p5 = { period: Duration.minutes(5) };
+    notify(
+      new cloudwatch.Alarm(this, "SsrErrorsAlarm", {
+        alarmDescription: "Web SSR Lambda erroring — every page render hits this function.",
+        metric: fn.metricErrors(p5),
+        threshold: 5,
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      alarmTopic,
+    );
+    notify(
+      new cloudwatch.Alarm(this, "SsrThrottlesAlarm", {
+        alarmDescription: "Web SSR Lambda throttled — concurrency ceiling hit; pages will 5xx.",
+        metric: fn.metricThrottles(p5),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      alarmTopic,
+    );
+    notify(
+      new cloudwatch.Alarm(this, "WebCloudFront5xxAlarm", {
+        alarmDescription: "Web CloudFront 5xx rate > 5% — the site is serving errors.",
+        metric: cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+        threshold: 5,
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      alarmTopic,
+    );
+
+    new cloudwatch.Dashboard(this, "WebDashboard", {
+      dashboardName: "Vegify-Web",
+      widgets: [
+        [
+          new cloudwatch.GraphWidget({
+            title: "Site requests",
+            left: [cloudFrontMetric(this, distribution.distributionId, "Requests", Duration.minutes(5))],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "Site error rates %",
+            left: [
+              cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+              cloudFrontMetric(this, distribution.distributionId, "4xxErrorRate", Duration.minutes(5)),
+            ],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "SSR errors / throttles",
+            left: [fn.metricErrors(p5), fn.metricThrottles(p5)],
+            width: 8,
+          }),
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: "SSR invocations",
+            left: [fn.metricInvocations(p5)],
+            width: 12,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "SSR duration (p50/p99 ms)",
+            left: [fn.metricDuration({ ...p5, statistic: "p50" }), fn.metricDuration({ ...p5, statistic: "p99" })],
+            width: 12,
+          }),
+        ],
+      ],
+    });
   }
 }

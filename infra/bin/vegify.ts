@@ -48,6 +48,7 @@ const server = new ServerStack(app, "VegifyServer", {
   domainNames: cfg.domainNames,
   domainsConfigured: cfg.domainsConfigured,
   hostedZoneIdOverride: cfg.hostedZoneIdOverride,
+  alarmEmail: cfg.alarmEmail,
 });
 
 // (Retired 2026-06-25) The old VegifySync stack — an S3 changeset-blob store for the desktop's former
@@ -62,6 +63,11 @@ const clientLogs = new ClientLogsStack(app, "VegifyClientLogs", {
   env,
   originSecretRotationNonce: cfg.originSecretRotationNonce,
 });
+// The alarm topic lives in VegifyServer and is discovered by ARN via SSM (a deploy-time value lookup,
+// not a CDK export — so it never wedges a server redeploy). This dependency guarantees the topic +
+// its SSM param exist before ClientLogs reads them (WebStart already depends on the server via apiUrl;
+// the cascade deploys the server first regardless — this covers `cdk deploy --all` / fresh bootstraps).
+clientLogs.addDependency(server);
 
 // web-start: a stateless SSR shell — Lambda (Function URL) + CloudFront + S3 — that calls the Axum
 // backend over HTTP for all auth + content. No DB, no VPC, scale-to-zero (~$0/mo idle). Its backend

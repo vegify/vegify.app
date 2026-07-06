@@ -1,9 +1,11 @@
 import * as path from "node:path";
 import { CfnOutput, CustomResource, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type { Construct } from "constructs";
+import { importAlarmTopic, notify } from "./monitoring.js";
 
 const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");
 const secretLambdaDir = path.join(import.meta.dirname, "../lambda/origin-secret");
@@ -52,6 +54,12 @@ export class ClientLogsStack extends Stack {
       code: lambda.Code.fromAsset(secretLambdaDir),
       memorySize: 128,
       timeout: Duration.seconds(30),
+      // Explicit, short-retention log group — the implicit /aws/lambda/<name> never expires, and this
+      // custom-resource Lambda runs only on deploys.
+      logGroup: new logs.LogGroup(this, "OriginSecretFnLogs", {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
     });
     secretFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -85,6 +93,11 @@ export class ClientLogsStack extends Stack {
       memorySize: 128,
       timeout: Duration.seconds(10),
       environment: { LOG_GROUP_NAME: logGroup.logGroupName, ORIGIN_SECRET: this.originSecret },
+      // The function's OWN execution logs (distinct from the browser-log group it writes into).
+      logGroup: new logs.LogGroup(this, "IngestFnLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
     });
     logGroup.grantWrite(fn); // logs:CreateLogStream + logs:PutLogEvents, scoped to this group only
 
@@ -104,5 +117,20 @@ export class ClientLogsStack extends Stack {
       description: "Browser log ingestion endpoint — set as VITE_CLIENT_LOG_URL in the web build",
     });
     new CfnOutput(this, "LogGroupName", { value: logGroup.logGroupName });
+
+    // Alarm on ingest failures — a low-severity signal (dropped browser logs), but a spike usually
+    // means the origin-secret check is rejecting everything or the handler is misconfigured. The
+    // shared alarm topic is discovered by ARN from SSM (ServerStack owns it; bin/ orders us after it).
+    notify(
+      new cloudwatch.Alarm(this, "IngestErrorsAlarm", {
+        alarmDescription: "Client-log ingest Lambda erroring — browser logs are being dropped.",
+        metric: fn.metricErrors({ period: Duration.minutes(5) }),
+        threshold: 10,
+        evaluationPeriods: 3,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      importAlarmTopic(this, "AlarmTopic"),
+    );
   }
 }

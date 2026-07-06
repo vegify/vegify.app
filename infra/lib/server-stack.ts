@@ -1,9 +1,11 @@
 import * as path from "node:path";
-import { CfnOutput, Fn, RemovalPolicy, Size, Stack, Tags, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, Fn, RemovalPolicy, Size, Stack, Tags, type StackProps } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
@@ -11,7 +13,11 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { resolveZone } from "./zone.js";
+import { cloudFrontMetric, createAlarmTopic, notify, SERVER_METRIC_NS } from "./monitoring.js";
 import type { Construct } from "constructs";
+
+/** The CloudWatch log group the on-box agent ships the server's stdout/stderr to. */
+const SERVER_LOG_GROUP = "/vegify/server";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const assetsDir = path.join(repoRoot, "infra/assets");
@@ -47,6 +53,9 @@ interface ServerStackProps extends StackProps {
    *  *.cloudfront.net name and no cert/records are created — zero-env synth stays green. */
   domainsConfigured: boolean;
   hostedZoneIdOverride?: string;
+  /** Where CloudWatch alarms email (derived hello@<domain> unless overridden). This stack owns the
+   *  shared SNS alarm topic; the web/log stacks discover it by ARN via SSM. */
+  alarmEmail: string;
 }
 
 /**
@@ -76,7 +85,7 @@ export class ServerStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, adminEmails, domainNames, domainsConfigured } = props;
+    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, adminEmails, domainNames, domainsConfigured, alarmEmail } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     // Reference DATA (the USDA catalog artifact, future imports) — data lives in S3, not the repo.
@@ -113,10 +122,22 @@ export class ServerStack extends Stack {
     const serverBin = new Asset(this, "ServerBin", { path: path.join(assetsDir, "vegify-server") });
     const seedDb = new Asset(this, "SeedDb", { path: path.join(assetsDir, "seed.db") });
 
+    // The server's stdout/stderr ships here via the on-box CloudWatch agent. RETAIN so operational
+    // history survives a stack teardown; one month is plenty for a solo service's debugging window.
+    const serverLogGroup = new logs.LogGroup(this, "ServerLogGroup", {
+      logGroupName: SERVER_LOG_GROUP,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     const role = new iam.Role(this, "InstanceRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
-      // SSM session access for debugging — no SSH, no inbound 22.
-      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore")],
+      managedPolicies: [
+        // SSM session access for debugging — no SSH, no inbound 22.
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
+        // Lets the on-box agent create log streams + put events and publish the mem/disk metrics.
+        iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchAgentServerPolicy"),
+      ],
     });
     serverBin.grantRead(role);
     seedDb.grantRead(role);
@@ -205,6 +226,9 @@ export class ServerStack extends Stack {
       `    aws s3 cp s3://${seedDb.s3BucketName}/${seedDb.s3ObjectKey} /data/vegify.db`,
       "fi",
       // systemd: litestream supervises the server (-exec) so every write is captured to S3.
+      // The server's stdout/stderr go to a file (not journald) so the CloudWatch agent below can ship
+      // them; `journalctl -u vegify` still shows the unit's lifecycle, and SSM session is on for debug.
+      "mkdir -p /var/log/vegify",
       "cat >/etc/systemd/system/vegify.service <<EOF",
       "[Unit]",
       "Description=vegify-server (litestream-replicated)",
@@ -228,11 +252,49 @@ export class ServerStack extends Stack {
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
+      "StandardOutput=append:/var/log/vegify/server.log",
+      "StandardError=append:/var/log/vegify/server.log",
       "[Install]",
       "WantedBy=multi-user.target",
       "EOF",
       "systemctl daemon-reload",
       "systemctl enable --now vegify.service",
+      // Cap the log file so it can't fill the 8 GiB root: daily rotation, 7 days kept, copytruncate
+      // (the server holds the file open — copytruncate rotates without a restart or reopen).
+      "cat >/etc/logrotate.d/vegify <<EOF",
+      "/var/log/vegify/server.log {",
+      "  daily",
+      "  rotate 7",
+      "  compress",
+      "  missingok",
+      "  notifempty",
+      "  copytruncate",
+      "}",
+      "EOF",
+      // On-box CloudWatch agent: tail the server log → the /vegify/server group, and publish mem +
+      // disk (EC2 emits neither) tagged with THIS instance id so the dashboard + alarms find them.
+      // Tolerant (|| true): an agent/repo hiccup must never block the server or fail the deploy gate —
+      // missing telemetry is recoverable, a down backend is not.
+      "dnf install -y amazon-cloudwatch-agent || true",
+      "mkdir -p /opt/aws/amazon-cloudwatch-agent/etc",
+      "cat >/opt/aws/amazon-cloudwatch-agent/etc/vegify.json <<CWEOF",
+      "{",
+      '  "agent": { "metrics_collection_interval": 60, "run_as_user": "root" },',
+      '  "logs": { "logs_collected": { "files": { "collect_list": [',
+      `    { "file_path": "/var/log/vegify/server.log", "log_group_name": "${SERVER_LOG_GROUP}", "log_stream_name": "{instance_id}" }`,
+      "  ] } } },",
+      `  "metrics": { "namespace": "${SERVER_METRIC_NS}", "append_dimensions": { "InstanceId": "$IID" },`,
+      // Roll the disk metric up to {InstanceId, path} so the alarm can reference it WITHOUT guessing the
+      // per-boot device/fstype dimensions the agent otherwise tags (nvme names + xfs/ext4 vary). mem
+      // carries only InstanceId. Both aggregations are emitted alongside the base metrics.
+      '    "aggregation_dimensions": [["InstanceId"], ["InstanceId", "path"]],',
+      '    "metrics_collected": {',
+      '      "mem": { "measurement": ["mem_used_percent"] },',
+      '      "disk": { "measurement": ["used_percent"], "resources": ["/", "/data"] }',
+      "    } }",
+      "}",
+      "CWEOF",
+      "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/vegify.json || true",
     );
 
     // Dedicated gp3 EBS data volume for the SQLite DB — RETAIN so it (and the data) survives instance
@@ -341,5 +403,157 @@ export class ServerStack extends Stack {
     new CfnOutput(this, "EipAddress", { value: eip.attrPublicIp });
     new CfnOutput(this, "ReplicaBucket", { value: replica.bucketName });
     new CfnOutput(this, "InstanceId", { value: instance.instanceId });
+
+    // ── Observability ────────────────────────────────────────────────────────────────────────────
+    // This stack owns the shared alarm topic (created first in the cascade); the web + log stacks
+    // discover it by ARN via SSM. Every alarm + the dashboard here reference THIS stack's own
+    // constructs (instance, api distribution, server log group), so they refresh on each deploy and
+    // never point at a replaced instance. Budget: these six alarms sit within the always-free tier.
+    const alarmTopic = createAlarmTopic(this, alarmEmail);
+
+    const instanceDim = { InstanceId: instance.instanceId };
+    const ec2Metric = (metricName: string, extra?: Partial<cloudwatch.MetricProps>) =>
+      new cloudwatch.Metric({
+        namespace: "AWS/EC2",
+        metricName,
+        dimensionsMap: instanceDim,
+        period: Duration.minutes(5),
+        ...extra,
+      });
+    // mem/disk come from the on-box agent (its custom namespace), not AWS/EC2.
+    const agentMetric = (metricName: string, dims: Record<string, string>) =>
+      new cloudwatch.Metric({
+        namespace: SERVER_METRIC_NS,
+        metricName,
+        dimensionsMap: dims,
+        period: Duration.minutes(5),
+        statistic: "Average",
+      });
+    const memUsed = agentMetric("mem_used_percent", instanceDim);
+    // Reference the {InstanceId, path} aggregation the agent config emits (not the raw metric, whose
+    // device/fstype dimensions vary per boot). Root and the DB volume are watched separately — either
+    // filling is bad, for different reasons (system breakage vs. the DB going read-only).
+    const rootDisk = agentMetric("disk_used_percent", { ...instanceDim, path: "/" });
+    const dataDisk = agentMetric("disk_used_percent", { ...instanceDim, path: "/data" });
+
+    // A metric filter turns "ERROR" server log lines into a countable metric we can alarm on. The
+    // Rust logs are `LEVEL message…`; the pattern matches the ERROR level token.
+    const errorMetric = new cloudwatch.Metric({
+      namespace: SERVER_METRIC_NS,
+      metricName: "ServerErrorLogs",
+      statistic: "Sum",
+      period: Duration.minutes(5),
+    });
+    new logs.MetricFilter(this, "ServerErrorFilter", {
+      logGroup: serverLogGroup,
+      filterPattern: logs.FilterPattern.anyTerm("ERROR"),
+      metricNamespace: SERVER_METRIC_NS,
+      metricName: "ServerErrorLogs",
+      metricValue: "1",
+      defaultValue: 0,
+    });
+
+    const alarms: cloudwatch.Alarm[] = [
+      new cloudwatch.Alarm(this, "InstanceStatusAlarm", {
+        alarmDescription: "EC2 instance/system status check failing — the backend host is unhealthy.",
+        metric: ec2Metric("StatusCheckFailed", { statistic: "Maximum" }),
+        threshold: 1,
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "CpuCreditAlarm", {
+        alarmDescription: "t4g.nano CPU credit balance low — sustained load is about to be throttled.",
+        metric: ec2Metric("CPUCreditBalance", { statistic: "Minimum" }),
+        threshold: 20,
+        evaluationPeriods: 3,
+        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "MemoryAlarm", {
+        alarmDescription: "Server memory > 85% — the 512 MB nano is under pressure (OOM risk).",
+        metric: memUsed,
+        threshold: 85,
+        evaluationPeriods: 3,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "RootDiskAlarm", {
+        alarmDescription: "Root disk > 85% — logs/system filling the 8 GiB root volume.",
+        metric: rootDisk,
+        threshold: 85,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "DataDiskAlarm", {
+        alarmDescription: "DB volume (/data) > 85% — SQLite + litestream WAL are filling the EBS volume.",
+        metric: dataDisk,
+        threshold: 85,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "ApiCloudFront5xxAlarm", {
+        alarmDescription: "API CloudFront 5xx rate > 5% — the backend is erroring or unreachable.",
+        metric: cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+        threshold: 5,
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new cloudwatch.Alarm(this, "ServerErrorLogAlarm", {
+        alarmDescription: "Server logged ERROR lines — application-level failures (email, DB, panics).",
+        metric: errorMetric,
+        threshold: 5,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+    ];
+    for (const a of alarms) notify(a, alarmTopic);
+
+    new cloudwatch.Dashboard(this, "ServerDashboard", {
+      dashboardName: "Vegify-Server",
+      widgets: [
+        [
+          new cloudwatch.GraphWidget({
+            title: "CPU %",
+            left: [ec2Metric("CPUUtilization", { statistic: "Average" })],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "CPU credit balance",
+            left: [ec2Metric("CPUCreditBalance", { statistic: "Minimum" })],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "Memory % / Disk %",
+            left: [memUsed, rootDisk, dataDisk],
+            width: 8,
+          }),
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: "API requests",
+            left: [cloudFrontMetric(this, distribution.distributionId, "Requests", Duration.minutes(5))],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "API error rates %",
+            left: [
+              cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+              cloudFrontMetric(this, distribution.distributionId, "4xxErrorRate", Duration.minutes(5)),
+            ],
+            width: 8,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "Server ERROR log lines",
+            left: [errorMetric],
+            width: 8,
+          }),
+        ],
+      ],
+    });
   }
 }
