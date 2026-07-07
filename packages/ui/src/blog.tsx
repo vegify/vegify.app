@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
-import { marked } from "marked";
+import type { ReactNode } from "react"
+import { marked } from "marked"
 
-import { NutrientByGroupChart, NutrientRangeChart } from "./blog-charts";
-import type { NavLink } from "./screens";
-import { VegifyLogo } from "./vegify-logo";
+import { NutrientByGroupChart, NutrientRangeChart } from "./blog-charts"
+import type { NavLink } from "./screens"
+import { VegifyLogo } from "./vegify-logo"
 
 /**
  * BLOG — the public, unauthenticated writing surface (vegify.app/blog), the GEO/SEO layer's citable
@@ -19,49 +19,49 @@ import { VegifyLogo } from "./vegify-logo";
 export type BlogBlock =
   | { type: "prose"; md: string }
   | {
-      type: "figure";
-      variant: "range";
-      name: string;
-      target: number;
-      ceiling: number;
-      unit: string;
-      caption: string;
-      note: string;
+      type: "figure"
+      variant: "range"
+      name: string
+      target: number
+      ceiling: number
+      unit: string
+      caption: string
+      note: string
     }
   | {
-      type: "figure";
-      variant: "group";
-      unit: string;
-      ceiling?: number;
-      groups: { label: string; value: number }[];
-      caption: string;
-      note: string;
-    };
+      type: "figure"
+      variant: "group"
+      unit: string
+      ceiling?: number
+      groups: { label: string; value: number }[]
+      caption: string
+      note: string
+    }
 
 /** Index-card shape (no body). */
 export type BlogSummary = {
-  slug: string;
-  title: string;
-  description: string;
-  datePublished: string;
-  dateDisplay: string;
-};
+  slug: string
+  title: string
+  description: string
+  datePublished: string
+  dateDisplay: string
+}
 /** A full post: the summary plus its block body. */
-export type BlogPostData = BlogSummary & { body: BlogBlock[] };
+export type BlogPostData = BlogSummary & { body: BlogBlock[] }
 
 // Prose styling for a rendered-markdown block: space its paragraphs/lists and style links + strong + ul
 // (Tailwind preflight strips default <p>/<ul> margins, so spacing is explicit). `space-y-5` spaces the
 // <p>/<ul> that `marked` emits as direct children.
 const PROSE =
-  "space-y-5 [&_a]:font-medium [&_a]:text-primary-dark dark:[&_a]:text-primary-light [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-primary dark:hover:[&_a]:text-primary [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6";
+  "space-y-5 [&_a]:font-medium [&_a]:text-primary-dark dark:[&_a]:text-primary-light [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-primary dark:hover:[&_a]:text-primary [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6"
 const NOTE_LINKS =
-  "[&_a]:font-medium [&_a]:text-primary-dark dark:[&_a]:text-primary-light [&_a]:underline [&_a]:underline-offset-2";
+  "[&_a]:font-medium [&_a]:text-primary-dark dark:[&_a]:text-primary-light [&_a]:underline [&_a]:underline-offset-2"
 
 // Post content is trusted (our seed / the owner's authoring) — no untrusted UGC here, so rendering the
 // markdown → HTML directly is fine. Revisit sanitization if the blog ever takes third-party submissions.
-const mdBlock = (md: string) => marked.parse(md, { async: false }) as string;
+const mdBlock = (md: string) => marked.parse(md, { async: false }) as string
 const mdInline = (md: string) =>
-  marked.parseInline(md, { async: false }) as string;
+  marked.parseInline(md, { async: false }) as string
 
 function BlockView({ block }: { block: BlogBlock }) {
   if (block.type === "prose") {
@@ -71,7 +71,7 @@ function BlockView({ block }: { block: BlogBlock }) {
         // biome-ignore lint/security/noDangerouslySetInnerHtml: post markdown is repo-authored content rendered through marked; no user input reaches it
         dangerouslySetInnerHTML={{ __html: mdBlock(block.md) }}
       />
-    );
+    )
   }
   return (
     <figure className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
@@ -98,16 +98,16 @@ function BlockView({ block }: { block: BlogBlock }) {
         dangerouslySetInnerHTML={{ __html: mdInline(block.note) }}
       />
     </figure>
-  );
+  )
 }
 
 /** Slim bare-page chrome shared by the index and post pages (the blog renders without the AppShell). */
 function BlogChrome({
   LinkComponent,
-  children,
+  children
 }: {
-  LinkComponent: NavLink;
-  children: ReactNode;
+  LinkComponent: NavLink
+  children: ReactNode
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -148,15 +148,15 @@ function BlogChrome({
         micronutrition tracking for plant-based cooking.
       </footer>
     </div>
-  );
+  )
 }
 
 export function BlogIndexView({
   posts,
-  LinkComponent,
+  LinkComponent
 }: {
-  posts: BlogSummary[];
-  LinkComponent: NavLink;
+  posts: BlogSummary[]
+  LinkComponent: NavLink
 }) {
   return (
     <BlogChrome LinkComponent={LinkComponent}>
@@ -183,7 +183,7 @@ export function BlogIndexView({
         ))}
       </ul>
     </BlogChrome>
-  );
+  )
 }
 
 /** Article JSON-LD, mirroring the landing's inline-script pattern — the GEO-citable node. */
@@ -199,29 +199,29 @@ function BlogPostJsonLd({ post }: { post: BlogSummary }) {
     author: {
       "@type": "Person",
       name: "John M. Carmack",
-      url: "https://vegify.app",
+      url: "https://vegify.app"
     },
     publisher: {
       "@type": "Organization",
       name: "Vegify",
-      url: "https://vegify.app/",
-    },
-  };
+      url: "https://vegify.app/"
+    }
+  }
   return (
     <script
       type="application/ld+json"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD of locally built post metadata; the standard way to emit structured data
       dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
     />
-  );
+  )
 }
 
 export function BlogPostView({
   post,
-  LinkComponent,
+  LinkComponent
 }: {
-  post: BlogPostData;
-  LinkComponent: NavLink;
+  post: BlogPostData
+  LinkComponent: NavLink
 }) {
   return (
     <BlogChrome LinkComponent={LinkComponent}>
@@ -252,5 +252,5 @@ export function BlogPostView({
         </LinkComponent>
       </p>
     </BlogChrome>
-  );
+  )
 }

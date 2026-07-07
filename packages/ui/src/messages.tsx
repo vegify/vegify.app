@@ -8,60 +8,60 @@
  * user ids. Threads are addressed by public handle — a profile's "Message" button links to
  * /messages/<username>, which renders an empty composer even before a conversation exists.
  */
-import { type ComponentType, useEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react"
 
-import type { AppShellLinkProps } from "./app-shell";
-import { buttonClasses } from "./button";
-import { cn } from "./cn";
+import type { AppShellLinkProps } from "./app-shell"
+import { buttonClasses } from "./button"
+import { cn } from "./cn"
 
-type NavLink = ComponentType<AppShellLinkProps>;
+type NavLink = ComponentType<AppShellLinkProps>
 
 export type MessageParty = {
-  id: string;
-  name: string;
-  username: string;
-};
+  id: string
+  name: string
+  username: string
+}
 
 export type ConversationSummary = {
-  id: string;
-  with: MessageParty;
-  lastBody: string;
-  lastAt: number;
-  lastIsMine: boolean;
-  unread: number;
-};
+  id: string
+  with: MessageParty
+  lastBody: string
+  lastAt: number
+  lastIsMine: boolean
+  unread: number
+}
 
 export type ThreadMessage = {
-  id: string;
-  body: string;
-  createdAt: number;
-  mine: boolean;
-};
+  id: string
+  body: string
+  createdAt: number
+  mine: boolean
+}
 
 export type ThreadVM = {
-  with: MessageParty;
-  messages: ThreadMessage[];
-};
+  with: MessageParty
+  messages: ThreadMessage[]
+}
 
 /** Short local timestamp: time for today, month+day otherwise (chat-list style). */
 function shortWhen(ms: number): string {
-  const d = new Date(ms);
-  const now = new Date();
+  const d = new Date(ms)
+  const now = new Date()
   const sameDay =
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
+    d.getDate() === now.getDate()
   return sameDay
     ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
 export function MessagesView({
   conversations,
-  LinkComponent,
+  LinkComponent
 }: {
-  conversations: ConversationSummary[];
-  LinkComponent: NavLink;
+  conversations: ConversationSummary[]
+  LinkComponent: NavLink
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -105,7 +105,7 @@ export function MessagesView({
                       "truncate text-sm",
                       c.unread > 0
                         ? "font-semibold text-foreground"
-                        : "text-muted-foreground",
+                        : "text-muted-foreground"
                     )}
                   >
                     {c.lastIsMine ? "You: " : ""}
@@ -123,36 +123,36 @@ export function MessagesView({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 export function ThreadView({
   thread,
   onSend,
   sending = false,
-  LinkComponent,
+  LinkComponent
 }: {
-  thread: ThreadVM;
+  thread: ThreadVM
   /** Send the composer's text. The shells own the mutation (and refetch on settle). */
-  onSend: (body: string) => void;
+  onSend: (body: string) => void
   /** True while a send is in flight — disables the composer so a message can't double-send. */
-  sending?: boolean;
-  LinkComponent: NavLink;
+  sending?: boolean
+  LinkComponent: NavLink
 }) {
-  const [draft, setDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState("")
+  const endRef = useRef<HTMLDivElement>(null)
 
   // Keep the newest message in view — on open and whenever one lands (ours or theirs via refetch).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [thread.messages.length]);
+    endRef.current?.scrollIntoView({ block: "end" })
+  }, [thread.messages.length])
 
   const submit = () => {
-    const body = draft.trim();
-    if (!body || sending) return;
-    onSend(body);
-    setDraft("");
-  };
+    const body = draft.trim()
+    if (!body || sending) return
+    onSend(body)
+    setDraft("")
+  }
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col p-8">
@@ -198,7 +198,7 @@ export function ThreadView({
                   "max-w-[75%] rounded-2xl px-4 py-2.5",
                   m.mine
                     ? "rounded-br-sm bg-primary text-primary-foreground"
-                    : "rounded-bl-sm bg-card ring-1 ring-foreground/10",
+                    : "rounded-bl-sm bg-card ring-1 ring-foreground/10"
                 )}
               >
                 <p className="whitespace-pre-wrap break-words text-sm">
@@ -209,7 +209,7 @@ export function ThreadView({
                     "mt-1 text-right text-[0.65rem]",
                     m.mine
                       ? "text-primary-foreground/70"
-                      : "text-muted-foreground",
+                      : "text-muted-foreground"
                   )}
                 >
                   {shortWhen(m.createdAt)}
@@ -224,8 +224,8 @@ export function ThreadView({
       <form
         className="mt-2 flex items-end gap-3"
         onSubmit={(e) => {
-          e.preventDefault();
-          submit();
+          e.preventDefault()
+          submit()
         }}
       >
         <textarea
@@ -233,8 +233,8 @@ export function ThreadView({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
+              e.preventDefault()
+              submit()
             }
           }}
           rows={2}
@@ -251,5 +251,5 @@ export function ThreadView({
         </button>
       </form>
     </div>
-  );
+  )
 }

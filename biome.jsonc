@@ -55,8 +55,8 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
-      "semicolons": "always",
-      "trailingCommas": "all"
+      "semicolons": "asNeeded",
+      "trailingCommas": "none"
     }
   },
   // Import order encodes shadcn's prettier importOrder taxonomy (react,

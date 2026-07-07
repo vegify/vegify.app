@@ -1,4 +1,4 @@
-import { client, db } from "./index";
+import { client, db } from "./index"
 
 // Aggregate a recipe's nutrition from its ingredients, recursively: a recipe IS an
 // ingredient (recipes.as_ingredient_id), so a recipe-ingredient's per-100g values are
@@ -15,9 +15,9 @@ import { client, db } from "./index";
 // former per-ingredient recursion was O(ingredients × depth) round-trips (N+1).
 
 export type AggregatedNutrition = {
-  caloriesPer100g: number | null;
-  readings: { name: string; amountPer100g: number; unit: string }[];
-};
+  caloriesPer100g: number | null
+  readings: { name: string; amountPer100g: number; unit: string }[]
+}
 
 const CTE = `
 WITH RECURSIVE
@@ -57,60 +57,60 @@ FROM expand e
 JOIN ingredient_nutrient inu ON inu.ingredient_id = e.ingredient_id
 JOIN nutrients n ON n.id = inu.nutrient_id
 GROUP BY n.id
-ORDER BY name`;
+ORDER BY name`
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe) — one recursive CTE. */
 async function per100gForIngredient(
-  ingredientId: string,
+  ingredientId: string
 ): Promise<AggregatedNutrition> {
-  const rs = await client.execute({ sql: CTE, args: { id: ingredientId } });
-  let caloriesPer100g: number | null = null;
-  const readings: AggregatedNutrition["readings"] = [];
+  const rs = await client.execute({ sql: CTE, args: { id: ingredientId } })
+  let caloriesPer100g: number | null = null
+  const readings: AggregatedNutrition["readings"] = []
   for (const row of rs.rows) {
-    const v = row.per100g == null ? null : Number(row.per100g);
+    const v = row.per100g == null ? null : Number(row.per100g)
     if (row.kind === "cal") {
-      caloriesPer100g = v;
+      caloriesPer100g = v
     } else if (v != null) {
       readings.push({
         name: String(row.name),
         amountPer100g: v,
-        unit: String(row.unit),
-      });
+        unit: String(row.unit)
+      })
     }
   }
-  return { caloriesPer100g, readings };
+  return { caloriesPer100g, readings }
 }
 
 export async function getRecipeNutrition(
-  recipeId: string,
+  recipeId: string
 ): Promise<AggregatedNutrition> {
   const recipe = await db.query.recipes.findFirst({
-    where: (r, { eq }) => eq(r.id, recipeId),
-  });
-  if (!recipe) return { caloriesPer100g: null, readings: [] };
-  return per100gForIngredient(recipe.asIngredientId);
+    where: (r, { eq }) => eq(r.id, recipeId)
+  })
+  if (!recipe) return { caloriesPer100g: null, readings: [] }
+  return per100gForIngredient(recipe.asIngredientId)
 }
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe). */
 export async function getIngredientNutrition(
-  ingredientId: string,
+  ingredientId: string
 ): Promise<AggregatedNutrition> {
-  return per100gForIngredient(ingredientId);
+  return per100gForIngredient(ingredientId)
 }
 
 export type IngredientSearchResult = AggregatedNutrition & {
-  id: string;
-  name: string;
-  servingGrams: number | null;
-};
+  id: string
+  name: string
+  servingGrams: number | null
+}
 
 /** Search ingredients by name, each with its effective per-100g nutrition (for live recipe aggregation). */
 export async function searchIngredients(
   query: string,
   userId?: string | null,
-  limit = 12,
+  limit = 12
 ): Promise<IngredientSearchResult[]> {
-  const q = query.trim();
+  const q = query.trim()
   const rows = await db.query.ingredients.findMany({
     // public catalog + your own (any visibility), name-filtered
     where: (i, { and, or, eq, like }) =>
@@ -118,22 +118,22 @@ export async function searchIngredients(
         q ? like(i.name, `%${q}%`) : undefined,
         or(
           eq(i.visibility, "public"),
-          userId ? eq(i.userId, userId) : undefined,
-        ),
+          userId ? eq(i.userId, userId) : undefined
+        )
       ),
     with: { servingSize: true },
     orderBy: (i, { asc }) => [asc(i.name)],
-    limit,
-  });
-  const out: IngredientSearchResult[] = [];
+    limit
+  })
+  const out: IngredientSearchResult[] = []
   for (const r of rows) {
-    const n = await getIngredientNutrition(r.id);
+    const n = await getIngredientNutrition(r.id)
     out.push({
       id: r.id,
       name: r.name,
       servingGrams: r.servingSize?.grams ?? null,
-      ...n,
-    });
+      ...n
+    })
   }
-  return out;
+  return out
 }

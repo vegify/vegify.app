@@ -5,13 +5,13 @@
  * never require a lockstep client release.
  */
 
-import type { ComponentType } from "react";
-import { Bell, Salad } from "lucide-react";
+import type { ComponentType } from "react"
+import { Bell, Salad } from "lucide-react"
 
-import type { AppShellLinkProps } from "./app-shell";
-import { cn } from "./cn";
+import type { AppShellLinkProps } from "./app-shell"
+import { cn } from "./cn"
 
-type NavLink = ComponentType<AppShellLinkProps>;
+type NavLink = ComponentType<AppShellLinkProps>
 
 /** JSON-safe value — concrete (no `unknown`) so the web's server-fn serializer accepts the VM. */
 export type JsonValue =
@@ -20,47 +20,47 @@ export type JsonValue =
   | boolean
   | null
   | JsonValue[]
-  | { [k: string]: JsonValue };
+  | { [k: string]: JsonValue }
 
 export type NotificationVM = {
-  id: string;
-  kind: string;
+  id: string
+  kind: string
   /** Per-kind payload (kind "message": `{from: {id,name,username}, preview}`). */
-  payload: { [k: string]: JsonValue } | null;
-  createdAt: number;
-  read: boolean;
-};
+  payload: { [k: string]: JsonValue } | null
+  createdAt: number
+  read: boolean
+}
 
 /** Short local timestamp: time for today, month+day otherwise. */
 function shortWhen(ms: number): string {
-  const d = new Date(ms);
-  const now = new Date();
+  const d = new Date(ms)
+  const now = new Date()
   const sameDay =
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
+    d.getDate() === now.getDate()
   return sameDay
     ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
 type IngredientUpdatedPayload = {
-  ingredient?: { id?: string; name?: string; slug?: string | null };
-  by?: { name?: string; username?: string };
-};
+  ingredient?: { id?: string; name?: string; slug?: string | null }
+  by?: { name?: string; username?: string }
+}
 
 /** The renderable essence of one notification — also used by the desktop's native toasts.
  *  The bell is reserved for personal-impact events (DMs ring the Mail badge instead): v1's kind is
  *  "ingredient-updated" — an ingredient your recipes use changed, so their nutrition did too. */
 export function describeNotification(n: NotificationVM): {
-  title: string;
-  detail?: string;
-  href?: string;
+  title: string
+  detail?: string
+  href?: string
 } {
   if (n.kind === "ingredient-updated") {
-    const p = (n.payload ?? {}) as IngredientUpdatedPayload;
-    const who = p.by?.name ?? "Someone";
-    const what = p.ingredient?.name ?? "an ingredient";
+    const p = (n.payload ?? {}) as IngredientUpdatedPayload
+    const who = p.by?.name ?? "Someone"
+    const what = p.ingredient?.name ?? "an ingredient"
     return {
       title: `${who} updated ${what}`,
       detail: "Your recipes that use it now reflect the change.",
@@ -68,18 +68,18 @@ export function describeNotification(n: NotificationVM): {
         ? `/ingredients/${p.ingredient.slug}`
         : p.ingredient?.id
           ? `/ingredients/${p.ingredient.id}`
-          : undefined,
-    };
+          : undefined
+    }
   }
-  return { title: "Something happened on Vegify" };
+  return { title: "Something happened on Vegify" }
 }
 
 export function NotificationsView({
   notifications,
-  LinkComponent,
+  LinkComponent
 }: {
-  notifications: NotificationVM[];
-  LinkComponent: NavLink;
+  notifications: NotificationVM[]
+  LinkComponent: NavLink
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -99,15 +99,15 @@ export function NotificationsView({
       ) : (
         <div className="flex flex-col gap-3">
           {notifications.map((n) => {
-            const d = describeNotification(n);
-            const Icon = n.kind === "ingredient-updated" ? Salad : Bell;
+            const d = describeNotification(n)
+            const Icon = n.kind === "ingredient-updated" ? Salad : Bell
             const row = (
               <div
                 key={n.id}
                 className={cn(
                   "flex items-center gap-4 rounded-xl bg-card p-4 ring-1 transition",
                   n.read ? "ring-foreground/10" : "ring-primary/40",
-                  d.href ? "hover:ring-primary/60" : "",
+                  d.href ? "hover:ring-primary/60" : ""
                 )}
               >
                 <span
@@ -115,7 +115,7 @@ export function NotificationsView({
                     "flex size-10 shrink-0 items-center justify-center rounded-full",
                     n.read
                       ? "bg-muted text-muted-foreground"
-                      : "bg-primary/10 text-primary-dark",
+                      : "bg-primary/10 text-primary-dark"
                   )}
                 >
                   <Icon className="size-5" />
@@ -127,7 +127,7 @@ export function NotificationsView({
                         "truncate",
                         n.read
                           ? "text-foreground"
-                          : "font-semibold text-foreground",
+                          : "font-semibold text-foreground"
                       )}
                     >
                       {d.title}
@@ -146,17 +146,17 @@ export function NotificationsView({
                   <span className="size-2 shrink-0 rounded-full bg-orange" />
                 ) : null}
               </div>
-            );
+            )
             return d.href ? (
               <LinkComponent key={n.id} href={d.href} className="block">
                 {row}
               </LinkComponent>
             ) : (
               <div key={n.id}>{row}</div>
-            );
+            )
           })}
         </div>
       )}
     </div>
-  );
+  )
 }

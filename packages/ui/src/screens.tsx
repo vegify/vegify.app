@@ -1,25 +1,19 @@
-import {
-  type ComponentType,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react"
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
-import type { AppShellLinkProps } from "./app-shell";
+import type { AppShellLinkProps } from "./app-shell"
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "./breadcrumb";
-import { buttonClasses } from "./button";
-import { SORT_OPTIONS, type Sort } from "./catalog";
-import { cn } from "./cn";
-import { DetailHero } from "./detail-hero";
+  BreadcrumbSeparator
+} from "./breadcrumb"
+import { buttonClasses } from "./button"
+import { SORT_OPTIONS, type Sort } from "./catalog"
+import { cn } from "./cn"
+import { DetailHero } from "./detail-hero"
 import {
   Dialog,
   DialogClose,
@@ -27,37 +21,37 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
-} from "./dialog";
+  DialogTitle
+} from "./dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./dropdown-menu";
+  DropdownMenuTrigger
+} from "./dropdown-menu"
 import {
   InlineNumber,
   InlinePillSelect,
   InlineText,
-  InlineTextarea,
-} from "./inline";
-import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
-import { NutritionFactsFab } from "./nutrition-facts-fab";
-import type { IngredientSearchItem } from "./recipe-form";
+  InlineTextarea
+} from "./inline"
+import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
+import { NutritionFactsFab } from "./nutrition-facts-fab"
+import type { IngredientSearchItem } from "./recipe-form"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-} from "./select";
-import { ThemeSetting } from "./theme-setting";
+  SelectValue
+} from "./select"
+import { ThemeSetting } from "./theme-setting"
 import {
   DETAIL_SHORTCUTS,
   INGREDIENT_SHORTCUTS,
-  useDetailShortcuts,
-} from "./use-detail-shortcuts";
+  useDetailShortcuts
+} from "./use-detail-shortcuts"
 
 /**
  * SHARED SCREENS — the actual pages (recipe list, detail, ingredient list/detail, search, home),
@@ -71,28 +65,28 @@ import {
  *     href to its in-process view state. Every navigable element here renders through it, so a new
  *     screen is written once and never drifts between the two apps.
  */
-export type NavLink = ComponentType<AppShellLinkProps>;
+export type NavLink = ComponentType<AppShellLinkProps>
 
 export type RecipeListItem = {
-  id: string;
-  name: string;
-  subtitle?: string | null;
+  id: string
+  name: string
+  subtitle?: string | null
   /** Owner handle + slug for the canonical `/<username>/<slug>` link; fall back to `/recipes/<id>`. */
-  username?: string | null;
-  slug?: string | null;
+  username?: string | null
+  slug?: string | null
   /** Absolute URL of the hero photo; absent = the placeholder tile. */
-  photoUrl?: string | null;
-};
+  photoUrl?: string | null
+}
 
 /** A card's photo tile: the hero when present, the muted placeholder when not. */
 function CardTile({
   photoUrl,
   name,
-  size,
+  size
 }: {
-  photoUrl?: string | null;
-  name: string;
-  size: string;
+  photoUrl?: string | null
+  name: string
+  size: string
 }) {
   return photoUrl ? (
     <img
@@ -103,70 +97,70 @@ function CardTile({
     />
   ) : (
     <div className={`${size} shrink-0 rounded-lg bg-muted`} />
-  );
+  )
 }
 
 /** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
  * (which 301s to canonical). One helper so every card + search result links the same way. */
 export function recipeHref(r: {
-  id: string;
-  username?: string | null;
-  slug?: string | null;
+  id: string
+  username?: string | null
+  slug?: string | null
 }): string {
-  return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`;
+  return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`
 }
 export type IngredientListItem = {
-  id: string;
-  name: string;
-  caloriesPer100g?: number | null;
+  id: string
+  name: string
+  caloriesPer100g?: number | null
   /** Slug for the canonical link; fall back to `/ingredients/<id>`. */
-  slug?: string | null;
+  slug?: string | null
   /** Owner handle: owned ingredients are canonical at `/<username>/ingredients/<slug>`; absent =
    * the communal catalog (`/ingredients/<slug>`). */
-  username?: string | null;
-};
+  username?: string | null
+}
 
 /** Canonical link for an ingredient: owned → `/<username>/ingredients/<slug>` (browsable under its
  * creator); catalog → `/ingredients/<slug>`; no slug yet → `/ingredients/<id>` (which 301s). */
 export function ingredientHref(i: {
-  id: string;
-  slug?: string | null;
-  username?: string | null;
+  id: string
+  slug?: string | null
+  username?: string | null
 }): string {
-  if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`;
-  return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
+  if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`
+  return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`
 }
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
 export type RecipeDetailItem = {
-  key: string;
-  label: string;
-  href: string;
+  key: string
+  label: string
+  href: string
   /** The ingredient id — the restore target when this row is a tombstone. */
-  ingredientId?: string;
+  ingredientId?: string
   /** Soft-deleted by its owner AND this is the owner's own recipe: grey the row and (when the
    *  viewer can edit) offer "restore?" on hover. Other users' recipes never set this. */
-  deleted?: boolean;
-};
+  deleted?: boolean
+}
 export type RecipeDetailVM = {
-  id: string;
-  name: string;
-  subtitle?: string | null;
-  creator?: string | null;
+  id: string
+  name: string
+  subtitle?: string | null
+  creator?: string | null
   /** Whether the viewer owns this recipe — shows the edit affordance. Omitted/false ⇒ read-only. */
-  canEdit?: boolean;
-  directions?: string | null;
-  items: RecipeDetailItem[];
-  nutrition: NutritionFactsData;
+  canEdit?: boolean
+  directions?: string | null
+  items: RecipeDetailItem[]
+  nutrition: NutritionFactsData
   /** Absolute URL of the hero photo; absent = placeholder. */
-  photoUrl?: string | null;
-};
+  photoUrl?: string | null
+}
 
-export type Visibility = "public" | "unlisted" | "private";
+export type Visibility = "public" | "unlisted" | "private"
 const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string }[] = [
   { value: "public", label: "Public" },
   { value: "unlisted", label: "Unlisted" },
-  { value: "private", label: "Private" },
-];
+  { value: "private", label: "Private" }
+]
 
 /**
  * One editable ingredient row. Amounts edit in GRAMS — the app's internal model and exactly what the
@@ -174,53 +168,53 @@ const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string }[] = [
  * top). So owner edit mode shows grams; a reader still sees the composed labels.
  */
 export type RecipeEditRow = {
-  ingredientId: string;
-  name: string;
-  href: string;
-  grams: number;
+  ingredientId: string
+  name: string
+  href: string
+  grams: number
   /** Per-100g readings of THIS item — the source for the LIVE nutrition recompute while an amount is
    *  scrubbed/typed (the aggregate is client-computable from these). Optional: absent ⇒ the panel
    *  updates on commit (the server recomputes), as before. */
-  caloriesPer100g?: number | null;
-  readings?: { name: string; amountPer100g: number; unit: string }[];
-};
+  caloriesPer100g?: number | null
+  readings?: { name: string; amountPer100g: number; unit: string }[]
+}
 
 /** Recompute a recipe's per-100g nutrition from its items (each item's per-100g × its grams, summed,
  *  ÷ total grams) — the same math the server's CTE does, run client-side so the nutrition panel
  *  tracks a scrub/type LIVE. Returns null if any item lacks readings (→ keep the committed panel). */
 function aggregateItems(
   rows: {
-    grams: number;
-    caloriesPer100g?: number | null;
-    readings?: { name: string; amountPer100g: number; unit: string }[];
-  }[],
+    grams: number
+    caloriesPer100g?: number | null
+    readings?: { name: string; amountPer100g: number; unit: string }[]
+  }[]
 ): {
-  caloriesPer100g: number;
-  readings: { name: string; amountPer100g: number; unit: string }[];
+  caloriesPer100g: number
+  readings: { name: string; amountPer100g: number; unit: string }[]
 } | null {
-  if (rows.some((r) => r.readings == null)) return null;
-  const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0);
-  if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] };
-  let cal = 0;
-  const units = new Map<string, string>();
-  const totals = new Map<string, number>();
+  if (rows.some((r) => r.readings == null)) return null
+  const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0)
+  if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] }
+  let cal = 0
+  const units = new Map<string, string>()
+  const totals = new Map<string, number>()
   for (const r of rows) {
-    const f = (r.grams || 0) / 100;
-    cal += (r.caloriesPer100g ?? 0) * f;
+    const f = (r.grams || 0) / 100
+    cal += (r.caloriesPer100g ?? 0) * f
     for (const n of r.readings ?? []) {
-      totals.set(n.name, (totals.get(n.name) ?? 0) + n.amountPer100g * f);
-      units.set(n.name, n.unit);
+      totals.set(n.name, (totals.get(n.name) ?? 0) + n.amountPer100g * f)
+      units.set(n.name, n.unit)
     }
   }
-  const per100 = 100 / totalGrams;
+  const per100 = 100 / totalGrams
   return {
     caloriesPer100g: cal * per100,
     readings: [...totals].map(([name, abs]) => {
-      const unit = units.get(name);
-      if (!unit) throw new Error(`unit missing for nutrient ${name}`);
-      return { name, amountPer100g: abs * per100, unit };
-    }),
-  };
+      const unit = units.get(name)
+      if (!unit) throw new Error(`unit missing for nutrient ${name}`)
+      return { name, amountPer100g: abs * per100, unit }
+    })
+  }
 }
 
 /**
@@ -230,40 +224,40 @@ function aggregateItems(
  * logged-out or non-owner view is byte-identical to before inline editing existed.
  */
 export type RecipeEditAdapter = {
-  visibility: Visibility;
+  visibility: Visibility
   /** Structured items, parallel to recipe.items — the source for the inline amount chips. */
-  items: RecipeEditRow[];
-  rename: (next: string) => Promise<void>;
-  setSubtitle: (next: string) => Promise<void>;
-  setDirections: (next: string) => Promise<void>;
-  setVisibility: (next: Visibility) => Promise<void>;
-  setItemAmount: (ingredientId: string, amount: number) => Promise<void>;
-  addItem: (ingredient: IngredientSearchItem) => Promise<void>;
-  removeItem: (ingredientId: string) => Promise<void>;
-  remove: () => Promise<void>;
-  search: (q: string) => Promise<IngredientSearchItem[]>;
+  items: RecipeEditRow[]
+  rename: (next: string) => Promise<void>
+  setSubtitle: (next: string) => Promise<void>
+  setDirections: (next: string) => Promise<void>
+  setVisibility: (next: Visibility) => Promise<void>
+  setItemAmount: (ingredientId: string, amount: number) => Promise<void>
+  addItem: (ingredient: IngredientSearchItem) => Promise<void>
+  removeItem: (ingredientId: string) => Promise<void>
+  remove: () => Promise<void>
+  search: (q: string) => Promise<IngredientSearchItem[]>
   /** Create-blank draft: the name auto-opens and, while still untitled + empty, a Discard is offered. */
-  isDraft?: boolean;
-  discard?: () => Promise<void>;
+  isDraft?: boolean
+  discard?: () => Promise<void>
   /** Per-page undo/redo of committed edits (useEditHistory). Optional — absent ⇒ no undo UI. */
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-};
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+}
 export type IngredientDetailVM = {
-  id: string;
-  name: string;
-  description?: string | null;
+  id: string
+  name: string
+  description?: string | null
   /** Whether the viewer owns this ingredient — shows the edit affordance. Omitted/false ⇒ read-only. */
-  canEdit?: boolean;
+  canEdit?: boolean
   /** Soft-deleted by its owner: delisted from browse/search, preserved for the recipes that use it.
    *  Renders a "Deleted" badge so a direct link tells the truth. */
-  deleted?: boolean;
+  deleted?: boolean
   /** Owner handle (absent = the communal catalog) — the breadcrumb links to the profile. */
-  creator?: string | null;
-  nutrition: NutritionFactsData;
-};
+  creator?: string | null
+  nutrition: NutritionFactsData
+}
 
 /**
  * Inline-edit adapter for the ingredient detail page (docs/design/inline-edit.md P2). Same shape/contract
@@ -274,29 +268,29 @@ export type IngredientDetailVM = {
  * so it must preserve the nutrient rows a name edit doesn't touch.
  */
 export type IngredientEditAdapter = {
-  visibility: Visibility;
-  rename: (next: string) => Promise<void>;
-  setDescription: (next: string) => Promise<void>;
-  setVisibility: (next: Visibility) => Promise<void>;
-  remove: () => Promise<void>;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-};
+  visibility: Visibility
+  rename: (next: string) => Promise<void>
+  setDescription: (next: string) => Promise<void>
+  setVisibility: (next: Visibility) => Promise<void>
+  remove: () => Promise<void>
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+}
 /** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
 export type ProfileVM = {
-  username: string;
-  name: string;
+  username: string
+  name: string
   /** Avatar photo URL; absent = the monogram tile. */
-  avatarUrl?: string | null;
-  recipes: RecipeListItem[];
+  avatarUrl?: string | null
+  recipes: RecipeListItem[]
   /** The user's leaf ingredients (created or imported by them) — browsable under their handle. */
-  ingredients: IngredientListItem[];
-};
+  ingredients: IngredientListItem[]
+}
 
 const cardClass =
-  "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70";
+  "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70"
 
 /** Site footer for the detail right-rail — secondary links + copyright, sitting beneath the Nutrition
  * Facts panel (the right column is where these belong, not the nav sidebar). */
@@ -333,7 +327,7 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
       <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
-  );
+  )
 }
 
 export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
@@ -349,16 +343,16 @@ export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
         Browse recipes
       </LinkComponent>
     </div>
-  );
+  )
 }
 
 /** Sort dropdown for the catalog lists. The selected value is owned by the shell (URL-backed). */
 function SortControl({
   value,
-  onChange,
+  onChange
 }: {
-  value: Sort;
-  onChange: (s: Sort) => void;
+  value: Sort
+  onChange: (s: Sort) => void
 }) {
   return (
     <Select
@@ -377,7 +371,7 @@ function SortControl({
         ))}
       </SelectContent>
     </Select>
-  );
+  )
 }
 
 /**
@@ -389,29 +383,29 @@ function SortControl({
 function InfiniteSentinel({
   hasMore,
   isLoading,
-  onLoadMore,
+  onLoadMore
 }: {
-  hasMore?: boolean;
-  isLoading?: boolean;
-  onLoadMore: () => void;
+  hasMore?: boolean
+  isLoading?: boolean
+  onLoadMore: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [intersecting, setIntersecting] = useState(false);
+  const ref = useRef<HTMLDivElement>(null)
+  const [intersecting, setIntersecting] = useState(false)
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const el = ref.current
+    if (!el) return
     const obs = new IntersectionObserver(
       (entries) => setIntersecting(entries[0]?.isIntersecting ?? false),
       {
-        rootMargin: "400px",
-      },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+        rootMargin: "400px"
+      }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
   useEffect(() => {
-    if (intersecting && hasMore && !isLoading) onLoadMore();
-  }, [intersecting, hasMore, isLoading, onLoadMore]);
+    if (intersecting && hasMore && !isLoading) onLoadMore()
+  }, [intersecting, hasMore, isLoading, onLoadMore])
   return (
     <div
       ref={ref}
@@ -419,7 +413,7 @@ function InfiniteSentinel({
     >
       {isLoading ? "Loading…" : null}
     </div>
-  );
+  )
 }
 
 export function RecipeListView({
@@ -430,19 +424,19 @@ export function RecipeListView({
   onSortChange,
   onLoadMore,
   hasMore,
-  isLoadingMore,
+  isLoadingMore
 }: {
-  recipes: RecipeListItem[];
+  recipes: RecipeListItem[]
   /** Whether the viewer can add recipes (signed in). Omitted/false hides the "New recipe" action. */
-  canCreate?: boolean;
-  LinkComponent: NavLink;
+  canCreate?: boolean
+  LinkComponent: NavLink
   /** Current sort + change handler. Omitted (e.g. a profile's recipe list) hides the sort control. */
-  sort?: Sort;
-  onSortChange?: (s: Sort) => void;
+  sort?: Sort
+  onSortChange?: (s: Sort) => void
   /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
-  onLoadMore?: () => void;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -496,18 +490,18 @@ export function RecipeListView({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** The report reasons the server accepts (safety.rs REASONS). */
-export type ReportReason = "spam" | "abuse" | "sexual" | "violence" | "other";
+export type ReportReason = "spam" | "abuse" | "sexual" | "violence" | "other"
 const REPORT_REASONS: readonly { value: ReportReason; label: string }[] = [
   { value: "spam", label: "Spam" },
   { value: "abuse", label: "Harassment or abuse" },
   { value: "sexual", label: "Sexual content" },
   { value: "violence", label: "Violence or threats" },
-  { value: "other", label: "Something else" },
-];
+  { value: "other", label: "Something else" }
+]
 
 /** Shared report dialog (App Review 1.2): pick a reason, add an optional note, submit. Used for a
  * user, a recipe, an ingredient, or a message. */
@@ -515,18 +509,18 @@ export function ReportDialog({
   open,
   onOpenChange,
   subject,
-  onSubmit,
+  onSubmit
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  open: boolean
+  onOpenChange: (v: boolean) => void
   /** What's being reported, for the title (e.g. "@bob", "this recipe"). */
-  subject: string;
-  onSubmit: (reason: ReportReason, note: string) => Promise<void>;
+  subject: string
+  onSubmit: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [reason, setReason] = useState<ReportReason>("spam");
-  const [note, setNote] = useState("");
-  const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false);
+  const [reason, setReason] = useState<ReportReason>("spam")
+  const [note, setNote] = useState("")
+  const [sending, setSending] = useState(false)
+  const [done, setDone] = useState(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -585,12 +579,12 @@ export function ReportDialog({
                 disabled={sending}
                 className={buttonClasses({ size: "sm" })}
                 onClick={async () => {
-                  setSending(true);
+                  setSending(true)
                   try {
-                    await onSubmit(reason, note.trim());
-                    setDone(true);
+                    await onSubmit(reason, note.trim())
+                    setDone(true)
                   } finally {
-                    setSending(false);
+                    setSending(false)
                   }
                 }}
               >
@@ -601,7 +595,7 @@ export function ReportDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 export function ProfileView({
@@ -611,22 +605,22 @@ export function ProfileView({
   canMessage = false,
   isBlocked = false,
   onReport,
-  onToggleBlock,
+  onToggleBlock
 }: {
   /** The handle from the route — shown when no account claims it. */
-  username: string;
-  profile: ProfileVM | null;
-  LinkComponent: NavLink;
+  username: string
+  profile: ProfileVM | null
+  LinkComponent: NavLink
   /** Whether the viewer can DM this profile (signed in, and not looking at themselves). */
-  canMessage?: boolean;
+  canMessage?: boolean
   /** Whether the viewer has blocked this profile (drives the Block/Unblock label). */
-  isBlocked?: boolean;
+  isBlocked?: boolean
   /** Present ⇒ the viewer can report this user (signed in, not themselves). */
-  onReport?: (reason: ReportReason, note: string) => Promise<void>;
+  onReport?: (reason: ReportReason, note: string) => Promise<void>
   /** Present ⇒ the viewer can block/unblock this user. */
-  onToggleBlock?: () => Promise<void>;
+  onToggleBlock?: () => Promise<void>
 }) {
-  const [reportOpen, setReportOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false)
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center">
@@ -635,7 +629,7 @@ export function ProfileView({
         </h1>
         <p className="text-muted-foreground">No one goes by that handle.</p>
       </div>
-    );
+    )
   }
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -786,7 +780,7 @@ export function ProfileView({
         )}
       </section>
     </div>
-  );
+  )
 }
 
 export function IngredientListView({
@@ -797,19 +791,19 @@ export function IngredientListView({
   onSortChange,
   onLoadMore,
   hasMore,
-  isLoadingMore,
+  isLoadingMore
 }: {
-  ingredients: IngredientListItem[];
+  ingredients: IngredientListItem[]
   /** Whether the viewer can add ingredients (signed in). Omitted/false hides the "New ingredient" action. */
-  canCreate?: boolean;
-  LinkComponent: NavLink;
+  canCreate?: boolean
+  LinkComponent: NavLink
   /** Current sort + change handler. Omitted hides the sort control. */
-  sort?: Sort;
-  onSortChange?: (s: Sort) => void;
+  sort?: Sort
+  onSortChange?: (s: Sort) => void
   /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
-  onLoadMore?: () => void;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -869,16 +863,16 @@ export function IngredientListView({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** A discreet "Report" text button for a non-owner on a detail page. */
 function ReportControl({
   subject,
-  onOpen,
+  onOpen
 }: {
-  subject: string;
-  onOpen: () => void;
+  subject: string
+  onOpen: () => void
 }) {
   return (
     <button
@@ -889,7 +883,7 @@ function ReportControl({
     >
       Report
     </button>
-  );
+  )
 }
 
 export function RecipeDetailView({
@@ -898,53 +892,53 @@ export function RecipeDetailView({
   edit,
   onRestoreIngredient,
   onUploadPhoto,
-  onReportContent,
+  onReportContent
 }: {
-  recipe: RecipeDetailVM;
-  LinkComponent: NavLink;
+  recipe: RecipeDetailVM
+  LinkComponent: NavLink
   /** Present ⇒ the page edits in place (owner). Absent ⇒ read-only, unchanged from before. */
-  edit?: RecipeEditAdapter;
+  edit?: RecipeEditAdapter
   /** Un-deletes a tombstoned ingredient (the greyed row's hover affordance). Only meaningful for
    *  the owner — shells pass it alongside `edit`. */
-  onRestoreIngredient?: (ingredientId: string) => void;
+  onRestoreIngredient?: (ingredientId: string) => void
   /** Owner affordance: upload + attach a hero photo (shells wire the media pipeline). */
-  onUploadPhoto?: (file: File) => void | Promise<void>;
+  onUploadPhoto?: (file: File) => void | Promise<void>
   /** Present ⇒ a signed-in non-owner can report this recipe (App Review 1.2). */
-  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   // LIVE nutrition: while an item's amount is scrubbed/typed, hold its in-flight grams here and
   // recompute the panel client-side (aggregateItems). Cleared on commit — the refetch brings truth.
   const [previewGrams, setPreviewGrams] = useState<{
-    id: string;
-    grams: number;
-  } | null>(null);
+    id: string
+    grams: number
+  } | null>(null)
 
   // The panel shown: the committed `recipe.nutrition`, OR — mid-scrub, when the item readings are
   // available — a live client-side aggregate with the previewed grams substituted in.
   const liveNutrition = useMemo(() => {
-    if (!previewGrams || !edit) return recipe.nutrition;
+    if (!previewGrams || !edit) return recipe.nutrition
     const rows = edit.items.map((r) =>
       r.ingredientId === previewGrams.id
         ? { ...r, grams: previewGrams.grams }
-        : r,
-    );
-    const agg = aggregateItems(rows);
-    if (!agg) return recipe.nutrition;
+        : r
+    )
+    const agg = aggregateItems(rows)
+    if (!agg) return recipe.nutrition
     // Keep the committed serving basis; only the per-100g readings + calories move live.
-    const serving = recipe.nutrition.serving;
+    const serving = recipe.nutrition.serving
     return {
       ...recipe.nutrition,
       caloriesPerServing:
         serving?.grams != null
           ? (agg.caloriesPer100g * serving.grams) / 100
           : agg.caloriesPer100g,
-      readings: agg.readings,
-    };
-  }, [previewGrams, edit, recipe.nutrition]);
+      readings: agg.readings
+    }
+  }, [previewGrams, edit, recipe.nutrition])
 
   // Page-level shortcuts (owner only). `e`/`v` drive the inline fields via their DOM markers so the
   // primitives stay the single source of their own edit state; `a`/`?`/⌘⌫ open local UI.
@@ -956,10 +950,10 @@ export function RecipeDetailView({
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
       onUndo: edit?.undo,
-      onRedo: edit?.redo,
+      onRedo: edit?.redo
     },
-    !!edit,
-  );
+    !!edit
+  )
 
   return (
     <div className="flex">
@@ -1085,14 +1079,14 @@ export function RecipeDetailView({
                         suffix="g"
                         group="recipe-items"
                         onCommit={(n) => {
-                          setPreviewGrams(null);
-                          return edit.setItemAmount(row.ingredientId, n);
+                          setPreviewGrams(null)
+                          return edit.setItemAmount(row.ingredientId, n)
                         }}
                         onPreview={(n) =>
                           setPreviewGrams(
                             n == null
                               ? null
-                              : { id: row.ingredientId, grams: n },
+                              : { id: row.ingredientId, grams: n }
                           )
                         }
                         ariaLabel={`grams for ${row.name}`}
@@ -1157,7 +1151,7 @@ export function RecipeDetailView({
                         {item.label}
                       </LinkComponent>
                     </li>
-                  ),
+                  )
                 )}
             {edit ? (
               <li className="col-span-full">
@@ -1204,56 +1198,56 @@ export function RecipeDetailView({
         </>
       ) : null}
     </div>
-  );
+  )
 }
 
 function queryClick(selector: string) {
-  document.querySelector<HTMLElement>(selector)?.click();
+  document.querySelector<HTMLElement>(selector)?.click()
 }
 function queryFocus(selector: string) {
-  document.querySelector<HTMLElement>(selector)?.focus();
+  document.querySelector<HTMLElement>(selector)?.focus()
 }
 
 /** The ghost "+ add ingredient" row → inline type-to-search → pick attaches with a default amount. */
 function AddIngredientRow({
   open,
   onOpenChange,
-  edit,
+  edit
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  edit: RecipeEditAdapter;
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  edit: RecipeEditAdapter
 }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<IngredientSearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<IngredientSearchItem[]>([])
+  const [searching, setSearching] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) inputRef.current?.focus()
     else {
-      setQuery("");
-      setResults([]);
+      setQuery("")
+      setResults([])
     }
-  }, [open]);
+  }, [open])
 
   useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    setSearching(true);
+    if (!open) return
+    let alive = true
+    setSearching(true)
     const t = setTimeout(async () => {
       try {
-        const r = await edit.search(query);
-        if (alive) setResults(r);
+        const r = await edit.search(query)
+        if (alive) setResults(r)
       } finally {
-        if (alive) setSearching(false);
+        if (alive) setSearching(false)
       }
-    }, 250);
+    }, 250)
     return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [query, open, edit]);
+      alive = false
+      clearTimeout(t)
+    }
+  }, [query, open, edit])
 
   if (!open) {
     return (
@@ -1265,7 +1259,7 @@ function AddIngredientRow({
         <Plus className="size-4" />
         Add ingredient
       </button>
-    );
+    )
   }
 
   return (
@@ -1278,7 +1272,7 @@ function AddIngredientRow({
         aria-label="Search ingredients to add"
         className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
         onKeyDown={(e) => {
-          if (e.key === "Escape") onOpenChange(false);
+          if (e.key === "Escape") onOpenChange(false)
         }}
       />
       {query ? (
@@ -1298,9 +1292,9 @@ function AddIngredientRow({
                   type="button"
                   className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
                   onClick={async () => {
-                    await edit.addItem(r);
-                    setQuery("");
-                    inputRef.current?.focus();
+                    await edit.addItem(r)
+                    setQuery("")
+                    inputRef.current?.focus()
                   }}
                 >
                   {r.name}
@@ -1311,7 +1305,7 @@ function AddIngredientRow({
         </ul>
       ) : null}
     </div>
-  );
+  )
 }
 
 /** Page ⋯ menu (owner): undo/redo, delete, discard (drafts only), shortcuts. */
@@ -1323,16 +1317,16 @@ function RecipeOverflowMenu({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  isDraft?: boolean;
-  onDelete: () => void;
-  onDiscard?: () => Promise<void>;
-  onHelp: () => void;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  isDraft?: boolean
+  onDelete: () => void
+  onDiscard?: () => Promise<void>
+  onHelp: () => void
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1363,7 +1357,7 @@ function RecipeOverflowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }
 
 /** Shared Undo/Redo menu rows (with their shortcut hints), disabled when nothing to undo/redo. */
@@ -1371,14 +1365,14 @@ function UndoRedoItems({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
-  if (!undo && !redo) return null;
+  if (!undo && !redo) return null
   return (
     <>
       <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
@@ -1395,21 +1389,21 @@ function UndoRedoItems({
       </DropdownMenuItem>
       <DropdownMenuSeparator />
     </>
-  );
+  )
 }
 
 function DeleteRecipeDialog({
   open,
   onOpenChange,
   name,
-  onConfirm,
+  onConfirm
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  name: string;
-  onConfirm: () => Promise<void>;
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  name: string
+  onConfirm: () => Promise<void>
 }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -1428,11 +1422,11 @@ function DeleteRecipeDialog({
             disabled={busy}
             className={buttonClasses({ variant: "destructive", size: "sm" })}
             onClick={async () => {
-              setBusy(true);
+              setBusy(true)
               try {
-                await onConfirm();
+                await onConfirm()
               } finally {
-                setBusy(false);
+                setBusy(false)
               }
             }}
           >
@@ -1441,17 +1435,17 @@ function DeleteRecipeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 function ShortcutSheet({
   open,
   onOpenChange,
-  shortcuts = DETAIL_SHORTCUTS,
+  shortcuts = DETAIL_SHORTCUTS
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  shortcuts?: readonly { keys: string; label: string }[];
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  shortcuts?: readonly { keys: string; label: string }[]
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1474,25 +1468,25 @@ function ShortcutSheet({
         </ul>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 export function IngredientDetailView({
   ingredient,
   LinkComponent,
   edit,
-  onReportContent,
+  onReportContent
 }: {
-  ingredient: IngredientDetailVM;
-  LinkComponent: NavLink;
+  ingredient: IngredientDetailVM
+  LinkComponent: NavLink
   /** Present ⇒ inline editor (owner). Absent ⇒ read-only, unchanged from before. */
-  edit?: IngredientEditAdapter;
+  edit?: IngredientEditAdapter
   /** Present ⇒ a signed-in non-owner can report this ingredient (App Review 1.2). */
-  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
 
   useDetailShortcuts(
     {
@@ -1501,10 +1495,10 @@ export function IngredientDetailView({
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
       onUndo: edit?.undo,
-      onRedo: edit?.redo,
+      onRedo: edit?.redo
     },
-    !!edit,
-  );
+    !!edit
+  )
 
   return (
     <div className="flex">
@@ -1635,7 +1629,7 @@ export function IngredientDetailView({
         </>
       ) : null}
     </div>
-  );
+  )
 }
 
 /** Page ⋯ menu for an ingredient (owner): undo/redo, shortcuts, delete. */
@@ -1645,14 +1639,14 @@ function IngredientOverflowMenu({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  onDelete: () => void;
-  onHelp: () => void;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  onDelete: () => void
+  onHelp: () => void
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1678,19 +1672,19 @@ function IngredientOverflowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }
 
 function ResultRow({
   name,
   sub,
   href,
-  LinkComponent,
+  LinkComponent
 }: {
-  name: string;
-  sub: string;
-  href: string;
-  LinkComponent: NavLink;
+  name: string
+  sub: string
+  href: string
+  LinkComponent: NavLink
 }) {
   return (
     <LinkComponent href={href} className="block">
@@ -1702,21 +1696,21 @@ function ResultRow({
         </div>
       </div>
     </LinkComponent>
-  );
+  )
 }
 
 export function SearchResultsView({
   query,
   recipes,
   ingredients,
-  LinkComponent,
+  LinkComponent
 }: {
-  query: string;
-  recipes: RecipeListItem[];
-  ingredients: IngredientListItem[];
-  LinkComponent: NavLink;
+  query: string
+  recipes: RecipeListItem[]
+  ingredients: IngredientListItem[]
+  LinkComponent: NavLink
 }) {
-  const total = recipes.length + ingredients.length;
+  const total = recipes.length + ingredients.length
   return (
     <div className="mx-auto max-w-3xl p-8">
       <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
@@ -1770,18 +1764,18 @@ export function SearchResultsView({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 export function SettingsView({
-  onDeleteAccount,
+  onDeleteAccount
 }: {
-  onDeleteAccount?: (password: string) => Promise<void>;
+  onDeleteAccount?: (password: string) => Promise<void>
 }) {
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [password, setPassword] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [password, setPassword] = useState("")
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   return (
     <div className="mx-auto max-w-3xl p-8">
       <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
@@ -1820,12 +1814,12 @@ export function SettingsView({
               type="button"
               className={cn(
                 buttonClasses({ variant: "ghost", size: "sm" }),
-                "shrink-0 text-destructive ring-1 ring-destructive/40",
+                "shrink-0 text-destructive ring-1 ring-destructive/40"
               )}
               onClick={() => {
-                setError(null);
-                setPassword("");
-                setDeleteOpen(true);
+                setError(null)
+                setPassword("")
+                setDeleteOpen(true)
               }}
             >
               Delete account
@@ -1862,17 +1856,17 @@ export function SettingsView({
                   disabled={deleting || !password}
                   className={cn(
                     buttonClasses({ size: "sm" }),
-                    "bg-destructive text-destructive-foreground",
+                    "bg-destructive text-destructive-foreground"
                   )}
                   onClick={async () => {
-                    setDeleting(true);
-                    setError(null);
+                    setDeleting(true)
+                    setError(null)
                     try {
-                      await onDeleteAccount(password);
+                      await onDeleteAccount(password)
                     } catch {
-                      setError("That password didn't match. Please try again.");
+                      setError("That password didn't match. Please try again.")
                     } finally {
-                      setDeleting(false);
+                      setDeleting(false)
                     }
                   }}
                 >
@@ -1884,5 +1878,5 @@ export function SettingsView({
         </section>
       ) : null}
     </div>
-  );
+  )
 }

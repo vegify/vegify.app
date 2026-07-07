@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react"
 import {
   Bar,
   BarChart,
@@ -6,8 +6,8 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   XAxis,
-  YAxis,
-} from "recharts";
+  YAxis
+} from "recharts"
 
 /**
  * Blog charts (Recharts). These illustrate the DRI explainer and are the first of the shadcn-style
@@ -21,29 +21,29 @@ import {
  */
 function ChartFrame({
   height,
-  children,
+  children
 }: {
-  height: number;
-  children: ReactNode;
+  height: number
+  children: ReactNode
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <div style={{ height }} aria-hidden />;
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return <div style={{ height }} aria-hidden />
   return (
     <ResponsiveContainer width="100%" height={height}>
       {children as React.ReactElement}
     </ResponsiveContainer>
-  );
+  )
 }
 
-const GREEN = "var(--color-green-dark, #2f5233)";
-const GREEN_SOFT = "var(--color-green, #4a7c3f)";
-const MUTED = "var(--color-muted-foreground, #6b7280)";
-const ORANGE = "var(--color-orange, #e07a3f)";
+const GREEN = "var(--color-green-dark, #2f5233)"
+const GREEN_SOFT = "var(--color-green, #4a7c3f)"
+const MUTED = "var(--color-muted-foreground, #6b7280)"
+const ORANGE = "var(--color-orange, #e07a3f)"
 const axisTick = {
   fontSize: 12,
-  fill: "var(--color-muted-foreground, #6b7280)",
-};
+  fill: "var(--color-muted-foreground, #6b7280)"
+}
 
 /**
  * The three-band model on one nutrient: a horizontal bar split into "up to the target" (muted) and
@@ -55,14 +55,14 @@ export function NutrientRangeChart({
   name,
   target,
   ceiling,
-  unit,
+  unit
 }: {
-  name: string;
-  target: number;
-  ceiling: number;
-  unit: string;
+  name: string
+  target: number
+  ceiling: number
+  unit: string
 }) {
-  const data = [{ name, target, headroom: Math.max(ceiling - target, 0) }];
+  const data = [{ name, target, headroom: Math.max(ceiling - target, 0) }]
   return (
     <ChartFrame height={92}>
       <BarChart
@@ -112,7 +112,7 @@ export function NutrientRangeChart({
         </Bar>
       </BarChart>
     </ChartFrame>
-  );
+  )
 }
 
 /** A bar per group for one nutrient. With `ceiling` set, the shared UL is drawn as a reference line
@@ -121,14 +121,14 @@ export function NutrientRangeChart({
 export function NutrientByGroupChart({
   unit,
   ceiling,
-  groups,
+  groups
 }: {
-  unit: string;
-  ceiling?: number;
-  groups: { label: string; value: number }[];
+  unit: string
+  ceiling?: number
+  groups: { label: string; value: number }[]
 }) {
-  const maxValue = Math.max(...groups.map((g) => g.value), ceiling ?? 0);
-  const domainMax = Math.ceil(ceiling ? maxValue * 1.05 : maxValue * 1.18);
+  const maxValue = Math.max(...groups.map((g) => g.value), ceiling ?? 0)
+  const domainMax = Math.ceil(ceiling ? maxValue * 1.05 : maxValue * 1.18)
   return (
     <ChartFrame height={groups.length * 44 + 40}>
       <BarChart
@@ -152,7 +152,7 @@ export function NutrientByGroupChart({
               value: `ceiling ${ceiling} ${unit}`,
               position: "top",
               fill: ORANGE,
-              fontSize: 11,
+              fontSize: 11
             }}
           />
         )}
@@ -172,5 +172,5 @@ export function NutrientByGroupChart({
         </Bar>
       </BarChart>
     </ChartFrame>
-  );
+  )
 }

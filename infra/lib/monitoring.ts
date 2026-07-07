@@ -6,19 +6,19 @@
 // dependency edge). WebStart already depends on ServerStack (apiUrl), and bin/ adds an explicit
 // ClientLogs→Server edge, so the topic + param always exist before a consumer reads them.
 
-import { CfnOutput, type Duration } from "aws-cdk-lib";
-import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
-import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
-import * as sns from "aws-cdk-lib/aws-sns";
-import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
-import * as ssm from "aws-cdk-lib/aws-ssm";
-import type { Construct } from "constructs";
+import { CfnOutput, type Duration } from "aws-cdk-lib"
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch"
+import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions"
+import * as sns from "aws-cdk-lib/aws-sns"
+import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions"
+import * as ssm from "aws-cdk-lib/aws-ssm"
+import type { Construct } from "constructs"
 
 /** The alarm topic's ARN as an account fact — written by ServerStack, read by every other stack. */
-export const ALARM_TOPIC_ARN_PARAM = "/vegify/monitor/alarm-topic-arn";
+export const ALARM_TOPIC_ARN_PARAM = "/vegify/monitor/alarm-topic-arn"
 
 /** Custom-metric namespace the on-box CloudWatch agent publishes mem/disk under (EC2 emits neither). */
-export const SERVER_METRIC_NS = "Vegify/Server";
+export const SERVER_METRIC_NS = "Vegify/Server"
 
 /**
  * Create the alarm topic + its email subscription (ServerStack only) and publish the ARN to SSM.
@@ -27,29 +27,29 @@ export const SERVER_METRIC_NS = "Vegify/Server";
  */
 export function createAlarmTopic(
   scope: Construct,
-  alarmEmail: string,
+  alarmEmail: string
 ): sns.Topic {
   const topic = new sns.Topic(scope, "AlarmTopic", {
-    displayName: "Vegify alarms",
-  });
-  topic.addSubscription(new subscriptions.EmailSubscription(alarmEmail));
+    displayName: "Vegify alarms"
+  })
+  topic.addSubscription(new subscriptions.EmailSubscription(alarmEmail))
   new ssm.StringParameter(scope, "AlarmTopicArnParam", {
     parameterName: ALARM_TOPIC_ARN_PARAM,
     stringValue: topic.topicArn,
     description:
-      "SNS topic CloudWatch alarms publish to (created by VegifyServer, read account-wide).",
-  });
-  new CfnOutput(scope, "AlarmTopicArn", { value: topic.topicArn });
-  return topic;
+      "SNS topic CloudWatch alarms publish to (created by VegifyServer, read account-wide)."
+  })
+  new CfnOutput(scope, "AlarmTopicArn", { value: topic.topicArn })
+  return topic
 }
 
 /** Discover the alarm topic by ARN (deploy-time SSM lookup — no CDK cross-stack dependency). */
 export function importAlarmTopic(scope: Construct, id: string): sns.ITopic {
   const arn = ssm.StringParameter.valueForStringParameter(
     scope,
-    ALARM_TOPIC_ARN_PARAM,
-  );
-  return sns.Topic.fromTopicArn(scope, id, arn);
+    ALARM_TOPIC_ARN_PARAM
+  )
+  return sns.Topic.fromTopicArn(scope, id, arn)
 }
 
 /**
@@ -64,15 +64,15 @@ export function cloudFrontMetric(
   _scope: Construct,
   distributionId: string,
   metricName: "Requests" | "4xxErrorRate" | "5xxErrorRate",
-  period: Duration,
+  period: Duration
 ): cloudwatch.Metric {
   return new cloudwatch.Metric({
     namespace: "AWS/CloudFront",
     metricName,
     dimensionsMap: { DistributionId: distributionId, Region: "Global" },
     statistic: metricName === "Requests" ? "Sum" : "Average",
-    period,
-  });
+    period
+  })
 }
 
 /**
@@ -83,8 +83,8 @@ export function cloudFrontMetric(
  */
 export function notify(
   alarm: cloudwatch.Alarm,
-  topic: sns.ITopic,
+  topic: sns.ITopic
 ): cloudwatch.Alarm {
-  alarm.addAlarmAction(new cwActions.SnsAction(topic));
-  return alarm;
+  alarm.addAlarmAction(new cwActions.SnsAction(topic))
+  return alarm
 }

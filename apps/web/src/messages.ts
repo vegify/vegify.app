@@ -6,33 +6,33 @@
 import type {
   ConversationSummary,
   ThreadMessage,
-  ThreadVM,
-} from "@vegify/ui/messages";
+  ThreadVM
+} from "@vegify/ui/messages"
 
-import { api } from "./api";
+import { api } from "./api"
 
 /** The viewer's conversations, most recently active first. */
 export function listConversations(): Promise<ConversationSummary[]> {
-  return api<ConversationSummary[]>("/api/messages/conversations");
+  return api<ConversationSummary[]>("/api/messages/conversations")
 }
 
 /** The thread with a user (by handle), oldest first. Opening it marks their messages read server-side. */
 export function getThread(withUsername: string): Promise<ThreadVM> {
   return api<ThreadVM>(
-    `/api/messages/thread?with=${encodeURIComponent(withUsername)}`,
-  );
+    `/api/messages/thread?with=${encodeURIComponent(withUsername)}`
+  )
 }
 
 /** Send a DM (creates the conversation on first contact). Returns the stored message. */
 export function sendMessage(to: string, body: string): Promise<ThreadMessage> {
   return api<ThreadMessage>("/api/messages/send", {
     method: "POST",
-    body: { to, body },
-  });
+    body: { to, body }
+  })
 }
 
 /** Total unread across conversations — the chrome badge number. */
 export async function unreadCount(): Promise<number> {
-  const { count } = await api<{ count: number }>("/api/messages/unread");
-  return count;
+  const { count } = await api<{ count: number }>("/api/messages/unread")
+  return count
 }

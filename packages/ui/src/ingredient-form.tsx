@@ -1,90 +1,90 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useState } from "react"
+import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react"
 
-import { Input } from "./input";
-import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
-import { type Visibility, VisibilityField } from "./visibility-field";
+import { Input } from "./input"
+import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
+import { type Visibility, VisibilityField } from "./visibility-field"
 
 /** What `onSave` receives — the storage shape (per-100g), already converted. */
 export type IngredientFormInput = {
-  id?: string;
-  visibility: Visibility;
-  name: string;
-  description: string | null;
-  price: number | null; // cents
-  caloriesPer100g: number | null;
-  servingGrams: number | null;
-  packageGrams: number | null;
-  nutrients: { name: string; amountPer100g: number; unit: string }[];
-};
+  id?: string
+  visibility: Visibility
+  name: string
+  description: string | null
+  price: number | null // cents
+  caloriesPer100g: number | null
+  servingGrams: number | null
+  packageGrams: number | null
+  nutrients: { name: string; amountPer100g: number; unit: string }[]
+}
 
 /** Initial values for edit mode (per-serving, as the user entered them). */
 export type IngredientFormDefaults = {
-  id?: string;
-  visibility?: Visibility;
-  name?: string;
-  description?: string | null;
-  priceCents?: number | null;
-  servingGrams?: number | null;
-  packageGrams?: number | null;
-  caloriesPerServing?: number | null;
-  nutrients?: { name: string; amountPerServing: number; unit: string }[];
-};
+  id?: string
+  visibility?: Visibility
+  name?: string
+  description?: string | null
+  priceCents?: number | null
+  servingGrams?: number | null
+  packageGrams?: number | null
+  caloriesPerServing?: number | null
+  nutrients?: { name: string; amountPerServing: number; unit: string }[]
+}
 
-type Row = { key: string; name: string; amount: string; unit: string };
+type Row = { key: string; name: string; amount: string; unit: string }
 // Stable per-row identity so removing a middle row cannot bleed input state
 // into its neighbour (index keys break exactly there).
-const rowKey = () => crypto.randomUUID();
-const emptyRow = (): Row => ({ key: rowKey(), name: "", amount: "", unit: "" });
-const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
+const rowKey = () => crypto.randomUUID()
+const emptyRow = (): Row => ({ key: rowKey(), name: "", amount: "", unit: "" })
+const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s))
 // kill float noise from per-100g <-> per-serving conversions before showing in inputs
-const clean = (n: number) => String(Math.round(n * 1e6) / 1e6);
+const clean = (n: number) => String(Math.round(n * 1e6) / 1e6)
 
 export function IngredientForm({
   defaults,
   onSave,
-  onDelete,
+  onDelete
 }: {
-  defaults?: IngredientFormDefaults;
-  onSave: (input: IngredientFormInput) => Promise<void>;
-  onDelete?: () => Promise<void>;
+  defaults?: IngredientFormDefaults
+  onSave: (input: IngredientFormInput) => Promise<void>
+  onDelete?: () => Promise<void>
 }) {
-  const [name, setName] = useState(defaults?.name ?? "");
-  const [description, setDescription] = useState(defaults?.description ?? "");
+  const [name, setName] = useState(defaults?.name ?? "")
+  const [description, setDescription] = useState(defaults?.description ?? "")
   const [visibility, setVisibility] = useState<Visibility>(
-    defaults?.visibility ?? "public",
-  );
+    defaults?.visibility ?? "public"
+  )
   const [price, setPrice] = useState(
-    defaults?.priceCents != null ? clean(defaults.priceCents / 100) : "",
-  );
+    defaults?.priceCents != null ? clean(defaults.priceCents / 100) : ""
+  )
   const [packageWeight, setPackageWeight] = useState(
-    defaults?.packageGrams != null ? String(defaults.packageGrams) : "",
-  );
+    defaults?.packageGrams != null ? String(defaults.packageGrams) : ""
+  )
   const [servingWeight, setServingWeight] = useState(
-    defaults?.servingGrams != null ? String(defaults.servingGrams) : "",
-  );
+    defaults?.servingGrams != null ? String(defaults.servingGrams) : ""
+  )
   const [calories, setCalories] = useState(
     defaults?.caloriesPerServing != null
       ? clean(defaults.caloriesPerServing)
-      : "",
-  );
+      : ""
+  )
   const [rows, setRows] = useState<Row[]>(
     defaults?.nutrients?.length
       ? defaults.nutrients.map((n) => ({
           key: rowKey(),
           name: n.name,
           amount: clean(n.amountPerServing),
-          unit: n.unit,
+          unit: n.unit
         }))
-      : [emptyRow()],
-  );
-  const [saving, setSaving] = useState(false);
+      : [emptyRow()]
+  )
+  const [saving, setSaving] = useState(false)
 
-  const servingGrams = numOrNull(servingWeight);
+  const servingGrams = numOrNull(servingWeight)
   const per100 = (perServing: number) =>
-    servingGrams ? (perServing * 100) / servingGrams : perServing;
+    servingGrams ? (perServing * 100) / servingGrams : perServing
 
   const nutrition: NutritionFactsData = {
     heading: "This Ingredient",
@@ -95,9 +95,9 @@ export function IngredientForm({
       .map((r) => ({
         name: r.name,
         amountPer100g: per100(Number(r.amount) || 0),
-        unit: r.unit || "g",
-      })),
-  };
+        unit: r.unit || "g"
+      }))
+  }
 
   function buildInput(): IngredientFormInput {
     return {
@@ -117,33 +117,33 @@ export function IngredientForm({
         .map((r) => ({
           name: r.name.trim(),
           amountPer100g: per100(Number(r.amount) || 0),
-          unit: r.unit.trim() || "g",
-        })),
-    };
+          unit: r.unit.trim() || "g"
+        }))
+    }
   }
 
   async function handleSave() {
-    if (!name.trim() || saving) return;
-    setSaving(true);
+    if (!name.trim() || saving) return
+    setSaving(true)
     try {
-      await onSave(buildInput());
+      await onSave(buildInput())
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   async function handleDelete() {
-    if (!onDelete || saving) return;
-    setSaving(true);
+    if (!onDelete || saving) return
+    setSaving(true)
     try {
-      await onDelete();
+      await onDelete()
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   const setRow = (i: number, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
 
   return (
     <div className="flex">
@@ -303,5 +303,5 @@ export function IngredientForm({
         <SaveIcon className="size-6" />
       </button>
     </div>
-  );
+  )
 }

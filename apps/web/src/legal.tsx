@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from "react"
 
 // Shared chrome for the standalone legal pages (Terms, Privacy) — bare (their own minimal header +
 // back link), public + crawlable, readable typography. Linked from the footer and the App Store
@@ -6,11 +6,11 @@ import type { ReactNode } from "react";
 export function LegalPage({
   title,
   updated,
-  children,
+  children
 }: {
-  title: string;
-  updated: string;
-  children: ReactNode;
+  title: string
+  updated: string
+  children: ReactNode
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -57,5 +57,5 @@ export function LegalPage({
         </footer>
       </main>
     </div>
-  );
+  )
 }

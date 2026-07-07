@@ -1,6 +1,6 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"
 
 /**
  * Chrome search state shared by BOTH app shells (web + desktop).
@@ -13,10 +13,10 @@ import { useEffect, useState } from "react";
  * behavior is shared, never the framework plumbing (the benchmark's variable).
  */
 export function useChromeSearch(pathname: string) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState("")
   // Clear on every route change so the overlay reveals the destination.
   useEffect(() => {
-    setSearch("");
-  }, [pathname]);
-  return { search, setSearch, query: search.trim() };
+    setSearch("")
+  }, [pathname])
+  return { search, setSearch, query: search.trim() }
 }

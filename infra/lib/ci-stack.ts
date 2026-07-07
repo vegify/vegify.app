@@ -1,12 +1,12 @@
-import { CfnOutput, Stack, type StackProps } from "aws-cdk-lib";
-import * as iam from "aws-cdk-lib/aws-iam";
-import type { Construct } from "constructs";
+import { CfnOutput, Stack, type StackProps } from "aws-cdk-lib"
+import * as iam from "aws-cdk-lib/aws-iam"
+import type { Construct } from "constructs"
 
 interface CiStackProps extends StackProps {
   /** "owner/repo" allowed to assume the deploy role via OIDC. */
-  githubRepo: string;
+  githubRepo: string
   /** Secrets Manager id of the shared Apple signing secret the release-signing role may read. */
-  appleSecretId: string;
+  appleSecretId: string
 }
 
 /**
@@ -21,13 +21,13 @@ interface CiStackProps extends StackProps {
  */
 export class CiStack extends Stack {
   constructor(scope: Construct, id: string, props: CiStackProps) {
-    super(scope, id, props);
+    super(scope, id, props)
 
     const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
       this,
       "GithubOidc",
-      `arn:aws:iam::${this.account}:oidc-provider/token.actions.githubusercontent.com`,
-    );
+      `arn:aws:iam::${this.account}:oidc-provider/token.actions.githubusercontent.com`
+    )
 
     const role = new iam.Role(this, "DeployRole", {
       roleName: "vegify-github-deploy",
@@ -39,26 +39,26 @@ export class CiStack extends Stack {
           StringEquals: {
             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
             // Only this repo's workflows on the main branch may assume the role.
-            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
-          },
-        },
-      ),
-    });
+            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`
+          }
+        }
+      )
+    })
 
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "AssumeCdkBootstrapRoles",
         actions: ["sts:AssumeRole"],
-        resources: [`arn:aws:iam::${this.account}:role/cdk-*`],
-      }),
-    );
+        resources: [`arn:aws:iam::${this.account}:role/cdk-*`]
+      })
+    )
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "ReadCdkBootstrapVersion",
         actions: ["ssm:GetParameter"],
-        resources: [`arn:aws:ssm:*:${this.account}:parameter/cdk-bootstrap/*`],
-      }),
-    );
+        resources: [`arn:aws:ssm:*:${this.account}:parameter/cdk-bootstrap/*`]
+      })
+    )
     // deployConfig() reads the /vegify/deploy/* decisions AT SYNTH under this role. Without this
     // grant the read fails and (in CI) the synth aborts — v0.18.0 proved the silent alternative:
     // an AccessDenied that degraded to placeholders deployed example.com email config to prod.
@@ -67,12 +67,12 @@ export class CiStack extends Stack {
         sid: "ReadDeployDecisions",
         actions: ["ssm:GetParameter", "ssm:GetParametersByPath"],
         resources: [
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/*`,
-        ],
-      }),
-    );
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/*`
+        ]
+      })
+    )
 
-    new CfnOutput(this, "DeployRoleArn", { value: role.roleArn });
+    new CfnOutput(this, "DeployRoleArn", { value: role.roleArn })
 
     // Release-signing role: assumed by release.yml's publish-desktop job (OIDC) to read the Apple
     // signing secret (Developer ID cert + App Store Connect API key). Least-privilege — it can ONLY
@@ -88,21 +88,21 @@ export class CiStack extends Stack {
           StringEquals: {
             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
             // Only this repo's workflows on the main branch may assume the role.
-            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
-          },
-        },
-      ),
-    });
+            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`
+          }
+        }
+      )
+    })
     releaseRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "ReadSharedAppleSigningSecret",
         actions: ["secretsmanager:GetSecretValue"],
         // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard.
         resources: [
-          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`,
-        ],
-      }),
-    );
+          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`
+        ]
+      })
+    )
     // publish-desktop resolves its two non-secret inputs from Parameter Store instead of repository
     // secrets: the backend origin the binary bakes in (written by VegifyServer) and the Apple signing
     // secret's id. Both live in the deploy region (us-east-1 for vegify).
@@ -112,12 +112,12 @@ export class CiStack extends Stack {
         actions: ["ssm:GetParameter"],
         resources: [
           `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/api-url`,
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/apple-secret-id`,
-        ],
-      }),
-    );
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/apple-secret-id`
+        ]
+      })
+    )
     new CfnOutput(this, "ReleaseSigningRoleArn", {
-      value: releaseRole.roleArn,
-    });
+      value: releaseRole.roleArn
+    })
   }
 }

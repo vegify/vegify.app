@@ -1,18 +1,18 @@
-import * as path from "node:path";
-import { CfnOutput, Size, Stack, type StackProps } from "aws-cdk-lib";
-import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as logs from "aws-cdk-lib/aws-logs";
-import type { Construct } from "constructs";
+import * as path from "node:path"
+import { CfnOutput, Size, Stack, type StackProps } from "aws-cdk-lib"
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront"
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins"
+import * as ec2 from "aws-cdk-lib/aws-ec2"
+import * as ecs from "aws-cdk-lib/aws-ecs"
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2"
+import * as logs from "aws-cdk-lib/aws-logs"
+import type { Construct } from "constructs"
 
-const repoRoot = path.resolve(import.meta.dirname, "../..");
-const webStart = path.join(repoRoot, "apps/web");
+const repoRoot = path.resolve(import.meta.dirname, "../..")
+const webStart = path.join(repoRoot, "apps/web")
 
 interface WebStartFargateStackProps extends StackProps {
-  vpc: ec2.Vpc;
+  vpc: ec2.Vpc
 }
 
 /**
@@ -36,14 +36,14 @@ interface WebStartFargateStackProps extends StackProps {
  */
 export class WebStartFargateStack extends Stack {
   constructor(scope: Construct, id: string, props: WebStartFargateStackProps) {
-    super(scope, id, props);
-    const { vpc } = props;
+    super(scope, id, props)
+    const { vpc } = props
 
-    const cluster = new ecs.Cluster(this, "Cluster", { vpc });
+    const cluster = new ecs.Cluster(this, "Cluster", { vpc })
     const taskDef = new ecs.FargateTaskDefinition(this, "Task", {
       cpu: 512,
-      memoryLimitMiB: 1024,
-    });
+      memoryLimitMiB: 1024
+    })
 
     // In-process libSQL on a persistent EBS volume (proper file locking; WAL works here).
     const volume = new ecs.ServiceManagedVolume(this, "Data", {
@@ -51,10 +51,10 @@ export class WebStartFargateStack extends Stack {
       managedEBSVolume: {
         size: Size.gibibytes(10),
         volumeType: ec2.EbsDeviceVolumeType.GP3,
-        fileSystemType: ecs.FileSystemType.EXT4,
-      },
-    });
-    taskDef.addVolume(volume);
+        fileSystemType: ecs.FileSystemType.EXT4
+      }
+    })
+    taskDef.addVolume(volume)
 
     const container = taskDef.addContainer("web", {
       image: ecs.ContainerImage.fromAsset(webStart, { file: "Dockerfile" }),
@@ -62,18 +62,18 @@ export class WebStartFargateStack extends Stack {
       environment: {
         DATABASE_URL: "file:/data/vegify.db",
         PORT: "3001",
-        NODE_ENV: "production",
+        NODE_ENV: "production"
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "web-start",
-        logRetention: logs.RetentionDays.ONE_MONTH,
-      }),
-    });
+        logRetention: logs.RetentionDays.ONE_MONTH
+      })
+    })
     container.addMountPoints({
       containerPath: "/data",
       sourceVolume: volume.name,
-      readOnly: false,
-    });
+      readOnly: false
+    })
 
     const service = new ecs.FargateService(this, "Service", {
       cluster,
@@ -83,35 +83,35 @@ export class WebStartFargateStack extends Stack {
       assignPublicIp: true,
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
-      circuitBreaker: { enable: true, rollback: true },
-    });
-    service.addVolume(volume);
+      circuitBreaker: { enable: true, rollback: true }
+    })
+    service.addVolume(volume)
 
     // ALB is the stable origin; CloudFront in front for HTTPS (its default cert) + asset caching.
     const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", {
       vpc,
-      internetFacing: true,
-    });
+      internetFacing: true
+    })
     alb.addListener("Http", { port: 80, open: true }).addTargets("Web", {
       port: 3001,
       targets: [service],
-      healthCheck: { path: "/", healthyHttpCodes: "200-399" },
-    });
+      healthCheck: { path: "/", healthyHttpCodes: "200-399" }
+    })
 
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       defaultBehavior: {
         origin: new origins.LoadBalancerV2Origin(alb, {
-          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY
         }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
-      },
-    });
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER
+      }
+    })
 
     new CfnOutput(this, "Url", {
-      value: `https://${distribution.distributionDomainName}`,
-    });
+      value: `https://${distribution.distributionDomainName}`
+    })
   }
 }

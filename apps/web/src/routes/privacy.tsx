@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router"
 
-import { LegalPage } from "../legal";
+import { LegalPage } from "../legal"
 
-export const Route = createFileRoute("/privacy")({ component: PrivacyPage });
+export const Route = createFileRoute("/privacy")({ component: PrivacyPage })
 
 function PrivacyPage() {
   return (
@@ -57,5 +57,5 @@ function PrivacyPage() {
         <a href="mailto:hello@vegify.app">hello@vegify.app</a>.
       </p>
     </LegalPage>
-  );
+  )
 }

@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import type { SVGProps } from "react"
 
 /**
  * The vegify wordmark — leaf forms the "v". Extracted verbatim from the brand
@@ -56,5 +56,5 @@ export function VegifyLogo(props: SVGProps<SVGSVGElement>) {
         d="M61.641 64.8708V92.5798C57.5187 92.5798 50.1932 75.339 43.7266 60.1218C36.3826 42.8294 31.2668 31.3492 27.126 28.4009C46.3685 29.4454 61.641 45.3734 61.641 64.8708Z"
       />
     </svg>
-  );
+  )
 }

@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react"
 import {
   Bell,
   Carrot,
@@ -8,37 +8,37 @@ import {
   Salad,
   Search,
   Settings,
-  User,
-} from "lucide-react";
+  User
+} from "lucide-react"
 
-import { cn } from "./cn";
-import { VegifyLogo } from "./vegify-logo";
+import { cn } from "./cn"
+import { VegifyLogo } from "./vegify-logo"
 
-type IconType = ComponentType<{ className?: string; strokeWidth?: number }>;
+type IconType = ComponentType<{ className?: string; strokeWidth?: number }>
 
 /**
  * Link primitive each app injects (next/link or @tanstack/react-router Link)
  * so the shell JSX stays shared and the framework is the only variable.
  */
 export type AppShellLinkProps = {
-  href: string;
-  className?: string;
-  "aria-current"?: "page";
-  "aria-label"?: string;
-  children: ReactNode;
-};
+  href: string
+  className?: string
+  "aria-current"?: "page"
+  "aria-label"?: string
+  children: ReactNode
+}
 
 export type AppShellNavItem = {
-  key: string;
-  label: string;
-  icon: IconType;
+  key: string
+  label: string
+  icon: IconType
   /** Live route. Absent => rendered as a disabled "soon" item. */
-  href?: string;
+  href?: string
   /** Appears in the mobile bottom tab bar (icon-only). */
-  inMobileBar?: boolean;
+  inMobileBar?: boolean
   /** Unread count — rendered as an orange pill in place of the "soon" badge slot. */
-  badge?: number;
-};
+  badge?: number
+}
 
 /**
  * Nav destinations, transcribed from the Sketch "Desktop HD" sidebar comp:
@@ -52,31 +52,31 @@ export const APP_NAV: AppShellNavItem[] = [
     label: "Explore",
     icon: Search,
     href: "/recipes",
-    inMobileBar: true,
+    inMobileBar: true
   },
   {
     key: "add",
     label: "Add Food",
     icon: Carrot,
     href: "/ingredients/new",
-    inMobileBar: true,
+    inMobileBar: true
   },
   {
     key: "notifications",
     label: "Notifications",
     icon: Bell,
     href: "/notifications",
-    inMobileBar: true,
+    inMobileBar: true
   },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
   { key: "inbox", label: "Inbox", icon: Mail, href: "/messages" },
-  { key: "settings", label: "Settings", icon: Settings, href: "/settings" },
-];
+  { key: "settings", label: "Settings", icon: Settings, href: "/settings" }
+]
 
 function pathIsActive(currentPath: string, href?: string) {
-  if (!href) return false;
-  if (href === "/") return currentPath === "/";
-  return currentPath === href || currentPath.startsWith(`${href}/`);
+  if (!href) return false
+  if (href === "/") return currentPath === "/"
+  return currentPath === href || currentPath.startsWith(`${href}/`)
 }
 
 export function AppShell({
@@ -89,37 +89,37 @@ export function AppShell({
   user,
   onSignOut,
   unreadMessages = 0,
-  unreadNotifications = 0,
+  unreadNotifications = 0
 }: {
-  currentPath: string;
-  LinkComponent: ComponentType<AppShellLinkProps>;
-  children: ReactNode;
+  currentPath: string
+  LinkComponent: ComponentType<AppShellLinkProps>
+  children: ReactNode
   /** Desktop-only: inject a first-class "Ingredients" destination into the nav (web shells reach ingredients via recipe links). */
-  ingredientsNav?: boolean;
+  ingredientsNav?: boolean
   /** When provided, the chrome search becomes a controlled input (e.g. the desktop filters the active list). */
-  searchValue?: string;
-  onSearchChange?: (value: string) => void;
+  searchValue?: string
+  onSearchChange?: (value: string) => void
   /** The signed-in user — renders an account block + sign-out in the sidebar and mobile bar. */
-  user?: { name: string; email: string; username?: string } | null;
-  onSignOut?: () => void;
+  user?: { name: string; email: string; username?: string } | null
+  onSignOut?: () => void
   /** Unread DM count — badges the Inbox nav item (sidebar) and the mobile header's Mail link. */
-  unreadMessages?: number;
+  unreadMessages?: number
   /** Unread notification count — badges the Bell (sidebar + mobile tab bar). */
-  unreadNotifications?: number;
+  unreadNotifications?: number
 }) {
   // The Profile destination is per-user (/<username>): filled in from the signed-in user. Logged
   // out it points at /login instead of sitting disabled — every tap on the person icon has a
   // destination, and both shells route /login as a plain screen ("a destination, not a gate").
   // Applied to the sidebar + the mobile bar.
-  const profileHref = user?.username ? `/${user.username}` : "/login";
+  const profileHref = user?.username ? `/${user.username}` : "/login"
   const withProfile = (items: AppShellNavItem[]) =>
     items.map((it) => {
-      if (it.key === "profile") return { ...it, href: profileHref };
-      if (it.key === "inbox") return { ...it, badge: unreadMessages };
+      if (it.key === "profile") return { ...it, href: profileHref }
+      if (it.key === "inbox") return { ...it, badge: unreadMessages }
       if (it.key === "notifications")
-        return { ...it, badge: unreadNotifications };
-      return it;
-    });
+        return { ...it, badge: unreadNotifications }
+      return it
+    })
   const navItems = withProfile(
     ingredientsNav
       ? [
@@ -128,13 +128,13 @@ export function AppShell({
             key: "ingredients",
             label: "Ingredients",
             icon: Salad,
-            href: "/ingredients",
+            href: "/ingredients"
           },
-          ...APP_NAV.slice(2),
+          ...APP_NAV.slice(2)
         ]
-      : APP_NAV,
-  );
-  const mobileItems = withProfile(APP_NAV).filter((item) => item.inMobileBar);
+      : APP_NAV
+  )
+  const mobileItems = withProfile(APP_NAV).filter((item) => item.inMobileBar)
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row">
       {/* ===== Desktop sidebar ===== */}
@@ -232,7 +232,7 @@ export function AppShell({
               {...(onSearchChange
                 ? {
                     value: searchValue ?? "",
-                    onChange: (e) => onSearchChange(e.target.value),
+                    onChange: (e) => onSearchChange(e.target.value)
                   }
                 : {})}
             />
@@ -258,21 +258,21 @@ export function AppShell({
         ))}
       </nav>
     </div>
-  );
+  )
 }
 
 function NavRow({
   item,
   active,
-  LinkComponent,
+  LinkComponent
 }: {
-  item: AppShellNavItem;
-  active: boolean;
-  LinkComponent: ComponentType<AppShellLinkProps>;
+  item: AppShellNavItem
+  active: boolean
+  LinkComponent: ComponentType<AppShellLinkProps>
 }) {
-  const Icon = item.icon;
+  const Icon = item.icon
   const base =
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-2xl font-semibold transition";
+    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-2xl font-semibold transition"
   const inner = (
     <>
       <Icon className="size-6 shrink-0" strokeWidth={2} />
@@ -287,7 +287,7 @@ function NavRow({
         </span>
       ) : null}
     </>
-  );
+  )
   if (!item.href) {
     return (
       <span
@@ -296,7 +296,7 @@ function NavRow({
       >
         {inner}
       </span>
-    );
+    )
   }
   return (
     <LinkComponent
@@ -306,29 +306,29 @@ function NavRow({
         base,
         active
           ? "bg-white/15 text-white"
-          : "text-white/85 hover:bg-white/10 hover:text-white",
+          : "text-white/85 hover:bg-white/10 hover:text-white"
       )}
     >
       {inner}
     </LinkComponent>
-  );
+  )
 }
 
 function TabItem({
   item,
   active,
-  LinkComponent,
+  LinkComponent
 }: {
-  item: AppShellNavItem;
-  active: boolean;
-  LinkComponent: ComponentType<AppShellLinkProps>;
+  item: AppShellNavItem
+  active: boolean
+  LinkComponent: ComponentType<AppShellLinkProps>
 }) {
-  const Icon = item.icon;
+  const Icon = item.icon
   const inner = (
     <span
       className={cn(
         "relative flex size-11 items-center justify-center rounded-2xl transition",
-        active ? "bg-orange text-white" : "text-white/85",
+        active ? "bg-orange text-white" : "text-white/85"
       )}
     >
       <Icon className="size-6" />
@@ -338,7 +338,7 @@ function TabItem({
         </span>
       ) : null}
     </span>
-  );
+  )
   if (!item.href) {
     return (
       <span
@@ -347,7 +347,7 @@ function TabItem({
       >
         {inner}
       </span>
-    );
+    )
   }
   return (
     <LinkComponent
@@ -357,5 +357,5 @@ function TabItem({
     >
       {inner}
     </LinkComponent>
-  );
+  )
 }

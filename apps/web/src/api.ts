@@ -7,56 +7,55 @@
 // Server-only: `getCookie` is server-only, so importing this module pins it to the server bundle —
 // never import a VALUE from here into a client component (types are fine; they erase).
 
-import { apiUrl } from "@vegify/config";
+import { apiUrl } from "@vegify/config"
 
-export const SESSION_COOKIE = "vegify_session";
+export const SESSION_COOKIE = "vegify_session"
 
 /** The standing backend's base URL (VEGIFY_API_URL; dev default = a local vegify-server). */
-export { apiUrl };
+export { apiUrl }
 
 /** The current request's opaque session token (from the httpOnly cookie), or null. Server-only — the
  *  dynamic import keeps @tanstack/react-start/server out of the client module graph (api.ts is reachable
  *  from the client via auth.ts), matching how the route handlers gate their server-only imports. */
 async function sessionToken(): Promise<string | null> {
-  const { getCookie } = await import("@tanstack/react-start/server");
-  return getCookie(SESSION_COOKIE) ?? null;
+  const { getCookie } = await import("@tanstack/react-start/server")
+  return getCookie(SESSION_COOKIE) ?? null
 }
 
 /** A backend error carrying the HTTP status, so callers can treat 401 (no/expired session) specially. */
 export class ApiError extends Error {
   constructor(
     public status: number,
-    message: string,
+    message: string
   ) {
-    super(message);
-    this.name = "ApiError";
+    super(message)
+    this.name = "ApiError"
   }
 }
 
-type ApiInit = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean };
+type ApiInit = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean }
 
 /** Call the Axum backend. Attaches the session Bearer (unless `auth: false`), JSON-encodes an object
  *  body, and on a non-2xx surfaces the server's `{error}` message as an ApiError(status). A 2xx with a
  *  JSON `null` body (a forbidden/missing detail row — Axum returns `Option`) resolves to null. */
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
+  const headers = new Headers(init.headers)
   if (init.auth !== false) {
-    const token = await sessionToken();
-    if (token) headers.set("authorization", `Bearer ${token}`);
+    const token = await sessionToken()
+    if (token) headers.set("authorization", `Bearer ${token}`)
   }
-  let body: BodyInit | undefined;
+  let body: BodyInit | undefined
   if (init.body !== undefined) {
-    body =
-      typeof init.body === "string" ? init.body : JSON.stringify(init.body);
+    body = typeof init.body === "string" ? init.body : JSON.stringify(init.body)
     if (!headers.has("content-type"))
-      headers.set("content-type", "application/json");
+      headers.set("content-type", "application/json")
   }
-  const res = await fetch(`${apiUrl()}${path}`, { ...init, headers, body });
+  const res = await fetch(`${apiUrl()}${path}`, { ...init, headers, body })
   if (!res.ok) {
-    let message = `Request failed (${res.status}).`;
+    let message = `Request failed (${res.status}).`
     try {
-      const j = (await res.json()) as { error?: string };
-      if (j?.error) message = j.error;
+      const j = (await res.json()) as { error?: string }
+      if (j?.error) message = j.error
     } catch {
       // non-JSON error body — keep the status message
     }
@@ -65,11 +64,11 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
     // keep the logs signal-rich. The browser's own errors ship separately (client-log.ts).
     if (res.status >= 500) {
       console.error(
-        `[api] ${init.method ?? "GET"} ${path} -> ${res.status}: ${message}`,
-      );
+        `[api] ${init.method ?? "GET"} ${path} -> ${res.status}: ${message}`
+      )
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message)
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
 }

@@ -12,29 +12,29 @@
 /** The standing Axum backend's base URL. Dev default: a local `cargo run -p vegify-server`.
  *  Deployed: set by the CDK on the Lambda env / by CI on client builds. */
 export function apiUrl(): string {
-  return process.env.VEGIFY_API_URL ?? "http://localhost:8787";
+  return process.env.VEGIFY_API_URL ?? "http://localhost:8787"
 }
 
 /** Canonical public site origin for generated absolute URLs (the sitemap). Unset → undefined, and
  *  callers fall back to the request origin (right for local serving; behind CloudFront the Lambda
  *  only ever sees its function-URL host, so deploys always set this). */
 export function publicUrl(): string | undefined {
-  return process.env.VEGIFY_PUBLIC_URL || undefined;
+  return process.env.VEGIFY_PUBLIC_URL || undefined
 }
 
 /** libSQL database URL. Dev default: the repo-root SQLite file (the ../../ works from both apps/*
  *  and packages/* cwds). Remote (Turso/sqld): set DATABASE_URL (+ DATABASE_AUTH_TOKEN). */
 export function databaseUrl(): string {
-  return process.env.DATABASE_URL ?? "file:../../.data/vegify.db";
+  return process.env.DATABASE_URL ?? "file:../../.data/vegify.db"
 }
 
 /** Auth token for a remote DATABASE_URL; undefined for local files. */
 export function databaseAuthToken(): string | undefined {
-  return process.env.DATABASE_AUTH_TOKEN || undefined;
+  return process.env.DATABASE_AUTH_TOKEN || undefined
 }
 
 /** Listen port for a local server process (PORT), with the caller's fallback. */
 export function listenPort(fallback: number): number {
-  const p = Number(process.env.PORT);
-  return Number.isInteger(p) && p > 0 ? p : fallback;
+  const p = Number(process.env.PORT)
+  return Number.isInteger(p) && p > 0 ? p : fallback
 }

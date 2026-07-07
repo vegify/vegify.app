@@ -1,6 +1,6 @@
-import { FileTextIcon } from "lucide-react";
+import { FileTextIcon } from "lucide-react"
 
-import { cn } from "./cn";
+import { cn } from "./cn"
 
 /**
  * The FDA-style Nutrition Facts panel — the micronutrition core, transcribed from the
@@ -9,27 +9,27 @@ import { cn } from "./cn";
  */
 
 export type NutritionReading = {
-  name: string;
-  amountPer100g: number;
-  unit: string;
-};
+  name: string
+  amountPer100g: number
+  unit: string
+}
 
 export type NutritionFactsData = {
-  heading?: string; // "This Ingredient" | "This Recipe"
-  servingsPerBatch?: number | null;
+  heading?: string // "This Ingredient" | "This Recipe"
+  servingsPerBatch?: number | null
   serving?: {
-    amount?: number | null;
-    unit?: string | null;
-    grams: number;
-  } | null;
-  caloriesPerServing?: number | null;
-  readings: NutritionReading[];
-};
+    amount?: number | null
+    unit?: string | null
+    grams: number
+  } | null
+  caloriesPerServing?: number | null
+  readings: NutritionReading[]
+}
 
 // --- units → micrograms (common base for %DV ratios) ---
-const TO_UG: Record<string, number> = { g: 1e6, mg: 1e3, µg: 1, mcg: 1, ug: 1 };
+const TO_UG: Record<string, number> = { g: 1e6, mg: 1e3, µg: 1, mcg: 1, ug: 1 }
 const toUg = (amt: number, unit: string) =>
-  amt * (TO_UG[unit.toLowerCase()] ?? NaN);
+  amt * (TO_UG[unit.toLowerCase()] ?? NaN)
 
 // FDA Daily Values (adults / children ≥4y). null = no established DV.
 const DV: Record<string, { dv: number; unit: string } | null> = {
@@ -67,8 +67,8 @@ const DV: Record<string, { dv: number; unit: string } | null> = {
   folate: { dv: 400, unit: "µg" },
   "pantothenic acid": { dv: 5, unit: "mg" },
   biotin: { dv: 30, unit: "µg" },
-  choline: { dv: 550, unit: "mg" },
-};
+  choline: { dv: 550, unit: "mg" }
+}
 
 // label name -> reading names that map to it
 const ALIASES: Record<string, string[]> = {
@@ -83,19 +83,19 @@ const ALIASES: Record<string, string[]> = {
     "carbohydrates",
     "carbs",
     "carb",
-    "total carbohydrate",
+    "total carbohydrate"
   ],
   "total protein": ["protein"],
   thiamin: ["thiamine", "vitamin b1"],
   riboflavin: ["vitamin b2"],
   niacin: ["vitamin b3"],
   "pantothenic acid": ["vitamin b5", "pantotheniacid"],
-  folate: ["folic acid", "vitamin b9"],
-};
+  folate: ["folic acid", "vitamin b9"]
+}
 
-const norm = (s: string) => s.trim().toLowerCase();
+const norm = (s: string) => s.trim().toLowerCase()
 
-type Macro = { key: string; label: string; indent: 0 | 1 | 2 };
+type Macro = { key: string; label: string; indent: 0 | 1 | 2 }
 const MACROS: Macro[] = [
   { key: "total fat", label: "Total Fat", indent: 0 },
   { key: "saturated", label: "Saturated", indent: 1 },
@@ -104,8 +104,8 @@ const MACROS: Macro[] = [
   { key: "omega-3s", label: "Omega-3s", indent: 2 },
   { key: "omega-6s", label: "Omega-6s", indent: 2 },
   { key: "total carbohydrates", label: "Total Carbohydrates", indent: 0 },
-  { key: "total protein", label: "Total Protein", indent: 0 },
-];
+  { key: "total protein", label: "Total Protein", indent: 0 }
+]
 const MICRO_LEFT = [
   "calcium",
   "chloride",
@@ -119,8 +119,8 @@ const MICRO_LEFT = [
   "potassium",
   "selenium",
   "sodium",
-  "sulfur",
-];
+  "sulfur"
+]
 const MICRO_RIGHT = [
   "vitamin a",
   "vitamin b6",
@@ -135,8 +135,8 @@ const MICRO_RIGHT = [
   "folate",
   "pantothenic acid",
   "biotin",
-  "choline",
-];
+  "choline"
+]
 const MICRO_LABEL: Record<string, string> = {
   "vitamin a": "Vitamin A",
   "vitamin b6": "Vitamin B6",
@@ -145,55 +145,52 @@ const MICRO_LABEL: Record<string, string> = {
   "vitamin d": "Vitamin D",
   "vitamin e": "Vitamin E",
   "vitamin k": "Vitamin K",
-  "pantothenic acid": "Pantothenic Acid",
-};
+  "pantothenic acid": "Pantothenic Acid"
+}
 const micLabel = (k: string) =>
-  MICRO_LABEL[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
+  MICRO_LABEL[k] ?? k.charAt(0).toUpperCase() + k.slice(1)
 
 const fmt = (n: number) => {
-  if (!Number.isFinite(n)) return "0";
-  const r = Math.round(n * 10) / 10;
-  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace(
-    /\.0$/,
-    "",
-  );
-};
+  if (!Number.isFinite(n)) return "0"
+  const r = Math.round(n * 10) / 10
+  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace(/\.0$/, "")
+}
 
 export function NutritionFacts({
   data,
-  className,
+  className
 }: {
-  data: NutritionFactsData;
-  className?: string;
+  data: NutritionFactsData
+  className?: string
 }) {
-  const scale = data.serving?.grams ? data.serving.grams / 100 : 1;
-  const lookup = new Map<string, NutritionReading>();
+  const scale = data.serving?.grams ? data.serving.grams / 100 : 1
+  const lookup = new Map<string, NutritionReading>()
   for (const r of data.readings) {
-    lookup.set(norm(r.name), r);
+    lookup.set(norm(r.name), r)
     for (const [canon, aliases] of Object.entries(ALIASES)) {
-      if (aliases.includes(norm(r.name))) lookup.set(canon, r);
+      if (aliases.includes(norm(r.name))) lookup.set(canon, r)
     }
   }
 
   const valueFor = (key: string) => {
-    const r = lookup.get(key);
-    const perServing = r ? r.amountPer100g * scale : 0;
-    const unit = r?.unit ?? DV[key]?.unit ?? "g";
-    const dv = DV[key];
-    let pct: number | null = null;
+    const r = lookup.get(key)
+    const perServing = r ? r.amountPer100g * scale : 0
+    const unit = r?.unit ?? DV[key]?.unit ?? "g"
+    const dv = DV[key]
+    let pct: number | null = null
     if (dv && r) {
-      const base = toUg(perServing, r.unit);
-      const dvBase = toUg(dv.dv, dv.unit);
+      const base = toUg(perServing, r.unit)
+      const dvBase = toUg(dv.dv, dv.unit)
       if (Number.isFinite(base) && dvBase)
-        pct = Math.round((base / dvBase) * 100);
+        pct = Math.round((base / dvBase) * 100)
     } else if (dv && !r) {
-      pct = 0;
+      pct = 0
     }
-    return { amount: perServing, unit, pct };
-  };
+    return { amount: perServing, unit, pct }
+  }
 
-  const cal = data.caloriesPerServing ?? 0;
-  const serving = data.serving;
+  const cal = data.caloriesPerServing ?? 0
+  const serving = data.serving
 
   return (
     <div className={cn("text-foreground text-sm", className)}>
@@ -229,7 +226,7 @@ export function NutritionFacts({
 
       <dl>
         {MACROS.map((m) => {
-          const { amount, unit, pct } = valueFor(m.key);
+          const { amount, unit, pct } = valueFor(m.key)
           return (
             <LeaderRow
               key={m.key}
@@ -239,7 +236,7 @@ export function NutritionFacts({
               pct={pct}
               bold={m.indent === 0}
             />
-          );
+          )
         })}
       </dl>
 
@@ -247,12 +244,12 @@ export function NutritionFacts({
         {(
           [
             ["left", MICRO_LEFT],
-            ["right", MICRO_RIGHT],
+            ["right", MICRO_RIGHT]
           ] as const
         ).map(([side, col]) => (
           <div key={side} className="space-y-0.5">
             {col.map((k) => {
-              const { amount, unit, pct } = valueFor(k);
+              const { amount, unit, pct } = valueFor(k)
               return (
                 <div key={k} className="flex justify-between gap-1">
                   <span>
@@ -262,7 +259,7 @@ export function NutritionFacts({
                   </span>
                   <span>{pct == null ? "" : `${pct}%`}</span>
                 </div>
-              );
+              )
             })}
           </div>
         ))}
@@ -272,7 +269,7 @@ export function NutritionFacts({
         * Percent Daily Values are based on a 2,000 calorie diet.
       </p>
     </div>
-  );
+  )
 }
 
 function LeaderRow({
@@ -280,19 +277,19 @@ function LeaderRow({
   value,
   pct,
   indent,
-  bold,
+  bold
 }: {
-  label: string;
-  value: string;
-  pct: number | null;
-  indent: 0 | 1 | 2;
-  bold?: boolean;
+  label: string
+  value: string
+  pct: number | null
+  indent: 0 | 1 | 2
+  bold?: boolean
 }) {
   return (
     <div
       className={cn(
         "flex items-baseline border-foreground/15 border-b py-0.5",
-        bold ? "font-bold" : "font-normal",
+        bold ? "font-bold" : "font-normal"
       )}
       style={{ paddingLeft: indent * 14 }}
     >
@@ -302,18 +299,18 @@ function LeaderRow({
       <span className="mx-1 flex-1 self-center border-foreground/30 border-b border-dotted" />
       <span className="font-bold">{pct == null ? "—" : `${pct}%`}</span>
     </div>
-  );
+  )
 }
 
 // "00% fat 00% protein 00% carb" — share of calories from each macro
 function macroPct(
   valueFor: (k: string) => { amount: number; unit: string; pct: number | null },
-  cal: number,
+  cal: number
 ) {
-  if (!cal) return "0% fat 0% protein 0% carb";
-  const g = (k: string) => valueFor(k).amount; // grams per serving
-  const fat = Math.round(((g("total fat") * 9) / cal) * 100);
-  const protein = Math.round(((g("total protein") * 4) / cal) * 100);
-  const carb = Math.round(((g("total carbohydrates") * 4) / cal) * 100);
-  return `${fat}% fat ${protein}% protein ${carb}% carb`;
+  if (!cal) return "0% fat 0% protein 0% carb"
+  const g = (k: string) => valueFor(k).amount // grams per serving
+  const fat = Math.round(((g("total fat") * 9) / cal) * 100)
+  const protein = Math.round(((g("total protein") * 4) / cal) * 100)
+  const carb = Math.round(((g("total carbohydrates") * 4) / cal) * 100)
+  return `${fat}% fat ${protein}% protein ${carb}% carb`
 }

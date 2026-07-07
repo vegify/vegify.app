@@ -1,18 +1,18 @@
-"use client";
+"use client"
 
 import {
   type ComponentProps,
   type ReactNode,
   useEffect,
   useRef,
-  useState,
-} from "react";
+  useState
+} from "react"
 
-import { buttonClasses } from "./button";
-import { cn } from "./cn";
-import { Input } from "./input";
-import type { NavLink } from "./screens";
-import { VegifyLogo } from "./vegify-logo";
+import { buttonClasses } from "./button"
+import { cn } from "./cn"
+import { Input } from "./input"
+import type { NavLink } from "./screens"
+import { VegifyLogo } from "./vegify-logo"
 
 /**
  * Shared auth screens — rendered by BOTH shells. Purely presentational: they own only ephemeral
@@ -20,7 +20,7 @@ import { VegifyLogo } from "./vegify-logo";
  * → IPC over HTTPS in A2), and navigation to the `LinkComponent` port. Sibling to recipe-form /
  * ingredient-form (the interactive-form pattern), keeping screens.tsx stateless.
  */
-export type AuthSubmitResult = { error?: string } | undefined;
+export type AuthSubmitResult = { error?: string } | undefined
 
 /**
  * Signups are disabled (invite-only). The server is the authority (`POST /api/auth/signup` → 403);
@@ -28,7 +28,7 @@ export type AuthSubmitResult = { error?: string } | undefined;
  * `true` AND set `VEGIFY_SIGNUPS_OPEN=1` on the server. Typed `boolean` (not the `false` literal) so
  * the always-false guards below don't read as constant-condition dead code.
  */
-export const SIGNUPS_ENABLED: boolean = false;
+export const SIGNUPS_ENABLED: boolean = false
 
 function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -40,7 +40,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
         {children}
       </div>
     </div>
-  );
+  )
 }
 
 function LabeledInput({
@@ -55,35 +55,35 @@ function LabeledInput({
       </label>
       <Input id={id} name={id} className="h-11" {...props} />
     </div>
-  );
+  )
 }
 
 export function LoginView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
   onSubmit: (values: {
-    email: string;
-    password: string;
-  }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+    email: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ email, password });
-      if (res?.error) setError(res.error);
+      const res = await onSubmit({ email, password })
+      if (res?.error) setError(res.error)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -91,8 +91,8 @@ export function LoginView({
     <AuthLayout>
       <form
         onSubmit={(e) => {
-          e.preventDefault();
-          void handleSubmit();
+          e.preventDefault()
+          void handleSubmit()
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
@@ -153,37 +153,37 @@ export function LoginView({
         ) : null}
       </form>
     </AuthLayout>
-  );
+  )
 }
 
 export function SignupView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
   onSubmit: (values: {
-    name: string;
-    email: string;
-    password: string;
-  }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+    name: string
+    email: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ name, email, password });
-      if (res?.error) setError(res.error);
+      const res = await onSubmit({ name, email, password })
+      if (res?.error) setError(res.error)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -191,8 +191,8 @@ export function SignupView({
     <AuthLayout>
       <form
         onSubmit={(e) => {
-          e.preventDefault();
-          void handleSubmit();
+          e.preventDefault()
+          void handleSubmit()
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
@@ -253,7 +253,7 @@ export function SignupView({
         </p>
       </form>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -263,28 +263,28 @@ export function SignupView({
  */
 export function ForgotPasswordView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  onSubmit: (values: { email: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  onSubmit: (values: { email: string }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("")
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ email });
-      if (res?.error) setError(res.error);
-      else setSent(true);
+      const res = await onSubmit({ email })
+      if (res?.error) setError(res.error)
+      else setSent(true)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -311,8 +311,8 @@ export function ForgotPasswordView({
         ) : (
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              void handleSubmit();
+              e.preventDefault()
+              void handleSubmit()
             }}
             className="space-y-4"
           >
@@ -356,7 +356,7 @@ export function ForgotPasswordView({
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -367,41 +367,41 @@ export function ForgotPasswordView({
 export function ResetPasswordView({
   token,
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  token: string;
+  token: string
   onSubmit: (values: {
-    token: string;
-    password: string;
-  }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+    token: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setError(null);
+    if (pending) return
+    setError(null)
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
+      setError("Password must be at least 8 characters.")
+      return
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
-      return;
+      setError("Passwords don't match.")
+      return
     }
-    setPending(true);
+    setPending(true)
     try {
-      const res = await onSubmit({ token, password });
-      if (res?.error) setError(res.error);
-      else setDone(true);
+      const res = await onSubmit({ token, password })
+      if (res?.error) setError(res.error)
+      else setDone(true)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -438,8 +438,8 @@ export function ResetPasswordView({
         ) : (
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              void handleSubmit();
+              e.preventDefault()
+              void handleSubmit()
             }}
             className="space-y-4"
           >
@@ -482,7 +482,7 @@ export function ResetPasswordView({
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -494,38 +494,38 @@ export function ResetPasswordView({
 export function VerifyEmailView({
   token,
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  token: string;
-  onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  token: string
+  onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
   const [status, setStatus] = useState<"verifying" | "done" | "error">(
-    token ? "verifying" : "error",
-  );
+    token ? "verifying" : "error"
+  )
   const [error, setError] = useState<string | null>(
-    token ? null : "This verification link is missing its token.",
-  );
-  const ran = useRef(false);
+    token ? null : "This verification link is missing its token."
+  )
+  const ran = useRef(false)
 
   useEffect(() => {
-    if (!token || ran.current) return;
-    ran.current = true; // the link is single-use — submit exactly once
+    if (!token || ran.current) return
+    ran.current = true // the link is single-use — submit exactly once
     void (async () => {
       try {
-        const res = await onSubmit({ token });
+        const res = await onSubmit({ token })
         if (res?.error) {
-          setError(res.error);
-          setStatus("error");
+          setError(res.error)
+          setStatus("error")
         } else {
-          setStatus("done");
+          setStatus("done")
         }
       } catch {
-        setError("Something went wrong. Please try again.");
-        setStatus("error");
+        setError("Something went wrong. Please try again.")
+        setStatus("error")
       }
-    })();
-  }, [token, onSubmit]);
+    })()
+  }, [token, onSubmit])
 
   return (
     <AuthLayout>
@@ -571,7 +571,7 @@ export function VerifyEmailView({
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -581,20 +581,20 @@ export function VerifyEmailView({
  */
 export function EmailVerificationBanner({
   email,
-  onResend,
+  onResend
 }: {
-  email: string;
-  onResend: () => Promise<AuthSubmitResult>;
+  email: string
+  onResend: () => Promise<AuthSubmitResult>
 }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle")
 
   async function handleResend() {
-    if (state === "sending") return;
-    setState("sending");
+    if (state === "sending") return
+    setState("sending")
     try {
-      await onResend();
+      await onResend()
     } finally {
-      setState("sent");
+      setState("sent")
     }
   }
 
@@ -623,5 +623,5 @@ export function EmailVerificationBanner({
         </>
       )}
     </div>
-  );
+  )
 }

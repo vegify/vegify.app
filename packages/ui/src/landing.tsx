@@ -1,10 +1,10 @@
-import type { CSSProperties, ReactNode } from "react";
-import { ArrowRight, Laptop, Layers, Search } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react"
+import { ArrowRight, Laptop, Layers, Search } from "lucide-react"
 
-import { SIGNUPS_ENABLED } from "./auth-form";
-import { buttonClasses } from "./button";
-import type { NavLink } from "./screens";
-import { VegifyLogo } from "./vegify-logo";
+import { SIGNUPS_ENABLED } from "./auth-form"
+import { buttonClasses } from "./button"
+import type { NavLink } from "./screens"
+import { VegifyLogo } from "./vegify-logo"
 
 /**
  * LANDING — the public, unauthenticated marketing page rendered at "/" for logged-out
@@ -19,7 +19,7 @@ import { VegifyLogo } from "./vegify-logo";
  * Web-only: the desktop app is a signed-in native shell and never renders this.
  */
 
-type Nutrient = { name: string; dv: number; color: string; low?: boolean };
+type Nutrient = { name: string; dv: number; color: string; low?: boolean }
 
 // Illustrative %DV for one serving of a hearty plant-based bowl. The story is the point:
 // plant foods cover iron/folate/magnesium well and run short on B12 and vitamin D — exactly
@@ -32,22 +32,22 @@ const SAMPLE: Nutrient[] = [
   { name: "Calcium", dv: 26, color: "var(--color-orange)" },
   { name: "Potassium", dv: 22, color: "var(--color-yellow)" },
   { name: "Vitamin B12", dv: 4, color: "var(--color-magenta)", low: true },
-  { name: "Vitamin D", dv: 2, color: "var(--color-magenta)", low: true },
-];
+  { name: "Vitamin D", dv: 2, color: "var(--color-magenta)", low: true }
+]
 
 const MOTION_CSS = `
 @media (prefers-reduced-motion: no-preference) {
   .vg-rise { opacity: 0; animation: vg-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
 }
 @keyframes vg-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-`;
+`
 
 export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
   // Signups are gated (invite-only) right now, so the primary action is Sign in. When signups
   // open, the primary flips to Get started (/signup) and Sign in becomes the secondary — two
   // distinct intents. The same "Sign in" label is reused in nav + footer (one label per intent).
-  const primaryHref = SIGNUPS_ENABLED ? "/signup" : "/login";
-  const primaryLabel = SIGNUPS_ENABLED ? "Get started" : "Sign in";
+  const primaryHref = SIGNUPS_ENABLED ? "/signup" : "/login"
+  const primaryLabel = SIGNUPS_ENABLED ? "Get started" : "Sign in"
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
@@ -75,7 +75,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
             <LinkComponent
               href="/signup"
               className={buttonClasses({
-                className: "h-9 rounded-lg px-4 font-semibold text-sm",
+                className: "h-9 rounded-lg px-4 font-semibold text-sm"
               })}
             >
               Get started
@@ -115,7 +115,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                 href={primaryHref}
                 className={buttonClasses({
                   className:
-                    "h-12 gap-2 rounded-xl px-6 font-semibold text-base sm:text-lg [&_svg]:size-5",
+                    "h-12 gap-2 rounded-xl px-6 font-semibold text-base sm:text-lg [&_svg]:size-5"
                 })}
               >
                 {primaryLabel}
@@ -126,7 +126,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                 className={buttonClasses({
                   variant: "outline",
                   className:
-                    "h-12 rounded-xl px-6 font-medium text-base sm:text-lg",
+                    "h-12 rounded-xl px-6 font-medium text-base sm:text-lg"
                 })}
               >
                 See how it works
@@ -174,7 +174,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                   "Folate",
                   "Magnesium",
                   "Omega-3",
-                  "Vitamin D",
+                  "Vitamin D"
                 ].map((n, i) => (
                   <li
                     key={n}
@@ -182,7 +182,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                     style={
                       {
                         backgroundColor: `color-mix(in oklab, ${CHIP_COLORS[i]} 14%, transparent)`,
-                        "--tw-ring-color": `color-mix(in oklab, ${CHIP_COLORS[i]} 40%, transparent)`,
+                        "--tw-ring-color": `color-mix(in oklab, ${CHIP_COLORS[i]} 40%, transparent)`
                       } as CSSProperties
                     }
                   >
@@ -252,7 +252,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
               href={primaryHref}
               className={buttonClasses({
                 className:
-                  "h-12 gap-2 rounded-xl px-7 font-semibold text-base sm:text-lg [&_svg]:size-5",
+                  "h-12 gap-2 rounded-xl px-7 font-semibold text-base sm:text-lg [&_svg]:size-5"
               })}
             >
               {primaryLabel}
@@ -283,7 +283,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         </div>
       </footer>
     </div>
-  );
+  )
 }
 
 // Chip accent colors, raw palette vars from packages/tokens (fixed brand hues, same in both modes).
@@ -295,17 +295,17 @@ const CHIP_COLORS = [
   "var(--color-green)",
   "var(--color-violet)",
   "var(--color-green-light)",
-  "var(--color-yellow)",
-];
+  "var(--color-yellow)"
+]
 
 function FeatureCard({
   icon,
   title,
-  children,
+  children
 }: {
-  icon: ReactNode;
-  title: string;
-  children: ReactNode;
+  icon: ReactNode
+  title: string
+  children: ReactNode
 }) {
   return (
     <article className="rounded-2xl bg-card p-7 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-primary/40">
@@ -317,7 +317,7 @@ function FeatureCard({
         {children}
       </p>
     </article>
-  );
+  )
 }
 
 /**
@@ -370,12 +370,12 @@ function NutrientReadout() {
         Percent of daily value. Illustrative values.
       </p>
     </div>
-  );
+  )
 }
 
 /** Concept diagram for recipe nesting — labeled steps, not a mock screenshot. */
 function NestFlow() {
-  const steps = ["Biga", "Pizza dough", "Margherita pizza"];
+  const steps = ["Biga", "Pizza dough", "Margherita pizza"]
   return (
     <div className="rounded-2xl bg-card p-6 ring-1 ring-foreground/10 sm:p-8">
       <ol className="space-y-3">
@@ -404,7 +404,7 @@ function NestFlow() {
         Iron, calcium, and folate add up automatically.
       </p>
     </div>
-  );
+  )
 }
 
 function JsonLd() {
@@ -417,14 +417,14 @@ function JsonLd() {
         url: "https://vegify.app/",
         name: "Vegify",
         description: "Micronutrition tracking for plant-based cooking.",
-        publisher: { "@id": "https://vegify.app/#org" },
+        publisher: { "@id": "https://vegify.app/#org" }
       },
       {
         "@type": "Organization",
         "@id": "https://vegify.app/#org",
         name: "Vegify",
         url: "https://vegify.app/",
-        logo: "https://vegify.app/logo512.png",
+        logo: "https://vegify.app/logo512.png"
       },
       {
         "@type": "SoftwareApplication",
@@ -438,18 +438,18 @@ function JsonLd() {
           "Per-ingredient micronutrient tracking",
           "Recipes that nest as ingredients with rolled-up nutrition",
           "Shared catalog of ingredients and recipes",
-          "Web app and offline-capable native desktop app",
+          "Web app and offline-capable native desktop app"
         ],
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-        publisher: { "@id": "https://vegify.app/#org" },
-      },
-    ],
-  };
+        publisher: { "@id": "https://vegify.app/#org" }
+      }
+    ]
+  }
   return (
     <script
       type="application/ld+json"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD of locally built page metadata; the standard way to emit structured data
       dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
     />
-  );
+  )
 }

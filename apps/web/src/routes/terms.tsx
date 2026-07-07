@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router"
 
-import { LegalPage } from "../legal";
+import { LegalPage } from "../legal"
 
-export const Route = createFileRoute("/terms")({ component: TermsPage });
+export const Route = createFileRoute("/terms")({ component: TermsPage })
 
 function TermsPage() {
   return (
@@ -62,5 +62,5 @@ function TermsPage() {
         <a href="mailto:hello@vegify.app">hello@vegify.app</a>.
       </p>
     </LegalPage>
-  );
+  )
 }
