@@ -24,3 +24,13 @@ members = [
 # macOS uses WebKit, Windows uses WebView2 — so it only compiles on Linux desktop builds.
 [patch.crates-io]
 glib = { git = "https://github.com/johncarmack1984/gtk-rs-core", branch = "lux/glib-0.18-patch" }
+
+# Workspace lint floor: no hand-written unsafe (deny, not forbid: FFI-adjacent
+# derive macros scope their own allows, which forbid would reject), and the
+# full clippy `all` group surfaces as warnings. Members opt in via
+# [lints] workspace = true.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

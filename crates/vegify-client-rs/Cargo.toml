@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "vegify-client-rs"
 version = "0.1.0"
 edition = "2021"
@@ -26,3 +27,6 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"], optional = true }
 
 [features]
 specta = ["dep:specta"]
+
+[lints]
+workspace = true

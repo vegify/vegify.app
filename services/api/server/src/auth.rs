@@ -130,11 +130,14 @@ pub fn derive_unique_username(
 
 /// Verify credentials. Returns the user on success, None otherwise. Timing-equalized: exactly one
 /// argon2 verify per path (the real hash for a known account, a dummy otherwise).
+/// users row for credential checks: (id, name, username, email,
+/// password_hash, email_verified_at).
+type UserAuthRow = (String, String, String, String, Option<String>, Option<i64>);
 pub fn authenticate(conn: &Connection, identifier: &str, password: &str) -> Result<Option<User>, AppError> {
     // Sign in with email OR username. Both are stored lower-cased, so trim+lowercase lets a single bound
     // parameter match either column. (A username can't contain '@' and an email must, so no ambiguity.)
     let identifier = identifier.trim().to_lowercase();
-    let row: Option<(String, String, String, String, Option<String>, Option<i64>)> = conn
+    let row: Option<UserAuthRow> = conn
         .query_row(
             "SELECT id, name, username, email, password_hash, email_verified_at
              FROM users WHERE email = ?1 OR username = ?1",

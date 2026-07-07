@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "vegify-config"
 version = "0.1.0"
 edition = "2021"
@@ -12,3 +13,6 @@ desktop = ["dep:dirs"]
 [dependencies]
 # Resolve the per-user OS app-data dir for the desktop's on-device DB in shipped builds.
 dirs = { version = "6", optional = true }
+
+[lints]
+workspace = true

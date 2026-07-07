@@ -1,5 +1,7 @@
 # Track the current stable Rust toolchain for the whole workspace (local dev and
 # CI). The crates and apps/desktop/src-tauri all resolve it via rustup's
-# directory walk.
+# directory walk. Components so rustfmt/clippy are always present wherever
+# checks run.
 [toolchain]
 channel = "stable"
+components = ["rustfmt", "clippy"]

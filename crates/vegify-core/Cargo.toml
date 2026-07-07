@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "vegify-core"
 version = "0.1.0"
 edition = "2021"
@@ -13,3 +14,6 @@ serde = { version = "1.0", features = ["derive"] }
 # `#[procedures]` macro consumes (a version skew would make them distinct traits and fail to compile).
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 ulid = "1"
+
+[lints]
+workspace = true

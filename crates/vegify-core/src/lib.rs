@@ -691,6 +691,9 @@ pub fn do_restore_ingredient(conn: &Connection, id: &str, user_id: Option<&str>)
     Ok(())
 }
 
+/// Row shape shared by the recipe owner-gate lookups: (as_ingredient_id,
+/// serving_size_id, batch_size_id, owner user_id).
+type RecipeOwnerRow = (String, Option<String>, Option<String>, Option<String>);
 pub fn do_save_recipe(
     conn: &Connection,
     input: &SaveRecipeInput,
@@ -700,7 +703,7 @@ pub fn do_save_recipe(
     // Upsert by id (see do_save_ingredient). A supplied-but-absent recipe id inserts WITH that id; the
     // as-ingredient id is threaded too (input.as_ingredient_id) so a nested recipe stays addressable
     // cross-replica (Biga-in-Dough). No id mints both. The owner gate applies only to an existing recipe.
-    let existing: Option<(String, Option<String>, Option<String>, Option<String>)> = match &input.id {
+    let existing: Option<RecipeOwnerRow> = match &input.id {
         Some(id) => conn
             .query_row(
                 "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id, i.user_id
@@ -801,7 +804,7 @@ pub fn do_save_recipe(
 }
 
 pub fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), Error> {
-    let as_ing: Option<(String, Option<String>, Option<String>, Option<String>)> = conn
+    let as_ing: Option<RecipeOwnerRow> = conn
         .query_row(
             "SELECT r.as_ingredient_id, i.serving_size_id, i.batch_size_id, i.user_id
              FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE r.id = ?1",
@@ -1271,7 +1274,7 @@ pub fn search_ingredients(
     query: String,
     viewer: Option<&str>,
 ) -> Result<Vec<IngredientSearchResult>, Error> {
-    let like = format!("%{}%", query.replace('%', "").replace('_', ""));
+    let like = format!("%{}%", query.replace(['%', '_'], ""));
     let rows: Vec<(String, String, Option<f64>)> = {
         let mut stmt = conn.prepare(
             "SELECT i.id, i.name, sa.grams

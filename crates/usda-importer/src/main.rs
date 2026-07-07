@@ -232,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut entries: Vec<Entry> = out.into_values().collect();
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_key(|e| e.name.to_lowercase());
     let json = serde_json::to_string(&entries)?;
 
     std::fs::create_dir_all(".data/build")?;
