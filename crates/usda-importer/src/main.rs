@@ -260,8 +260,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "nutrients/food avg {avg:.1}, min {}, max {}",
-        counts.iter().min().unwrap(),
-        counts.iter().max().unwrap()
+        counts.iter().min().copied().unwrap_or(0),
+        counts.iter().max().copied().unwrap_or(0)
     );
     println!(
         "raw {:.1} MB → gz {} KB",

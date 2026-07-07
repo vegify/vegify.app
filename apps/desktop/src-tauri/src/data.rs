@@ -25,7 +25,9 @@ pub use vegify_core::*;
 /// `From<vegify_core::Error>` adapts the shared DAL's error so `?` flows through the trait methods.
 #[derive(Debug, ttipc::Error)]
 pub enum DataError {
+    /// SQLite failure, stringified for the ttipc boundary.
     Db(String),
+    /// Auth failure (bad credentials, expired session), stringified.
     Auth(String),
 }
 
@@ -89,28 +91,40 @@ fn session_store() -> SessionStore {
 
 #[derive(Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Sign-in form payload.
 pub struct SignInInput {
+    /// Login email.
     pub email: String,
+    /// Plaintext password (sent to the server, never stored).
     pub password: String,
 }
 
 #[derive(Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Sign-up form payload.
 pub struct SignUpInput {
+    /// Display name.
     pub name: String,
+    /// Login email.
     pub email: String,
+    /// Plaintext password (sent to the server, never stored).
     pub password: String,
 }
 
 #[derive(Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Password-reset request payload.
 pub struct ResetRequestInput {
+    /// The account email to send the reset link to.
     pub email: String,
 }
 
 #[derive(Deserialize, Type)]
+/// Send-DM payload.
 pub struct SendMessageInput {
+    /// Recipient username.
     pub to: String,
+    /// Message body (plain text).
     pub body: String,
 }
 
@@ -342,12 +356,16 @@ fn to_json<T: Serialize>(v: &T) -> Result<serde_json::Value, DataError> {
     serde_json::to_value(v).map_err(|e| DataError::Db(e.to_string()))
 }
 
+/// The local SQLite database plus the in-memory session slot — the
+/// desktop's single data handle, shared behind tauri state.
 pub struct Db {
     conn: Mutex<Connection>,
     auth: Mutex<Option<Session>>,
 }
 
 impl Db {
+    /// Open (creating if missing) the database at `db_path` and run
+    /// migrations; restores any keychain session into the slot.
     pub fn open(db_path: &str) -> Result<Self, DataError> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
@@ -365,11 +383,28 @@ impl Db {
     /// Run a write with the connection locked. (Formerly captured a SQLite changeset for the S3 sync
     /// mesh; the server is the source of truth now — content writes propagate via the `_outbox` and
     /// the sync engine, so the write just runs.)
+    /// The SQLite handle, recovering from a poisoned lock: a panicked
+    /// holder's open transaction has already rolled back (rusqlite's drop
+    /// is rollback), so the connection is consistent to reuse.
+    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The in-memory session slot, recovering from a poisoned lock the same
+    /// way (the slot holds plain data; last-written state is valid).
+    fn auth_slot(&self) -> std::sync::MutexGuard<'_, Option<Session>> {
+        self.auth
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn with_conn<T>(
         &self,
         write: impl FnOnce(&Connection) -> Result<T, DataError>,
     ) -> Result<T, DataError> {
-        write(&self.conn.lock().unwrap())
+        write(&self.conn())
     }
 
     /// Append a semantic mutation `{op, payload}` to the local push queue. `_outbox` is device-local
@@ -377,7 +412,7 @@ impl Db {
     /// the content API and deleting the row on success.
     fn enqueue(&self, op: &str, payload: serde_json::Value) -> Result<(), DataError> {
         let json = serde_json::to_string(&payload).map_err(|e| DataError::Db(e.to_string()))?;
-        self.conn.lock().unwrap().execute(
+        self.conn().execute(
             "INSERT INTO _outbox(op, payload) VALUES (?1, ?2)",
             params![op, json],
         )?;
@@ -385,16 +420,12 @@ impl Db {
     }
 
     fn current_uid(&self) -> Option<String> {
-        self.auth
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|s| s.user.id.clone())
+        self.auth_slot().as_ref().map(|s| s.user.id.clone())
     }
 
     /// The current opaque session token (for the content API's Bearer auth + server-side logout).
     fn current_token(&self) -> Option<String> {
-        self.auth.lock().unwrap().as_ref().map(|s| s.token.clone())
+        self.auth_slot().as_ref().map(|s| s.token.clone())
     }
 
     /// The signed-in user id, or an auth error. WRITES require a session — you may only create or edit
@@ -419,7 +450,7 @@ impl Db {
     fn push(&self) -> Result<(), DataError> {
         loop {
             let next: Option<(i64, String, String)> = {
-                let conn = self.conn.lock().unwrap();
+                let conn = self.conn();
                 conn.query_row(
                     "SELECT seq, op, payload FROM _outbox ORDER BY seq LIMIT 1",
                     [],
@@ -450,9 +481,7 @@ impl Db {
                 "restoreIngredient" => client.restore_ingredient(&token, payload_id(&payload)?)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
-            self.conn
-                .lock()
-                .unwrap()
+            self.conn()
                 .execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
         }
     }
@@ -470,7 +499,7 @@ impl Db {
             ingredients = payload.ingredients.len(),
             "pull: rebuilding local cache"
         );
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
         let res = apply_pull(&mut conn, &payload);
         conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
@@ -487,7 +516,7 @@ impl Db {
     /// so the content reassignment + the PK swap don't trip mid-update; the bootstrap pull then
     /// rebuilds content under the server owner anyway.
     fn ensure_user_local(&self, user: &AuthUser) -> Result<(), DataError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
         let res = (|| -> Result<(), DataError> {
             let stale: Option<String> = conn
@@ -517,39 +546,63 @@ impl Db {
 }
 
 #[procedures]
+/// The desktop data surface, 1:1 with the ttipc commands: local-first
+/// reads and writes against the mirror, sessions, DMs, notifications.
+/// Writes enqueue outbox mutations for the sync engine.
 pub trait VegifyData {
+    /// One catalog page of recipe cards visible to the current user.
     fn list_recipes(&self, page: Page) -> Result<Vec<RecipeCard>, DataError>;
+    /// Full recipe detail; None when the id is unknown or not visible.
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError>;
+    /// A user's public profile by handle, from the local cache.
     fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError>;
+    /// Resolve a recipe slug (current or historical) under an owner handle;
+    /// the caller 301s when the hit reports a newer canonical slug.
     fn resolve_recipe_by_slug(
         &self,
         username: String,
         slug: String,
     ) -> Result<Option<RecipeSlugHit>, DataError>;
+    /// Resolve an ingredient slug (current or historical); see
+    /// `resolve_recipe_by_slug` for the 301 contract.
     fn resolve_ingredient_by_slug(
         &self,
         slug: String,
     ) -> Result<Option<IngredientSlugHit>, DataError>;
+    /// Owner-only edit-mode load of a recipe.
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
+    /// One catalog page of leaf-ingredient cards.
     fn list_ingredients(&self, page: Page) -> Result<Vec<IngredientCard>, DataError>;
+    /// Ingredient detail (readable rows; viewer-scoped).
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
+    /// Owner-only edit-mode load of an ingredient.
     fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
+    /// Name search over visible ingredients (the recipe composer's box).
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
+    /// Create or update an ingredient; returns its id. Enqueues the
+    /// mutation for sync.
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
+    /// Soft-delete an ingredient (tombstone). Enqueues for sync.
     fn delete_ingredient(&self, id: String) -> Result<(), DataError>;
     /// Undo a soft delete (the greyed recipe row's "restore?" affordance). Owner-gated in the DAL.
     fn restore_ingredient(&self, id: String) -> Result<(), DataError>;
+    /// Create or update a recipe; returns its id. Enqueues for sync.
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
+    /// Delete a recipe and its as-ingredient pair. Enqueues for sync.
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
+    /// The signed-in user, if a session is live.
     fn current_user(&self) -> Result<Option<AuthUser>, DataError>;
     /// The backend base URL — the frontend composes media URLs (`<base>/<photoKey>`) from it, since
     /// photos are served from the server's CloudFront, not the local cache.
     fn media_base(&self) -> Result<String, DataError>;
+    /// Sign in against the server, persist the session, then pull.
     fn sign_in(&self, input: SignInInput) -> Result<AuthUser, DataError>;
+    /// Create an account, persist the session, then pull.
     fn sign_up(&self, input: SignUpInput) -> Result<AuthUser, DataError>;
+    /// Clear the session (memory + keychain).
     fn sign_out(&self) -> Result<(), DataError>;
     /// Enumeration-safe: POST the email to the backend's reset-request route and always succeed. The
     /// reset itself is finished in the browser via the email link — no token round-trips to desktop.
@@ -559,12 +612,17 @@ pub trait VegifyData {
     fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError>;
     /// 1:1 DMs — online-only proxies to /api/messages/* (no local cache; auth required).
     fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError>;
+    /// The DM thread with `username`, oldest first.
     fn message_thread(&self, username: String) -> Result<DmThread, DataError>;
+    /// Send a DM; returns the created message.
     fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError>;
+    /// Count of unread DMs (f64 mirrors the wire).
     fn messages_unread(&self) -> Result<f64, DataError>;
     /// The bell — online-only proxies to /api/notifications (auth required).
     fn notifications(&self) -> Result<Vec<DmNotification>, DataError>;
+    /// Count of unread notifications (f64 mirrors the wire).
     fn notifications_unread(&self) -> Result<f64, DataError>;
+    /// Mark every notification read.
     fn notifications_mark_read(&self) -> Result<(), DataError>;
     /// UGC safety (App Review 1.2): report content/users, block/unblock a user.
     fn report_content(
@@ -574,7 +632,9 @@ pub trait VegifyData {
         reason: String,
         note: String,
     ) -> Result<(), DataError>;
+    /// Block `username`: hides their content and stops their DMs.
     fn block_user(&self, username: String) -> Result<(), DataError>;
+    /// Unblock `username`.
     fn unblock_user(&self, username: String) -> Result<(), DataError>;
     /// Delete the signed-in account (App Review 5.1.1(v)); password-reconfirmed, then signs out locally.
     fn delete_account(&self, password: String) -> Result<(), DataError>;
@@ -586,13 +646,13 @@ pub trait VegifyData {
 impl VegifyData for Db {
     fn list_recipes(&self, page: Page) -> Result<Vec<RecipeCard>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::list_recipes(&conn, me.as_deref(), &page).map_err(Into::into)
     }
 
     fn recipe(&self, id: String) -> Result<Option<RecipeView>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::recipe(&conn, id, me.as_deref()).map_err(Into::into)
     }
 
@@ -600,7 +660,7 @@ impl VegifyData for Db {
     /// profile (other users resolve only if their rows were pulled). Mirrors /api/content/profile.
     fn get_profile(&self, username: String) -> Result<Option<Profile>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::get_profile(&conn, &username, me.as_deref()).map_err(Into::into)
     }
 
@@ -611,7 +671,7 @@ impl VegifyData for Db {
         username: String,
         slug: String,
     ) -> Result<Option<RecipeSlugHit>, DataError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::resolve_recipe_by_slug(&conn, &username, &slug).map_err(Into::into)
     }
 
@@ -619,37 +679,37 @@ impl VegifyData for Db {
         &self,
         slug: String,
     ) -> Result<Option<IngredientSlugHit>, DataError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::resolve_ingredient_by_slug(&conn, &slug).map_err(Into::into)
     }
 
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::recipe_for_edit(&conn, id, me.as_deref()).map_err(Into::into)
     }
 
     fn list_ingredients(&self, page: Page) -> Result<Vec<IngredientCard>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::list_ingredients(&conn, me.as_deref(), &page).map_err(Into::into)
     }
 
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::ingredient(&conn, id, me.as_deref()).map_err(Into::into)
     }
 
     fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::ingredient_for_edit(&conn, id, me.as_deref()).map_err(Into::into)
     }
 
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError> {
         let me = self.current_uid();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         vegify_core::search_ingredients(&conn, query, me.as_deref()).map_err(Into::into)
     }
 
@@ -721,7 +781,7 @@ impl VegifyData for Db {
     }
 
     fn current_user(&self) -> Result<Option<AuthUser>, DataError> {
-        let user = self.auth.lock().unwrap().as_ref().map(|s| s.user.clone());
+        let user = self.auth_slot().as_ref().map(|s| s.user.clone());
         if let Some(u) = &user {
             // Restored from the keychain on launch — make sure the local row exists before any write.
             self.ensure_user_local(u)?;
@@ -734,7 +794,7 @@ impl VegifyData for Db {
         let user = session.user.clone();
         self.ensure_user_local(&user)?;
         session_store().store(&session)?;
-        *self.auth.lock().unwrap() = Some(session);
+        *self.auth_slot() = Some(session);
         tracing::info!(user = %user.id, "signed in");
         Ok(user)
     }
@@ -744,7 +804,7 @@ impl VegifyData for Db {
         let user = session.user.clone();
         self.ensure_user_local(&user)?;
         session_store().store(&session)?;
-        *self.auth.lock().unwrap() = Some(session);
+        *self.auth_slot() = Some(session);
         tracing::info!(user = %user.id, "signed up");
         Ok(user)
     }
@@ -755,7 +815,7 @@ impl VegifyData for Db {
             client().logout(&token);
         }
         session_store().clear();
-        *self.auth.lock().unwrap() = None;
+        *self.auth_slot() = None;
         Ok(())
     }
 
@@ -836,12 +896,13 @@ impl VegifyData for Db {
         client().delete_account(&token, &password)?;
         // The account is gone — sign out locally (clear the keychain + cached session).
         session_store().clear();
-        *self.auth.lock().unwrap() = None;
+        *self.auth_slot() = None;
         Ok(())
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, missing_docs)] // test code: unwrap/panic ARE the assertion
 mod tests {
     use super::*;
     use std::fs;

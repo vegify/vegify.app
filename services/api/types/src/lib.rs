@@ -14,11 +14,17 @@ use serde_json::Value;
 #[derive(Serialize, specta::Type)]
 #[serde(untagged)]
 pub enum JsonValue {
+    /// JSON null.
     Null(()),
+    /// JSON boolean.
     Bool(bool),
+    /// JSON number (f64 on this wire; the reason this type exists).
     Number(f64),
+    /// JSON string.
     String(String),
+    /// JSON array.
     Array(Vec<JsonValue>),
+    /// JSON object.
     Object(std::collections::HashMap<String, JsonValue>),
 }
 
@@ -28,7 +34,9 @@ pub enum JsonValue {
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadTicket {
+    /// Storage key to attach to the row once the PUT succeeds.
     pub key: String,
+    /// Presigned, short-lived PUT URL for the bytes.
     pub url: String,
 }
 
@@ -38,10 +46,13 @@ pub struct UploadTicket {
 /// gates scope to. Serializes with bare field names (matching the web's response).
 #[derive(Serialize, Clone, specta::Type)]
 pub struct User {
+    /// User id.
     pub id: String,
+    /// Display name.
     pub name: String,
     /// Public handle backing `/<username>`. Assigned at signup (see [`derive_unique_username`]).
     pub username: String,
+    /// Login/notification address; visible only to the account itself.
     pub email: String,
     /// Whether `users.email_verified_at` is set — surfaced to the clients so they can prompt for
     /// verification (and gate verified-only actions later) without a second round trip.
@@ -54,10 +65,15 @@ pub struct User {
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PostSummary {
+    /// URL slug (`/blog/<slug>`).
     pub slug: String,
+    /// Post title.
     pub title: String,
+    /// One-to-two sentence summary (index cards + meta description).
     pub description: String,
+    /// RFC 3339 publication timestamp (feeds `<time datetime>` + JSON-LD).
     pub date_published: String,
+    /// Human-formatted publication date, preformatted server-side.
     pub date_display: String,
 }
 
@@ -65,10 +81,15 @@ pub struct PostSummary {
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PostFull {
+    /// URL slug (`/blog/<slug>`).
     pub slug: String,
+    /// Post title.
     pub title: String,
+    /// One-to-two sentence summary (meta description + JSON-LD).
     pub description: String,
+    /// RFC 3339 publication timestamp.
     pub date_published: String,
+    /// Human-formatted publication date, preformatted server-side.
     pub date_display: String,
     /// Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
     #[specta(type = JsonValue)]
@@ -78,42 +99,69 @@ pub struct PostFull {
 // ---- content sync (the /api/content/pull payload) ----
 
 #[derive(Serialize, specta::Type)]
+/// One full sync pull: every server row visible to the device's user.
+/// Server-authoritative — the desktop mirrors these verbatim.
 pub struct PullPayload {
+    /// All visible recipes, with their lines.
     pub recipes: Vec<PullRecipe>,
+    /// All visible ingredients, with their nutrient rows.
     pub ingredients: Vec<PullIngredient>,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One recipe row as pulled (server-authoritative mirror source).
 pub struct PullRecipe {
+    /// Recipe id (stable cross-replica).
     pub id: String,
+    /// The recipe's as-ingredient pair id — must survive the mirror so
+    /// consuming items' FKs stay intact.
     pub as_ingredient_id: String,
+    /// Owner id; None = ownerless seed content.
     pub user_id: Option<String>,
+    /// Visibility as stored (public/private/unlisted).
     pub visibility: String,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle.
     pub subtitle: Option<String>,
+    /// Free-text directions.
     pub directions: Option<String>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Total batch mass in grams, when declared.
     pub batch_grams: Option<f64>,
+    /// Current slug; mirrored verbatim so local links match the server.
     pub slug: Option<String>,
+    /// The recipe's lines, in order.
     pub items: Vec<PullItem>,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One recipe line as pulled.
 pub struct PullItem {
+    /// The ingredient the line references.
     pub ingredient_id: String,
+    /// Line quantity in grams (canonical).
     pub grams: f64,
+    /// Display unit the author picked; None = grams.
     pub unit: Option<String>,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One ingredient row as pulled (server-authoritative mirror source).
 pub struct PullIngredient {
+    /// Ingredient id (stable cross-replica).
     pub id: String,
+    /// Owner id; None = the communal catalog.
     pub user_id: Option<String>,
+    /// Visibility as stored (public/private/unlisted).
     pub visibility: String,
+    /// Ingredient name.
     pub name: String,
+    /// Optional description.
     pub description: Option<String>,
     /// Cents (USD). i32 END-TO-END: SaveIngredientInput (the only write path) is i32, the desktop
     /// mirror is i32, the TS side is number — an i64 here was silent width drift in the wire contract
@@ -122,22 +170,31 @@ pub struct PullIngredient {
     /// mirror is i32, the TS side is number — an i64 here was silent width drift in the wire
     /// contract (found by the specta-side repo audit; the class of bug a generated client kills).
     pub price: Option<i32>,
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Package mass in grams, when declared.
     pub package_grams: Option<f64>,
+    /// Current slug; mirrored verbatim so local links match the server.
     pub slug: Option<String>,
     /// Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
     /// the data — and clients mirror the flag so their local list/search filtering matches.
     #[specta(type = Option<f64>)] // ms epoch — f64-safe on the wire
     pub deleted_at: Option<i64>,
+    /// Per-100 g nutrient rows.
     pub nutrients: Vec<PullReading>,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One nutrient reading as pulled, per 100 g.
 pub struct PullReading {
+    /// Nutrient name.
     pub name: String,
+    /// Quantity per 100 g.
     pub amount_per_100g: f64,
+    /// Unit for the quantity (g, mg, µg).
     pub unit: String,
 }
 
@@ -147,32 +204,45 @@ pub struct PullReading {
 #[derive(Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Party {
+    /// User id.
     pub id: String,
+    /// Display name.
     pub name: String,
+    /// Public handle (`/<username>`).
     pub username: String,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One conversation row of the DM list, newest-message first.
 pub struct ConversationSummary {
+    /// Conversation id.
     pub id: String,
+    /// The other party.
     pub with: Party,
+    /// Body of the newest message (the list's preview line).
     pub last_body: String,
     // ms epoch — f64-safe on the wire (the desktop mirror declares f64).
     #[specta(type = f64)]
+    /// Newest message timestamp, ms epoch.
     pub last_at: i64,
     /// True when the last message is the viewer's own (the list renders "You: …").
     pub last_is_mine: bool,
     #[specta(type = f64)] // a count (SQLite COUNT() is i64); wire-safe as number
+    /// Count of messages the viewer has not read.
     pub unread: i64,
 }
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One DM as the thread screen renders it.
 pub struct Message {
+    /// Message id.
     pub id: String,
+    /// Message body (plain text).
     pub body: String,
     #[specta(type = f64)] // ms epoch — f64-safe on the wire
+    /// Send timestamp, ms epoch.
     pub created_at: i64,
     /// True when the viewer sent it (clients render alignment off this, not off raw ids).
     pub mine: bool,
@@ -183,7 +253,9 @@ pub struct Message {
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
+    /// The other party (resolved even for an empty thread).
     pub with: Party,
+    /// The messages, oldest first.
     pub messages: Vec<Message>,
 }
 
@@ -191,8 +263,12 @@ pub struct Thread {
 
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+/// One bell notification.
 pub struct Notification {
+    /// Notification id.
     pub id: String,
+    /// Notification kind tag (e.g. "ingredient-updated"); selects the
+    /// payload shape and the client-side renderer.
     pub kind: String,
     /// Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`).
     /// Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
@@ -200,7 +276,9 @@ pub struct Notification {
     pub payload: Value,
     // ms epoch — f64-safe on the wire until the year ~287,396 (the desktop mirror declares f64).
     #[specta(type = f64)]
+    /// Creation timestamp, ms epoch.
     pub created_at: i64,
+    /// Whether the viewer has opened it.
     pub read: bool,
 }
 

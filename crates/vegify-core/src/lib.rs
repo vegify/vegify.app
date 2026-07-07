@@ -31,7 +31,9 @@ pub fn new_id() -> String {
 /// status). The ttipc `Error` derive can't live here: it pulls in Tauri, which the server must not.
 #[derive(Debug)]
 pub enum Error {
+    /// SQLite failure, stringified for transport.
     Db(String),
+    /// Authentication/authorization failure, stringified for transport.
     Auth(String),
 }
 
@@ -61,8 +63,11 @@ impl From<rusqlite::Error> for Error {
 #[derive(Serialize, Deserialize, Type, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum Visibility {
+    /// Listed and readable by everyone.
     Public,
+    /// Readable only by the owner.
     Private,
+    /// Readable via direct link; never listed or searched.
     Unlisted,
 }
 
@@ -101,32 +106,48 @@ pub fn can_view(visibility: Visibility, owner: Option<&str>, viewer: Option<&str
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One nutrient measurement, normalized per 100 g.
 pub struct Reading {
+    /// Nutrient name (e.g. "Iron").
     pub name: String,
+    /// Quantity per 100 g of the food.
     pub amount_per_100g: f64,
+    /// Display unit for the quantity (g, mg, µg).
     pub unit: String,
 }
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// A recipe's nutrition rolled up from its items, per 100 g.
 pub struct AggregatedNutrition {
+    /// Calories per 100 g; None when no item carries calorie data.
     pub calories_per_100g: Option<f64>,
+    /// Per-100 g readings summed across items, keyed by nutrient name.
     pub readings: Vec<Reading>,
 }
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// A quantity as entered plus its canonical mass: `grams` is the ground
+/// truth all math runs on; `amount`/`unit` preserve how the user wrote it.
 pub struct Amount {
+    /// Quantity in `unit`, as entered; None when only the mass is known.
     pub amount: Option<f64>,
+    /// Display unit (cup, tbsp, g); None when only the mass is known.
     pub unit: Option<String>,
+    /// Canonical mass in grams.
     pub grams: f64,
 }
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One recipe line as read: the ingredient, its display name, its amount.
 pub struct RecipeItem {
+    /// The underlying ingredient's id.
     pub id: String,
+    /// Ingredient display name at read time.
     pub name: String,
+    /// The line's quantity (display form + canonical grams).
     pub amount: Amount,
     /// Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),
     /// so the UI links to that recipe's page instead of a (sparse) ingredient page.
@@ -140,10 +161,15 @@ pub struct RecipeItem {
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Full recipe detail as rendered by the recipe page.
 pub struct RecipeView {
+    /// Recipe id.
     pub id: String,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle under the title.
     pub subtitle: Option<String>,
+    /// Free-text directions (markdown-ish plain text); None = none written.
     pub directions: Option<String>,
     /// The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`.
     pub creator: Option<String>,
@@ -152,9 +178,14 @@ pub struct RecipeView {
     /// Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real
     /// guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
     pub can_edit: bool,
+    /// Serving size, when declared (drives per-serving nutrition).
     pub serving: Option<Amount>,
+    /// Total batch mass in grams, when declared — the denominator that
+    /// turns summed item nutrition into per-100 g.
     pub batch_grams: Option<f64>,
+    /// The recipe's lines, in order.
     pub items: Vec<RecipeItem>,
+    /// Nutrition rolled up from the items, per 100 g.
     pub nutrition: AggregatedNutrition,
     /// Media key of the hero photo — see [`RecipeCard::photo_key`].
     pub photo_key: Option<String>,
@@ -162,13 +193,18 @@ pub struct RecipeView {
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Recipe list/browse card — the light projection for grids.
 pub struct RecipeCard {
+    /// Recipe id.
     pub id: String,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle, shown under the title on cards.
     pub subtitle: Option<String>,
     /// Owner handle + slug for the canonical `/<username>/<slug>` link. Optional (pre-backfill /
     /// ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.
     pub username: Option<String>,
+    /// The recipe's slug half of the canonical link (see `username`).
     pub slug: Option<String>,
     /// Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the
     /// URL as `<api base>/<key>`. None = no photo yet (cards render the placeholder tile).
@@ -180,8 +216,11 @@ pub struct RecipeCard {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
+    /// The profile's handle (URL segment).
     pub username: String,
+    /// Display name.
     pub name: String,
+    /// The user's recipes visible to the viewer, as cards.
     pub recipes: Vec<RecipeCard>,
     /// The user's LEAF ingredients (created or imported by them), visible to the viewer and not
     /// tombstoned — browsable under `/<username>/ingredients/<slug>`.
@@ -192,11 +231,18 @@ pub struct Profile {
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One ingredient hit in the recipe composer's search box.
 pub struct IngredientSearchResult {
+    /// Ingredient id.
     pub id: String,
+    /// Ingredient name.
     pub name: String,
+    /// Serving size in grams, when the ingredient declares one (the composer's
+    /// default line quantity).
     pub serving_grams: Option<f64>,
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
+    /// Per-100 g nutrient readings, for the composer's live nutrition preview.
     pub readings: Vec<Reading>,
 }
 
@@ -204,22 +250,35 @@ pub struct IngredientSearchResult {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RecipeEditItem {
+    /// The referenced ingredient's id.
     pub ingredient_id: String,
+    /// Ingredient display name.
     pub name: String,
+    /// Line quantity in grams (canonical).
     pub grams: f64,
+    /// Calories per 100 g, when known — the edit screen's live math.
     pub calories_per_100g: Option<f64>,
+    /// Per-100 g readings for the edit screen's live nutrition roll-up.
     pub readings: Vec<Reading>,
 }
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// RecipeForm edit-mode source data (per-100 g; the frontend scales).
 pub struct RecipeEditData {
+    /// Recipe id.
     pub id: String,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle.
     pub subtitle: Option<String>,
+    /// Free-text directions; None = none written.
     pub directions: Option<String>,
+    /// Declared servings per batch, when set.
     pub servings: Option<f64>,
+    /// Current visibility.
     pub visibility: Visibility,
+    /// The recipe's lines in edit form.
     pub items: Vec<RecipeEditItem>,
 }
 
@@ -227,8 +286,11 @@ pub struct RecipeEditData {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct IngredientCard {
+    /// Ingredient id.
     pub id: String,
+    /// Ingredient name.
     pub name: String,
+    /// Calories per 100 g, when known (list-card badge).
     pub calories_per_100g: Option<f64>,
     /// Slug for the canonical link; fall back to `/ingredients/<id>`.
     pub slug: Option<String>,
@@ -241,13 +303,21 @@ pub struct IngredientCard {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct IngredientEditData {
+    /// Ingredient id.
     pub id: String,
+    /// Ingredient name.
     pub name: String,
+    /// Optional description shown on the detail page.
     pub description: Option<String>,
+    /// Price in cents, when tracked.
     pub price: Option<i32>,
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Package mass in grams, when declared (price-per-100 g math).
     pub package_grams: Option<f64>,
+    /// Current visibility.
     pub visibility: Visibility,
     /// Canonical URL segment `/ingredients/<slug>`. None only pre-backfill.
     pub slug: Option<String>,
@@ -260,6 +330,7 @@ pub struct IngredientEditData {
     pub deleted: bool,
     /// Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL.
     pub creator: Option<String>,
+    /// Per-100 g nutrient rows as stored (the form scales to per-serving).
     pub nutrients: Vec<Reading>,
 }
 
@@ -267,23 +338,39 @@ pub struct IngredientEditData {
 
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One nutrient row of a SaveIngredientInput, normalized per 100 g.
 pub struct IngredientNutrientInput {
+    /// Nutrient name (e.g. "Iron").
     pub name: String,
+    /// Quantity per 100 g.
     pub amount_per_100g: f64,
+    /// Unit for the quantity (g, mg, µg).
     pub unit: String,
 }
 
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Create-or-update payload for an ingredient. `id: Some` updates that row
+/// (owner-guarded); `None` creates, minting the id.
 pub struct SaveIngredientInput {
+    /// Existing row to update, or None to create. Client-supplied ids are
+    /// honored so sync replays are idempotent cross-replica.
     pub id: Option<String>,
+    /// Visibility to set; None keeps the default (public).
     pub visibility: Option<Visibility>,
+    /// Ingredient name.
     pub name: String,
+    /// Optional description.
     pub description: Option<String>,
+    /// Price in cents, when tracked.
     pub price: Option<i32>, // cents
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Package mass in grams, when declared.
     pub package_grams: Option<f64>,
+    /// Per-100 g nutrient rows (replaces the stored set).
     pub nutrients: Vec<IngredientNutrientInput>,
     /// SEO slug. `None` on a user create/edit ⇒ the DAL generates a unique one (and logs a rename to
     /// slug_history). `Some` only on the sync pull-apply, which carries the SERVER's authoritative slug
@@ -294,26 +381,40 @@ pub struct SaveIngredientInput {
 
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One line of a SaveRecipeInput: which ingredient, how many grams.
 pub struct RecipeItemInput {
+    /// The ingredient this line references.
     pub ingredient_id: String,
+    /// Line quantity in grams (canonical).
     pub grams: f64,
+    /// Display unit the user picked; None = grams.
     pub unit: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Create-or-update payload for a recipe; ids are honored when supplied so
+/// sync replays are idempotent cross-replica.
 pub struct SaveRecipeInput {
+    /// Existing recipe to update, or None to create (id minted).
     pub id: Option<String>,
     /// The recipe's as-ingredient id. Threaded so a nested recipe (a Biga consumed by a Dough as an
     /// item) keeps a stable id cross-replica — else the consuming item's FK orphans after a pull.
     /// `None` on a fresh local create (minted); set by the sync pull when mirroring server rows.
     pub as_ingredient_id: Option<String>,
+    /// Visibility to set; None keeps the default (public).
     pub visibility: Option<Visibility>,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle.
     pub subtitle: Option<String>,
+    /// Free-text directions.
     pub directions: Option<String>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Total batch mass in grams, when declared.
     pub batch_grams: Option<f64>,
+    /// The recipe's lines (replaces the stored set, in order).
     pub items: Vec<RecipeItemInput>,
     /// See SaveIngredientInput::slug. `None` ⇒ generate (unique per owner); `Some` ⇒ pull carries the
     /// server's slug verbatim.
@@ -413,7 +514,9 @@ fn find_or_create_nutrient(conn: &Connection, name: &str) -> Result<String, Erro
 /// ingredient's is unique globally (`/ingredients/<slug>`). The two namespaces are independent.
 #[derive(Clone, Copy)]
 pub enum SlugScope<'a> {
+    /// A recipe slug, unique among this owner's recipes.
     UserRecipes(&'a str),
+    /// A leaf-ingredient slug, unique across the whole catalog.
     GlobalIngredients,
 }
 
@@ -571,6 +674,8 @@ pub fn backfill_all_slugs(conn: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+/// Create or update an ingredient (the shared desktop + server save path).
+/// Honors a client-supplied id; guards updates to the owner.
 pub fn do_save_ingredient(
     conn: &Connection,
     input: &SaveIngredientInput,
@@ -687,6 +792,8 @@ pub fn do_save_ingredient(
     Ok(ingredient_id)
 }
 
+/// Soft-delete an ingredient (tombstone): delisted everywhere, preserved
+/// for recipes that reference it. Owner-guarded.
 pub fn do_delete_ingredient(
     conn: &Connection,
     id: &str,
@@ -769,6 +876,8 @@ pub fn do_restore_ingredient(
 /// Row shape shared by the recipe owner-gate lookups: (as_ingredient_id,
 /// serving_size_id, batch_size_id, owner user_id).
 type RecipeOwnerRow = (String, Option<String>, Option<String>, Option<String>);
+/// Create or update a recipe and its as-ingredient pair (the shared
+/// desktop + server save path). Honors client-supplied ids; owner-guarded.
 pub fn do_save_recipe(
     conn: &Connection,
     input: &SaveRecipeInput,
@@ -890,6 +999,7 @@ pub fn do_save_recipe(
     Ok(recipe_id)
 }
 
+/// Delete a recipe and its as-ingredient row. Owner-guarded.
 pub fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), Error> {
     let as_ing: Option<RecipeOwnerRow> = conn
         .query_row(
@@ -1071,9 +1181,13 @@ fn load_ingredient_edit(
 #[serde(rename_all = "snake_case")]
 pub enum Sort {
     #[default]
+    /// Newest first (creation order).
     Newest,
+    /// Oldest first.
     Oldest,
+    /// Name A→Z.
     NameAsc,
+    /// Name Z→A.
     NameDesc,
 }
 
@@ -1102,12 +1216,17 @@ impl Sort {
 #[derive(Serialize, Deserialize, Type, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Page {
+    /// Sort order for the page.
     pub sort: Sort,
+    /// Keyset cursor: the last card's id from the previous page.
     pub cursor: Option<String>,
+    /// The last card's name, required by the name sorts' keyset.
     pub cursor_name: Option<String>,
+    /// Page size; None = unbounded.
     pub limit: Option<u32>,
 }
 
+/// List recipes visible to `viewer`, one keyset page at a time.
 pub fn list_recipes(
     conn: &Connection,
     viewer: Option<&str>,
@@ -1218,7 +1337,9 @@ pub fn get_profile(
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Resolution of a recipe slug (current or historical) to its row.
 pub struct RecipeSlugHit {
+    /// The recipe the slug resolves to.
     pub recipe_id: String,
     /// The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
     /// `/<username>/<canonical_slug>`.
@@ -1288,8 +1409,12 @@ pub fn resolve_recipe_by_slug(
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Resolution of an ingredient slug (current or historical) to its row.
 pub struct IngredientSlugHit {
+    /// The ingredient the slug resolves to.
     pub ingredient_id: String,
+    /// The ingredient's CURRENT slug — differs when the hit came from slug
+    /// history, in which case the caller 301s here.
     pub canonical_slug: String,
     /// Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to
     /// `/<username>/ingredients/<slug>` (the catalog stays at the global path).
@@ -1349,17 +1474,22 @@ pub fn resolve_ingredient_by_slug(
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// Owner handle (first segment of the canonical URL).
 pub struct SitemapRecipe {
+    /// Owner handle (first segment of the canonical URL).
     pub username: String,
+    /// The recipe's slug (second URL segment).
     pub slug: String,
 }
 
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+/// One indexable ingredient URL for the sitemap.
 pub struct SitemapIngredient {
     /// Owner handle: owned rows are canonical at `/<username>/ingredients/<slug>`; None = catalog
     /// (`/ingredients/<slug>`).
     pub username: Option<String>,
+    /// The ingredient's slug.
     pub slug: String,
 }
 
@@ -1368,7 +1498,9 @@ pub struct SitemapIngredient {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SitemapData {
+    /// All indexable recipe URLs.
     pub recipes: Vec<SitemapRecipe>,
+    /// All indexable ingredient URLs.
     pub ingredients: Vec<SitemapIngredient>,
 }
 
@@ -1716,6 +1848,7 @@ pub fn recipe(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod delete_guard_tests {
     use super::*;
 

@@ -137,6 +137,7 @@ pub fn ingest(conn: &Connection, gz: &[u8]) -> Result<usize, Box<dyn std::error:
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
     use std::io::Write;

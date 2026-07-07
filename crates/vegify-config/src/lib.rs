@@ -21,6 +21,7 @@ fn non_empty(key: &str) -> Option<String> {
 }
 
 #[cfg(feature = "server")]
+/// Server-side deploy decisions (region, domains, email, signing).
 pub mod server {
     use super::non_empty;
 
@@ -90,6 +91,7 @@ pub mod server {
 }
 
 #[cfg(feature = "desktop")]
+/// Desktop build decisions (bundle ids, update endpoints).
 pub mod desktop {
     use super::non_empty;
 

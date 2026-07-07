@@ -18,7 +18,7 @@ const MAX_BODY_CHARS: usize = 5_000;
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before 1970")
         .as_millis() as i64
 }
 
@@ -233,6 +233,7 @@ pub fn unread_count(conn: &Connection, me_id: &str) -> Result<i64, AppError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 
