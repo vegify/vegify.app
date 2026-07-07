@@ -219,23 +219,46 @@ pub struct PullReading {
 
 // ---- session store (OS keychain) -----------------------------------------------------------------
 
-/// In test and debug builds, route ALL keychain access to keyring's in-memory mock store instead of
-/// the real OS keychain — dev/test stay hermetic and prompt-free (a debug binary is re-signed ad hoc
-/// on every build, so a macOS "Always Allow" grant never sticks). Installed once, before the first
-/// Entry. RELEASE builds use the real keychain. Dev tradeoff: the mock doesn't persist across a
-/// process restart.
-#[cfg(any(test, debug_assertions))]
-static MOCK_KEYCHAIN_INIT: std::sync::Once = std::sync::Once::new();
+/// keyring-core installs no default store, so the right one is chosen here, once, before the
+/// first Entry. Test and debug builds get the in-memory mock — dev/test stay hermetic and
+/// prompt-free (a debug binary is re-signed ad hoc on every build, so a macOS "Always Allow"
+/// grant never sticks; the mock doesn't persist across a process restart). Release builds get
+/// the platform store: the macOS legacy keychain (same item class + service/account attributes
+/// keyring 3 wrote, so existing sessions survive the upgrade — probe-verified) or the iOS
+/// protected-data store. On other targets no store is installed and Entry::new reports it,
+/// which only surfaces as the signed-out state.
+static KEYCHAIN_STORE_INIT: std::sync::Once = std::sync::Once::new();
+
+fn init_keychain_store() {
+    KEYCHAIN_STORE_INIT.call_once(|| {
+        #[cfg(any(test, debug_assertions))]
+        {
+            let store = keyring_core::mock::Store::new().expect("mock keychain store");
+            keyring_core::set_default_store(store);
+        }
+        #[cfg(all(not(any(test, debug_assertions)), target_os = "macos"))]
+        {
+            if let Ok(store) = apple_native_keyring_store::keychain::Store::new() {
+                keyring_core::set_default_store(store);
+            }
+        }
+        #[cfg(all(not(any(test, debug_assertions)), target_os = "ios"))]
+        {
+            if let Ok(store) = apple_native_keyring_store::protected::Store::new() {
+                keyring_core::set_default_store(store);
+            }
+        }
+    });
+}
 
 /// The OS-keychain session store: one keyring entry (service + account supplied by the consumer —
 /// the app owns its identity) holding the JSON-serialized [`Session`]. The Entry is created once
-/// per store and reused — keyring's MOCK store (test/debug) keeps state per Entry INSTANCE, so a
-/// fresh Entry per call would make the mock amnesiac even within one process. The real keychain
-/// (release) persists regardless.
+/// per store and reused (cheap, and it keeps the access pattern identical across the mock and
+/// the real stores).
 pub struct SessionStore {
     service: String,
     account: String,
-    entry: std::sync::OnceLock<keyring::Entry>,
+    entry: std::sync::OnceLock<keyring_core::Entry>,
 }
 
 impl SessionStore {
@@ -247,13 +270,10 @@ impl SessionStore {
         }
     }
 
-    fn entry(&self) -> Result<&keyring::Entry, Error> {
-        #[cfg(any(test, debug_assertions))]
-        MOCK_KEYCHAIN_INIT.call_once(|| {
-            keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
-        });
+    fn entry(&self) -> Result<&keyring_core::Entry, Error> {
+        init_keychain_store();
         if self.entry.get().is_none() {
-            let e = keyring::Entry::new(&self.service, &self.account)
+            let e = keyring_core::Entry::new(&self.service, &self.account)
                 .map_err(|e| Error::Auth(e.to_string()))?;
             let _ = self.entry.set(e);
         }
