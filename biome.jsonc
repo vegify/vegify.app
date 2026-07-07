@@ -15,7 +15,7 @@
     "includes": [
       "**",
       "!apps/desktop/src/bindings.ts",
-      "!packages/api-types/src",
+      "!packages/api-types/index.ts",
       // TanStack Router output (tsr generate); linted at its route sources.
       "!**/*.gen.ts"
     ]
