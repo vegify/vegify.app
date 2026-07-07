@@ -14,15 +14,17 @@ use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
 use crate::handles;
-pub use vegify_api_types::{User};
+pub use vegify_api_types::User;
 
 const SESSION_TTL_MS: i64 = 1000 * 60 * 60 * 24 * 30; // 30 days
 const RESET_TTL_MS: i64 = 1000 * 60 * 60; // 1 hour — password-reset links are short-lived
 const EMAIL_VERIFY_TTL_MS: i64 = 1000 * 60 * 60 * 24; // 24 hours — verification links live longer than resets
 
-
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
 }
 
 fn normalize_email(email: &str) -> String {
@@ -63,7 +65,9 @@ pub fn hash_password(password: &str) -> Result<String, AppError> {
 /// hash-wasm-written hashes verify natively (the cutover-compat property). False on any parse/mismatch.
 pub fn verify_password(hash: &str, password: &str) -> bool {
     match PasswordHash::new(hash) {
-        Ok(parsed) => Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok(),
+        Ok(parsed) => Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok(),
         Err(_) => false,
     }
 }
@@ -75,7 +79,12 @@ fn dummy_hash() -> &'static str {
     DUMMY.get_or_init(|| hash_password("vegify-timing-equalizer").expect("dummy hash"))
 }
 
-pub fn create_user(conn: &Connection, name: &str, email: &str, password: &str) -> Result<User, AppError> {
+pub fn create_user(
+    conn: &Connection,
+    name: &str,
+    email: &str,
+    password: &str,
+) -> Result<User, AppError> {
     let id = vegify_core::new_id();
     let hash = hash_password(password)?;
     let email = normalize_email(email);
@@ -86,7 +95,13 @@ pub fn create_user(conn: &Connection, name: &str, email: &str, password: &str) -
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         params![id, name, username, email, hash, now],
     )?;
-    Ok(User { id, name: name.to_string(), username, email, email_verified: false })
+    Ok(User {
+        id,
+        name: name.to_string(),
+        username,
+        email,
+        email_verified: false,
+    })
 }
 
 /// Assign a unique handle for a new (or backfilled) user: slug the display name, else the email
@@ -111,7 +126,11 @@ pub fn derive_unique_username(
         base.pop();
     }
     for n in 0..10_000 {
-        let cand = if n == 0 { base.clone() } else { format!("{base}-{n}") };
+        let cand = if n == 0 {
+            base.clone()
+        } else {
+            format!("{base}-{n}")
+        };
         // A suffix can re-trip validation (length/reserved) — skip those.
         let Ok(normalized) = handles::validate_username(&cand) else {
             continue;
@@ -133,7 +152,11 @@ pub fn derive_unique_username(
 /// users row for credential checks: (id, name, username, email,
 /// password_hash, email_verified_at).
 type UserAuthRow = (String, String, String, String, Option<String>, Option<i64>);
-pub fn authenticate(conn: &Connection, identifier: &str, password: &str) -> Result<Option<User>, AppError> {
+pub fn authenticate(
+    conn: &Connection,
+    identifier: &str,
+    password: &str,
+) -> Result<Option<User>, AppError> {
     // Sign in with email OR username. Both are stored lower-cased, so trim+lowercase lets a single bound
     // parameter match either column. (A username can't contain '@' and an email must, so no ambiguity.)
     let identifier = identifier.trim().to_lowercase();
@@ -142,12 +165,28 @@ pub fn authenticate(conn: &Connection, identifier: &str, password: &str) -> Resu
             "SELECT id, name, username, email, password_hash, email_verified_at
              FROM users WHERE email = ?1 OR username = ?1",
             [&identifier],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
         )
         .optional()?;
     match row {
-        Some((id, name, username, email, Some(hash), verified_at)) => Ok(verify_password(&hash, password)
-            .then_some(User { id, name, username, email, email_verified: verified_at.is_some() })),
+        Some((id, name, username, email, Some(hash), verified_at)) => {
+            Ok(verify_password(&hash, password).then_some(User {
+                id,
+                name,
+                username,
+                email,
+                email_verified: verified_at.is_some(),
+            }))
+        }
         _ => {
             // unknown email or an account with no password: burn the same time, reveal nothing
             verify_password(dummy_hash(), password);
@@ -170,7 +209,13 @@ pub fn create_session(conn: &Connection, user_id: &str) -> Result<String, AppErr
     conn.execute(
         "INSERT INTO sessions(id, user_id, hashed_token, expires_at, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![vegify_core::new_id(), user_id, token_hash(&token), now + SESSION_TTL_MS, now],
+        params![
+            vegify_core::new_id(),
+            user_id,
+            token_hash(&token),
+            now + SESSION_TTL_MS,
+            now
+        ],
     )?;
     Ok(token)
 }
@@ -213,7 +258,10 @@ pub fn optional_viewer(conn: &Connection, token: Option<String>) -> Option<Strin
 }
 
 pub fn invalidate_session(conn: &Connection, token: &str) -> Result<(), AppError> {
-    conn.execute("DELETE FROM sessions WHERE hashed_token = ?1", [token_hash(token)])?;
+    conn.execute(
+        "DELETE FROM sessions WHERE hashed_token = ?1",
+        [token_hash(token)],
+    )?;
     Ok(())
 }
 
@@ -226,7 +274,11 @@ pub fn is_admin(user: &User) -> bool {
 
 pub fn email_exists(conn: &Connection, email: &str) -> Result<bool, AppError> {
     Ok(conn
-        .query_row("SELECT 1 FROM users WHERE email = ?1", [normalize_email(email)], |_| Ok(()))
+        .query_row(
+            "SELECT 1 FROM users WHERE email = ?1",
+            [normalize_email(email)],
+            |_| Ok(()),
+        )
         .optional()?
         .is_some())
 }
@@ -234,12 +286,18 @@ pub fn email_exists(conn: &Connection, email: &str) -> Result<bool, AppError> {
 /// Set an INITIAL password for an account that has none (NULL hash). Refuses to change an existing
 /// one — claims a pre-provisioned/seeded account. NotFound when there's no such account (the web's
 /// 404), Conflict when a password is already set.
-pub fn set_initial_password(conn: &Connection, email: &str, password: &str) -> Result<(), AppError> {
+pub fn set_initial_password(
+    conn: &Connection,
+    email: &str,
+    password: &str,
+) -> Result<(), AppError> {
     let email = normalize_email(email);
     let existing: Option<(String, Option<String>)> = conn
-        .query_row("SELECT id, password_hash FROM users WHERE email = ?1", [&email], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
+        .query_row(
+            "SELECT id, password_hash FROM users WHERE email = ?1",
+            [&email],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
         .optional()?;
     match existing {
         None => Err(AppError::NotFound("No such account.".into())),
@@ -264,11 +322,15 @@ pub fn create_password_reset(
 ) -> Result<Option<(String, String)>, AppError> {
     let email = normalize_email(email);
     let row: Option<(String, String)> = conn
-        .query_row("SELECT id, name FROM users WHERE email = ?1", [&email], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
+        .query_row(
+            "SELECT id, name FROM users WHERE email = ?1",
+            [&email],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
         .optional()?;
-    let Some((user_id, name)) = row else { return Ok(None) };
+    let Some((user_id, name)) = row else {
+        return Ok(None);
+    };
     let bytes = random_bytes::<32>();
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let now = now_ms();
@@ -283,9 +345,15 @@ pub fn create_password_reset(
 /// Consume a reset token: set the account's new password and invalidate every existing session (a leaked
 /// old session must not outlive the reset). Rejects an unknown, expired, or already-used token with a
 /// generic 400. Marks ALL of the user's pending reset tokens used, so the link is strictly single-use.
-pub fn consume_password_reset(conn: &Connection, token: &str, new_password: &str) -> Result<(), AppError> {
+pub fn consume_password_reset(
+    conn: &Connection,
+    token: &str,
+    new_password: &str,
+) -> Result<(), AppError> {
     if new_password.chars().count() < 8 {
-        return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
+        return Err(AppError::BadRequest(
+            "Password must be at least 8 characters.".into(),
+        ));
     }
     let now = now_ms();
     let user_id: Option<String> = conn
@@ -297,7 +365,9 @@ pub fn consume_password_reset(conn: &Connection, token: &str, new_password: &str
         )
         .optional()?;
     let Some(user_id) = user_id else {
-        return Err(AppError::BadRequest("This reset link is invalid or has expired.".into()));
+        return Err(AppError::BadRequest(
+            "This reset link is invalid or has expired.".into(),
+        ));
     };
     conn.execute(
         "UPDATE users SET password_hash = ?2, updated_at = ?3 WHERE id = ?1",
@@ -327,7 +397,9 @@ pub fn create_email_verification(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
-    let Some((user_id, name, verified_at)) = row else { return Ok(None) };
+    let Some((user_id, name, verified_at)) = row else {
+        return Ok(None);
+    };
     if verified_at.is_some() {
         return Ok(None); // already verified — nothing to send
     }
@@ -356,7 +428,9 @@ pub fn consume_email_verification(conn: &Connection, token: &str) -> Result<(), 
         )
         .optional()?;
     let Some(user_id) = user_id else {
-        return Err(AppError::BadRequest("This verification link is invalid or has expired.".into()));
+        return Err(AppError::BadRequest(
+            "This verification link is invalid or has expired.".into(),
+        ));
     };
     conn.execute(
         "UPDATE users SET email_verified_at = ?2, updated_at = ?2 WHERE id = ?1",
@@ -378,7 +452,11 @@ pub fn consume_email_verification(conn: &Connection, token: &str) -> Result<(), 
 /// ON DELETE CASCADE when the user row is finally removed.
 pub fn delete_account(conn: &Connection, user_id: &str, password: &str) -> Result<(), AppError> {
     let hash: Option<Option<String>> = conn
-        .query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))
+        .query_row(
+            "SELECT password_hash FROM users WHERE id = ?1",
+            [user_id],
+            |r| r.get(0),
+        )
         .optional()?;
     let Some(Some(hash)) = hash else {
         return Err(AppError::Unauthorized);
@@ -392,7 +470,9 @@ pub fn delete_account(conn: &Connection, user_id: &str, password: &str) -> Resul
         let mut stmt = conn.prepare(
             "SELECT r.id FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id WHERE i.user_id = ?1",
         )?;
-        let v = stmt.query_map([user_id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        let v = stmt
+            .query_map([user_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
         v
     };
     for id in recipe_ids {
@@ -405,7 +485,9 @@ pub fn delete_account(conn: &Connection, user_id: &str, password: &str) -> Resul
         let mut stmt = conn.prepare(
             "SELECT id FROM ingredients WHERE user_id = ?1 AND id NOT IN (SELECT as_ingredient_id FROM recipes)",
         )?;
-        let v = stmt.query_map([user_id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        let v = stmt
+            .query_map([user_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
         v
     };
     for id in leaf_ids {
@@ -434,10 +516,15 @@ pub fn delete_account(conn: &Connection, user_id: &str, password: &str) -> Resul
 
 /// Pull the bearer token out of an Authorization header (case-insensitive `Bearer `, then trimmed).
 pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
-    let h = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let h = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
     let t = h.trim_start();
     let prefix = t.get(..7)?;
-    prefix.eq_ignore_ascii_case("bearer ").then(|| t[7..].trim().to_string())
+    prefix
+        .eq_ignore_ascii_case("bearer ")
+        .then(|| t[7..].trim().to_string())
 }
 
 #[cfg(test)]
@@ -468,10 +555,28 @@ mod reset_tests {
         let conn = test_conn();
         let user = create_user(&conn, "Test User", "user@example.com", "pw-123456").unwrap();
         assert_eq!(user.username, "test-user"); // derived handle for "Test User"
-        // email, username, and case/space-insensitive all resolve to the same account
-        assert_eq!(authenticate(&conn, "user@example.com", "pw-123456").unwrap().unwrap().id, user.id);
-        assert_eq!(authenticate(&conn, "test-user", "pw-123456").unwrap().unwrap().id, user.id);
-        assert_eq!(authenticate(&conn, "  Test-User  ", "pw-123456").unwrap().unwrap().id, user.id);
+                                                // email, username, and case/space-insensitive all resolve to the same account
+        assert_eq!(
+            authenticate(&conn, "user@example.com", "pw-123456")
+                .unwrap()
+                .unwrap()
+                .id,
+            user.id
+        );
+        assert_eq!(
+            authenticate(&conn, "test-user", "pw-123456")
+                .unwrap()
+                .unwrap()
+                .id,
+            user.id
+        );
+        assert_eq!(
+            authenticate(&conn, "  Test-User  ", "pw-123456")
+                .unwrap()
+                .unwrap()
+                .id,
+            user.id
+        );
         // wrong password and unknown identifier both fail
         assert!(authenticate(&conn, "test-user", "wrong").unwrap().is_none());
         assert!(authenticate(&conn, "ghost", "pw-123456").unwrap().is_none());
@@ -485,7 +590,10 @@ mod reset_tests {
         // A valid bearer identifies the viewer; an absent or garbage token is anonymous (None), never an error.
         assert_eq!(optional_viewer(&conn, Some(token)), Some(user.id));
         assert_eq!(optional_viewer(&conn, None), None);
-        assert_eq!(optional_viewer(&conn, Some("not-a-real-token".into())), None);
+        assert_eq!(
+            optional_viewer(&conn, Some("not-a-real-token".into())),
+            None
+        );
     }
 
     #[test]
@@ -495,23 +603,36 @@ mod reset_tests {
         let session = create_session(&conn, &user.id).unwrap();
 
         // Unknown email reveals nothing — no token, no error (enumeration-safe).
-        assert!(create_password_reset(&conn, "nobody@example.com").unwrap().is_none());
+        assert!(create_password_reset(&conn, "nobody@example.com")
+            .unwrap()
+            .is_none());
 
         // Known email, case/space-insensitive, mints a token and returns the name for the email.
-        let (name, token) = create_password_reset(&conn, "  User@Example.com ").unwrap().unwrap();
+        let (name, token) = create_password_reset(&conn, "  User@Example.com ")
+            .unwrap()
+            .unwrap();
         assert_eq!(name, "Test User");
 
         // Consuming sets the new password, rejects the old one, and kills existing sessions.
         consume_password_reset(&conn, &token, "new-password-123").unwrap();
-        assert!(authenticate(&conn, "user@example.com", "new-password-123").unwrap().is_some());
-        assert!(authenticate(&conn, "user@example.com", "old-password").unwrap().is_none());
-        assert!(validate_session(&conn, &session).unwrap().is_none(), "reset must invalidate sessions");
+        assert!(authenticate(&conn, "user@example.com", "new-password-123")
+            .unwrap()
+            .is_some());
+        assert!(authenticate(&conn, "user@example.com", "old-password")
+            .unwrap()
+            .is_none());
+        assert!(
+            validate_session(&conn, &session).unwrap().is_none(),
+            "reset must invalidate sessions"
+        );
 
         // The link is strictly single-use.
         assert!(consume_password_reset(&conn, &token, "yet-another-123").is_err());
 
         // A new token still requires an 8+ char password.
-        let (_, t2) = create_password_reset(&conn, "user@example.com").unwrap().unwrap();
+        let (_, t2) = create_password_reset(&conn, "user@example.com")
+            .unwrap()
+            .unwrap();
         assert!(consume_password_reset(&conn, &t2, "short").is_err());
     }
 
@@ -522,19 +643,30 @@ mod reset_tests {
         assert!(!user.email_verified, "a fresh account starts unverified");
 
         // Unknown email mints nothing (enumeration-safe).
-        assert!(create_email_verification(&conn, "nobody@example.com").unwrap().is_none());
+        assert!(create_email_verification(&conn, "nobody@example.com")
+            .unwrap()
+            .is_none());
 
         // Known, unverified email mints a token (case/space-insensitive) and returns the name.
-        let (name, token) = create_email_verification(&conn, "  User@Example.com ").unwrap().unwrap();
+        let (name, token) = create_email_verification(&conn, "  User@Example.com ")
+            .unwrap()
+            .unwrap();
         assert_eq!(name, "Test User");
 
         // Consuming it stamps email_verified_at — a fresh session now reports verified.
         consume_email_verification(&conn, &token).unwrap();
         let session = create_session(&conn, &user.id).unwrap();
-        assert!(validate_session(&conn, &session).unwrap().unwrap().email_verified);
+        assert!(
+            validate_session(&conn, &session)
+                .unwrap()
+                .unwrap()
+                .email_verified
+        );
 
         // The link is single-use, and an already-verified account mints no further tokens.
         assert!(consume_email_verification(&conn, &token).is_err());
-        assert!(create_email_verification(&conn, "user@example.com").unwrap().is_none());
+        assert!(create_email_verification(&conn, "user@example.com")
+            .unwrap()
+            .is_none());
     }
 }

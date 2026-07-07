@@ -7,8 +7,7 @@
 use rusqlite::{params, Connection};
 
 use crate::error::AppError;
-pub use vegify_api_types::{PullPayload, PullRecipe, PullItem, PullIngredient, PullReading};
-
+pub use vegify_api_types::{PullIngredient, PullItem, PullPayload, PullReading, PullRecipe};
 
 /// Assemble the viewer's listed world in mutation shape. isListed = public + own (the same gate the
 /// vegify-core lists use); each row carries its REAL owner so the desktop's apply stamps it correctly.
@@ -25,22 +24,23 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
              WHERE i.visibility = 'public' OR i.user_id = ?1
              ORDER BY i.name",
         )?;
-        let rows = stmt.query_map(params![viewer], |row| {
-            Ok(PullRecipe {
-                id: row.get(0)?,
-                as_ingredient_id: row.get(1)?,
-                user_id: row.get(2)?,
-                visibility: row.get(3)?,
-                name: row.get(4)?,
-                subtitle: row.get(5)?,
-                directions: row.get(6)?,
-                serving_grams: row.get(7)?,
-                batch_grams: row.get(8)?,
-                slug: row.get(9)?,
-                items: Vec::new(),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = stmt
+            .query_map(params![viewer], |row| {
+                Ok(PullRecipe {
+                    id: row.get(0)?,
+                    as_ingredient_id: row.get(1)?,
+                    user_id: row.get(2)?,
+                    visibility: row.get(3)?,
+                    name: row.get(4)?,
+                    subtitle: row.get(5)?,
+                    directions: row.get(6)?,
+                    serving_grams: row.get(7)?,
+                    batch_grams: row.get(8)?,
+                    slug: row.get(9)?,
+                    items: Vec::new(),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         rows
     };
     // Each recipe's items, in declaration order (FK references, not joined rows).
@@ -75,23 +75,24 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                AND (i.visibility = 'public' OR i.user_id = ?1)
              ORDER BY i.name",
         )?;
-        let rows = stmt.query_map(params![viewer], |row| {
-            Ok(PullIngredient {
-                id: row.get(0)?,
-                user_id: row.get(1)?,
-                visibility: row.get(2)?,
-                name: row.get(3)?,
-                description: row.get(4)?,
-                price: row.get(5)?,
-                calories_per_100g: row.get(6)?,
-                serving_grams: row.get(7)?,
-                package_grams: row.get(8)?,
-                slug: row.get(9)?,
-                deleted_at: row.get(10)?,
-                nutrients: Vec::new(),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = stmt
+            .query_map(params![viewer], |row| {
+                Ok(PullIngredient {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    visibility: row.get(2)?,
+                    name: row.get(3)?,
+                    description: row.get(4)?,
+                    price: row.get(5)?,
+                    calories_per_100g: row.get(6)?,
+                    serving_grams: row.get(7)?,
+                    package_grams: row.get(8)?,
+                    slug: row.get(9)?,
+                    deleted_at: row.get(10)?,
+                    nutrients: Vec::new(),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         rows
     };
     // Each leaf ingredient's stored per-100g nutrients.
@@ -114,5 +115,8 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                 .collect::<rusqlite::Result<Vec<_>>>()?;
         }
     }
-    Ok(PullPayload { recipes, ingredients })
+    Ok(PullPayload {
+        recipes,
+        ingredients,
+    })
 }

@@ -44,7 +44,6 @@ pub fn export_bindings() -> Result<(), Box<dyn std::error::Error>> {
 // regenerate in place. In-crate on purpose — the desktop is an APPLICATION, a leaf; no tools crate
 // may depend on it to reach these types.
 
-
 /// The Tauri app, platform-independent: every shell (desktop binary, iOS static lib) runs this.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -73,7 +72,11 @@ pub fn run() {
         use tauri_plugin_tracing::{Builder as TracingBuilder, LevelFilter};
         builder.plugin(
             TracingBuilder::new()
-                .with_max_level(if cfg!(debug_assertions) { LevelFilter::DEBUG } else { LevelFilter::INFO })
+                .with_max_level(if cfg!(debug_assertions) {
+                    LevelFilter::DEBUG
+                } else {
+                    LevelFilter::INFO
+                })
                 .with_default_subscriber()
                 .build(),
         )
@@ -94,7 +97,10 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
                     Ok(rt) => rt.block_on(crate::data::run_ws_push(handle)),
                     Err(e) => tracing::error!(error = %e, "ws push runtime failed to start"),
                 }
@@ -113,7 +119,8 @@ pub fn run() {
                 let show = MenuItem::with_id(app, "show", "Show Vegify", true, None::<&str>)?;
                 let quit = MenuItem::with_id(app, "quit", "Quit Vegify", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show, &quit])?;
-                let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+                let tray_icon =
+                    tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
                 TrayIconBuilder::with_id("main-tray")
                     .icon(tray_icon)
                     .icon_as_template(true)

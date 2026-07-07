@@ -10,7 +10,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::AppError;
-pub use vegify_api_types::{Party, ConversationSummary, Message, Thread};
+pub use vegify_api_types::{ConversationSummary, Message, Party, Thread};
 
 /// Body cap — generous for a DM, small enough that a hostile client can't stuff megabytes a row.
 const MAX_BODY_CHARS: usize = 5_000;
@@ -47,10 +47,6 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-
-
-
-
 fn party_by_username(conn: &Connection, username: &str) -> Result<Party, AppError> {
     conn.query_row(
         "SELECT id, name, username FROM users WHERE username = ?1",
@@ -79,7 +75,11 @@ fn conversation_id(conn: &Connection, me: &str, other: &str) -> Result<Option<St
         .optional()?)
 }
 
-fn get_or_create_conversation(conn: &Connection, me: &str, other: &str) -> Result<String, AppError> {
+fn get_or_create_conversation(
+    conn: &Connection,
+    me: &str,
+    other: &str,
+) -> Result<String, AppError> {
     if let Some(id) = conversation_id(conn, me, other)? {
         return Ok(id);
     }
@@ -104,7 +104,12 @@ fn get_or_create_conversation(conn: &Connection, me: &str, other: &str) -> Resul
 /// Send `body` to `to_username`. Creates the conversation on first contact. Returns the stored
 /// message. Deliberately does NOT ring the bell: DMs have their own surface (the Mail badge) — the
 /// bell is reserved for personal-impact events (see notifications.rs).
-pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Result<Message, AppError> {
+pub fn send(
+    conn: &Connection,
+    me_id: &str,
+    to_username: &str,
+    body: &str,
+) -> Result<Message, AppError> {
     let body = body.trim();
     if body.is_empty() {
         return Err(AppError::BadRequest("A message can't be empty.".into()));
@@ -141,7 +146,10 @@ pub fn send(conn: &Connection, me_id: &str, to_username: &str, body: &str) -> Re
 
 /// The viewer's conversations, most recently active first, with the other party, last message, and
 /// their unread count (messages from the other party not yet read).
-pub fn list_conversations(conn: &Connection, me_id: &str) -> Result<Vec<ConversationSummary>, AppError> {
+pub fn list_conversations(
+    conn: &Connection,
+    me_id: &str,
+) -> Result<Vec<ConversationSummary>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT c.id,
                 u.id, u.name, u.username,
@@ -186,7 +194,10 @@ pub fn thread(conn: &Connection, me_id: &str, other_username: &str) -> Result<Th
         return Err(AppError::BadRequest("You can't message yourself.".into()));
     }
     let Some(conversation) = conversation_id(conn, me_id, &with.id)? else {
-        return Ok(Thread { with, messages: vec![] });
+        return Ok(Thread {
+            with,
+            messages: vec![],
+        });
     };
     conn.execute(
         "UPDATE messages SET read_at = ?1 WHERE conversation_id = ?2 AND sender_id != ?3 AND read_at IS NULL",
@@ -243,7 +254,9 @@ mod tests {
         let conn = test_conn();
         send(&conn, "u1", "grace", "hi").unwrap();
         send(&conn, "u2", "ada", "hi back").unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM conversations", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM conversations", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1, "both directions share the normalized pair row");
     }
 
@@ -261,7 +274,11 @@ mod tests {
         assert_eq!(unread_count(&conn, "u2").unwrap(), 0);
         assert_eq!(unread_count(&conn, "u1").unwrap(), 1);
         let mine: Vec<bool> = t.messages.iter().map(|m| m.mine).collect();
-        assert_eq!(mine, vec![false, false, true], "alignment flags are viewer-relative");
+        assert_eq!(
+            mine,
+            vec![false, false, true],
+            "alignment flags are viewer-relative"
+        );
     }
 
     #[test]
@@ -280,11 +297,23 @@ mod tests {
     #[test]
     fn guards_empty_self_unknown_and_oversized() {
         let conn = test_conn();
-        assert!(matches!(send(&conn, "u1", "ada", "hi"), Err(AppError::BadRequest(_))), "self-send refused");
-        assert!(matches!(send(&conn, "u1", "nobody", "hi"), Err(AppError::NotFound(_))));
-        assert!(matches!(send(&conn, "u1", "grace", "   "), Err(AppError::BadRequest(_))));
+        assert!(
+            matches!(send(&conn, "u1", "ada", "hi"), Err(AppError::BadRequest(_))),
+            "self-send refused"
+        );
+        assert!(matches!(
+            send(&conn, "u1", "nobody", "hi"),
+            Err(AppError::NotFound(_))
+        ));
+        assert!(matches!(
+            send(&conn, "u1", "grace", "   "),
+            Err(AppError::BadRequest(_))
+        ));
         let big = "x".repeat(MAX_BODY_CHARS + 1);
-        assert!(matches!(send(&conn, "u1", "grace", &big), Err(AppError::BadRequest(_))));
+        assert!(matches!(
+            send(&conn, "u1", "grace", &big),
+            Err(AppError::BadRequest(_))
+        ));
         // A thread with a stranger (no conversation yet) resolves the party with zero messages.
         let t = thread(&conn, "u1", "grace").unwrap();
         assert_eq!(t.with.username, "grace");

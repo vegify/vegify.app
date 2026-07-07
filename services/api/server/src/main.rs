@@ -108,7 +108,11 @@ async fn login(
     ratelimit::guard(&state.rate, ratelimit::LOGIN_IP, &ip).map_err(AppError::RateLimited)?;
     let (email, password) = match (body.email, body.password) {
         (Some(e), Some(p)) if !e.is_empty() && !p.is_empty() => (e, p),
-        _ => return Err(AppError::BadRequest("Email and password are required.".into())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "Email and password are required.".into(),
+            ))
+        }
     };
     // The per-identifier failure budget is the actual credential-stuffing guard: keyed on the
     // account, not the address, so it holds through the SSR Lambda's egress aggregation and
@@ -116,16 +120,22 @@ async fn login(
     let fail_key = email.trim().to_lowercase();
     if let Some(retry) = state.rate.over(ratelimit::LOGIN_FAILS, &fail_key) {
         // Same greppable signal `guard` emits — a locked identifier IS the credential-stuffing tell.
-        tracing::warn!(limit = ratelimit::LOGIN_FAILS.name, retry_after = retry, "rate_limited");
+        tracing::warn!(
+            limit = ratelimit::LOGIN_FAILS.name,
+            retry_after = retry,
+            "rate_limited"
+        );
         return Err(AppError::RateLimited(retry));
     }
-    let out = db(&state, move |conn| match auth::authenticate(conn, &email, &password)? {
-        Some(user) => {
-            let token = auth::create_session(conn, &user.id)?;
-            tracing::info!(user = %user.id, "login ok");
-            Ok(json!({ "token": token, "user": user }))
+    let out = db(&state, move |conn| {
+        match auth::authenticate(conn, &email, &password)? {
+            Some(user) => {
+                let token = auth::create_session(conn, &user.id)?;
+                tracing::info!(user = %user.id, "login ok");
+                Ok(json!({ "token": token, "user": user }))
+            }
+            None => Err(AppError::InvalidCredentials),
         }
-        None => Err(AppError::InvalidCredentials),
     })
     .await;
     match &out {
@@ -163,12 +173,16 @@ async fn signup(
         return Err(AppError::BadRequest("Name and email are required.".into()));
     }
     if password.chars().count() < 8 {
-        return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
+        return Err(AppError::BadRequest(
+            "Password must be at least 8 characters.".into(),
+        ));
     }
     let verify_email = email.clone();
     let out = db(&state, move |conn| {
         if auth::email_exists(conn, &email)? {
-            return Err(AppError::Conflict("An account with that email already exists.".into()));
+            return Err(AppError::Conflict(
+                "An account with that email already exists.".into(),
+            ));
         }
         let user = auth::create_user(conn, &name, &email, &password)?;
         let token = auth::create_session(conn, &user.id)?;
@@ -179,8 +193,10 @@ async fn signup(
     // New account → send a verification email, best-effort and outside the blocking closure (mirrors the
     // reset send). A second DB hit mints the token; signup already succeeded, so a send failure only logs.
     let to = verify_email.clone();
-    if let Some((name, token)) =
-        db(&state, move |conn| auth::create_email_verification(conn, &verify_email)).await?
+    if let Some((name, token)) = db(&state, move |conn| {
+        auth::create_email_verification(conn, &verify_email)
+    })
+    .await?
     {
         email::send_email_verification(&to, &name, &token).await;
     }
@@ -211,7 +227,9 @@ async fn invite_account(
         return Err(AppError::BadRequest("Name and email are required.".into()));
     }
     if password.chars().count() < 8 {
-        return Err(AppError::BadRequest("Password must be at least 8 characters.".into()));
+        return Err(AppError::BadRequest(
+            "Password must be at least 8 characters.".into(),
+        ));
     }
     let out = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
@@ -219,7 +237,9 @@ async fn invite_account(
             return Err(AppError::Forbidden("Admins only.".into()));
         }
         if auth::email_exists(conn, &email)? {
-            return Err(AppError::Conflict("An account with that email already exists.".into()));
+            return Err(AppError::Conflict(
+                "An account with that email already exists.".into(),
+            ));
         }
         let user = auth::create_user(conn, &name, &email, &password)?;
         tracing::info!(by = %me.id, new_user = %user.id, "account invited");
@@ -229,7 +249,10 @@ async fn invite_account(
     Ok(Json(out))
 }
 
-async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
     if let Some(token) = bearer_token(&headers) {
         db(&state, move |conn| auth::invalidate_session(conn, &token)).await?;
     }
@@ -252,16 +275,24 @@ async fn bootstrap(
     let email = body.email.unwrap_or_default().trim().to_string();
     let password = body.password.unwrap_or_default();
     if email.is_empty() || password.chars().count() < 8 {
-        return Err(AppError::BadRequest("Email and an 8+ character password are required.".into()));
+        return Err(AppError::BadRequest(
+            "Email and an 8+ character password are required.".into(),
+        ));
     }
     let normalized = email.to_lowercase();
-    db(&state, move |conn| auth::set_initial_password(conn, &email, &password)).await?;
+    db(&state, move |conn| {
+        auth::set_initial_password(conn, &email, &password)
+    })
+    .await?;
     Ok(Json(json!({ "ok": true, "email": normalized })))
 }
 
 /// Whoami: resolve the bearer token to its user (401 if absent/invalid). The web SSR shell calls this
 /// to turn its session cookie into the signed-in user for the auth gate + chrome.
-async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<User>, AppError> {
+async fn session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<User>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
     let user = db(&state, move |conn| auth::validate_session(conn, &token)).await?;
     user.map(Json).ok_or(AppError::Unauthorized)
@@ -289,8 +320,10 @@ async fn request_password_reset(
         ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
             .map_err(AppError::RateLimited)?;
         let to = email.clone();
-        if let Some((name, token)) =
-            db(&state, move |conn| auth::create_password_reset(conn, &email)).await?
+        if let Some((name, token)) = db(&state, move |conn| {
+            auth::create_password_reset(conn, &email)
+        })
+        .await?
         {
             email::send_password_reset(&to, &name, &token).await;
         }
@@ -311,13 +344,17 @@ async fn confirm_password_reset(
     ClientIp(ip): ClientIp,
     Json(body): Json<ResetConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
-    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip)
+        .map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     let password = body.password.unwrap_or_default();
     if token.is_empty() {
         return Err(AppError::BadRequest("A reset token is required.".into()));
     }
-    db(&state, move |conn| auth::consume_password_reset(conn, &token, &password)).await?;
+    db(&state, move |conn| {
+        auth::consume_password_reset(conn, &token, &password)
+    })
+    .await?;
     tracing::info!("password reset completed");
     Ok(Json(json!({ "ok": true })))
 }
@@ -336,8 +373,10 @@ async fn request_email_verification(
         ratelimit::guard(&state.rate, ratelimit::EMAIL_SEND_ID, &email.to_lowercase())
             .map_err(AppError::RateLimited)?;
         let to = email.clone();
-        if let Some((name, token)) =
-            db(&state, move |conn| auth::create_email_verification(conn, &email)).await?
+        if let Some((name, token)) = db(&state, move |conn| {
+            auth::create_email_verification(conn, &email)
+        })
+        .await?
         {
             email::send_email_verification(&to, &name, &token).await;
         }
@@ -357,12 +396,18 @@ async fn confirm_email_verification(
     ClientIp(ip): ClientIp,
     Json(body): Json<VerifyConfirmBody>,
 ) -> Result<Json<Value>, AppError> {
-    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip).map_err(AppError::RateLimited)?;
+    ratelimit::guard(&state.rate, ratelimit::TOKEN_CONFIRM_IP, &ip)
+        .map_err(AppError::RateLimited)?;
     let token = body.token.unwrap_or_default();
     if token.is_empty() {
-        return Err(AppError::BadRequest("A verification token is required.".into()));
+        return Err(AppError::BadRequest(
+            "A verification token is required.".into(),
+        ));
     }
-    db(&state, move |conn| auth::consume_email_verification(conn, &token)).await?;
+    db(&state, move |conn| {
+        auth::consume_email_verification(conn, &token)
+    })
+    .await?;
     tracing::info!("email verified");
     Ok(Json(json!({ "ok": true })))
 }
@@ -414,7 +459,9 @@ async fn recipe_by_slug(
 ) -> Result<Json<Option<vegify_core::RecipeSlugHit>>, AppError> {
     let (username, slug) = (q.username.unwrap_or_default(), q.slug.unwrap_or_default());
     if username.is_empty() || slug.is_empty() {
-        return Err(AppError::BadRequest("username and slug are required.".into()));
+        return Err(AppError::BadRequest(
+            "username and slug are required.".into(),
+        ));
     }
     let out = db(&state, move |conn| {
         vegify_core::resolve_recipe_by_slug(conn, &username, &slug).map_err(AppError::from)
@@ -447,14 +494,24 @@ async fn ingredient_by_slug(
 
 /// All public canonical URLs (recipes + ingredients) for the web's dynamic sitemap. Public data only —
 /// no session, safe for a crawler-facing web route to proxy unauthenticated.
-async fn sitemap(State(state): State<AppState>) -> Result<Json<vegify_core::SitemapData>, AppError> {
-    let out = db(&state, move |conn| vegify_core::public_sitemap(conn).map_err(AppError::from)).await?;
+async fn sitemap(
+    State(state): State<AppState>,
+) -> Result<Json<vegify_core::SitemapData>, AppError> {
+    let out = db(&state, move |conn| {
+        vegify_core::public_sitemap(conn).map_err(AppError::from)
+    })
+    .await?;
     Ok(Json(out))
 }
 
 /// Blog index (published posts, newest first). Public — the blog is the unauthenticated writing surface.
-async fn blog_list(State(state): State<AppState>) -> Result<Json<Vec<blog::PostSummary>>, AppError> {
-    let out = db(&state, |conn| blog::list_posts(conn).map_err(AppError::from)).await?;
+async fn blog_list(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<blog::PostSummary>>, AppError> {
+    let out = db(&state, |conn| {
+        blog::list_posts(conn).map_err(AppError::from)
+    })
+    .await?;
     Ok(Json(out))
 }
 
@@ -467,7 +524,10 @@ async fn blog_detail(
     if slug.is_empty() {
         return Err(AppError::BadRequest("slug is required.".into()));
     }
-    let out = db(&state, move |conn| blog::get_post(conn, &slug).map_err(AppError::from)).await?;
+    let out = db(&state, move |conn| {
+        blog::get_post(conn, &slug).map_err(AppError::from)
+    })
+    .await?;
     Ok(Json(out))
 }
 
@@ -633,7 +693,8 @@ async fn delete_recipe(
     Query(q): Query<IdQuery>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let id = q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
+    let id =
+        q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
     db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         vegify_core::do_delete_recipe(conn, &id, Some(&me.id)).map_err(AppError::from)
@@ -671,14 +732,17 @@ async fn save_ingredient(
             .id
             .as_deref()
             .map(|iid| {
-                conn.query_row("SELECT COUNT(*) FROM ingredients WHERE id = ?1", [iid], |r| {
-                    r.get::<_, i64>(0)
-                })
+                conn.query_row(
+                    "SELECT COUNT(*) FROM ingredients WHERE id = ?1",
+                    [iid],
+                    |r| r.get::<_, i64>(0),
+                )
                 .map(|c| c > 0)
             })
             .transpose()?
             .unwrap_or(false);
-        let id = vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)?;
+        let id =
+            vegify_core::do_save_ingredient(conn, &input, Some(&me.id)).map_err(AppError::from)?;
         // The bell's v1 producer: an UPDATED communal ingredient notifies everyone whose recipes use
         // it (their nutrition just changed) — never the editor, collapsed per recipient.
         let notified = if existed {
@@ -703,7 +767,8 @@ async fn delete_ingredient(
     Query(q): Query<IdQuery>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let id = q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
+    let id =
+        q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
     db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         vegify_core::do_delete_ingredient(conn, &id, Some(&me.id)).map_err(AppError::from)
@@ -720,7 +785,8 @@ async fn restore_ingredient(
     Query(q): Query<IdQuery>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let id = q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
+    let id =
+        q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
     db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         vegify_core::do_restore_ingredient(conn, &id, Some(&me.id)).map_err(AppError::from)
@@ -862,15 +928,21 @@ async fn attach_photo(
         body.content_type.unwrap_or_default(),
     );
     if (ing.is_empty() && rid.is_empty()) || key.is_empty() {
-        return Err(AppError::BadRequest("ingredientId (or recipeId) and key are required.".into()));
+        return Err(AppError::BadRequest(
+            "ingredientId (or recipeId) and key are required.".into(),
+        ));
     }
     db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         let target = if !ing.is_empty() {
             ing
         } else {
-            conn.query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&rid], |r| r.get(0))
-                .map_err(|_| AppError::BadRequest("No such recipe.".into()))?
+            conn.query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+                [&rid],
+                |r| r.get(0),
+            )
+            .map_err(|_| AppError::BadRequest("No such recipe.".into()))?
         };
         media::attach_photo(conn, &me.id, &target, &key, &ct)
     })
@@ -892,7 +964,10 @@ async fn attach_avatar(
     Json(body): Json<AttachAvatarBody>,
 ) -> Result<Json<Value>, AppError> {
     let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
-    let (key, ct) = (body.key.unwrap_or_default(), body.content_type.unwrap_or_default());
+    let (key, ct) = (
+        body.key.unwrap_or_default(),
+        body.content_type.unwrap_or_default(),
+    );
     if key.is_empty() {
         return Err(AppError::BadRequest("key is required.".into()));
     }
@@ -930,7 +1005,9 @@ async fn recipe_edit(
     let out = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         match q.id {
-            Some(id) => vegify_core::recipe_for_edit(conn, id, Some(&me.id)).map_err(AppError::from),
+            Some(id) => {
+                vegify_core::recipe_for_edit(conn, id, Some(&me.id)).map_err(AppError::from)
+            }
             None => Ok(None),
         }
     })
@@ -947,7 +1024,9 @@ async fn ingredient_detail(
     let out = db(&state, move |conn| {
         let viewer = auth::optional_viewer(conn, token);
         match q.id {
-            Some(id) => vegify_core::ingredient(conn, id, viewer.as_deref()).map_err(AppError::from),
+            Some(id) => {
+                vegify_core::ingredient(conn, id, viewer.as_deref()).map_err(AppError::from)
+            }
             None => Ok(None),
         }
     })
@@ -964,7 +1043,9 @@ async fn ingredient_edit(
     let out = db(&state, move |conn| {
         let me = require_user(conn, &token)?;
         match q.id {
-            Some(id) => vegify_core::ingredient_for_edit(conn, id, Some(&me.id)).map_err(AppError::from),
+            Some(id) => {
+                vegify_core::ingredient_for_edit(conn, id, Some(&me.id)).map_err(AppError::from)
+            }
             None => Ok(None),
         }
     })
@@ -1016,7 +1097,9 @@ async fn ws(
     Query(q): Query<WsAuth>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
-    let token = bearer_token(&headers).or(q.token).ok_or(AppError::Unauthorized)?;
+    let token = bearer_token(&headers)
+        .or(q.token)
+        .ok_or(AppError::Unauthorized)?;
     db(&state, move |conn| require_user(conn, &token).map(|_| ())).await?;
     let rx = state.change_tx.subscribe();
     Ok(upgrade.on_upgrade(move |socket| ws_loop(socket, rx)))
@@ -1129,7 +1212,10 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         for (id, name, email) in rows {
             // Sequential so each derive sees handles assigned earlier this pass (dedup holds).
             let handle = auth::derive_unique_username(conn, &name, &email, &id)?;
-            conn.execute("UPDATE users SET username = ?1 WHERE id = ?2", [&handle, &id])?;
+            conn.execute(
+                "UPDATE users SET username = ?1 WHERE id = ?2",
+                [&handle, &id],
+            )?;
         }
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users(username)",
@@ -1184,8 +1270,6 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-
-
 /// Liveness probe — unauthenticated, no DB touch. The release pipeline polls this through CloudFront
 /// after the server deploys, as the gate before it publishes the web + desktop clients.
 async fn health() -> &'static str {
@@ -1216,7 +1300,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // box (`journalctl -u vegify`); the TraceLayer below adds a per-request span with status + latency.
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,vegify_server=debug"));
-    tracing_subscriber::fmt().with_env_filter(filter).with_target(true).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .init();
 
     let db_path = vegify_config::server::database_path();
     let port = vegify_config::server::port();
@@ -1246,14 +1333,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(artifact) = usda::fetch_artifact().await {
             match usda::ingest(&setup_conn, &artifact) {
                 Ok(foods) => tracing::info!(foods, "USDA plant catalog seeded"),
-                Err(e) => tracing::warn!(error = %e, "USDA catalog ingest failed — serving without it"),
+                Err(e) => {
+                    tracing::warn!(error = %e, "USDA catalog ingest failed — serving without it")
+                }
             }
         }
     }
     // Change-fanout bus: write handlers `send` a signal, each /ws client `subscribe`s a Receiver. Buffer
     // 64 — a client that lags further behind gets a Lagged error and a "pull all" nudge (it self-heals).
     let (change_tx, _) = tokio::sync::broadcast::channel::<String>(64);
-    let state = AppState { pool, change_tx, rate: Arc::new(RateLimiter::new()) };
+    let state = AppState {
+        pool,
+        change_tx,
+        rate: Arc::new(RateLimiter::new()),
+    };
 
     let app = Router::new()
         .route("/health", get(health))
@@ -1262,10 +1355,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/bootstrap", post(bootstrap))
         .route("/api/auth/session", get(session))
-        .route("/api/auth/password-reset/request", post(request_password_reset))
-        .route("/api/auth/password-reset/confirm", post(confirm_password_reset))
-        .route("/api/auth/email-verification/request", post(request_email_verification))
-        .route("/api/auth/email-verification/confirm", post(confirm_email_verification))
+        .route(
+            "/api/auth/password-reset/request",
+            post(request_password_reset),
+        )
+        .route(
+            "/api/auth/password-reset/confirm",
+            post(confirm_password_reset),
+        )
+        .route(
+            "/api/auth/email-verification/request",
+            post(request_email_verification),
+        )
+        .route(
+            "/api/auth/email-verification/confirm",
+            post(confirm_email_verification),
+        )
         .route("/api/messages/conversations", get(message_conversations))
         .route("/api/messages/thread", get(message_thread))
         .route("/api/messages/send", post(message_send))
@@ -1279,7 +1384,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route(
             "/api/content/ingredients",
-            get(list_ingredients).post(save_ingredient).delete(delete_ingredient),
+            get(list_ingredients)
+                .post(save_ingredient)
+                .delete(delete_ingredient),
         )
         .route("/api/content/recipe-detail", get(recipe_detail))
         .route("/api/content/recipe-edit", get(recipe_edit))
@@ -1310,7 +1417,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-                .on_response(DefaultOnResponse::new().level(Level::INFO).latency_unit(LatencyUnit::Millis))
+                .on_response(
+                    DefaultOnResponse::new()
+                        .level(Level::INFO)
+                        .latency_unit(LatencyUnit::Millis),
+                )
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
         )
         // Gzip responses when the client asks (ureq/fetch both do): the USDA catalog pushed the full
@@ -1319,7 +1430,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // General per-IP cap over every route (auth endpoints add stricter limits in-handler). Inside
         // the TraceLayer above, so a throttled request is still logged. state is cloned in — the router
         // takes ownership of the original just below.
-        .layer(axum::middleware::from_fn_with_state(state.clone(), rate_limit_mw))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_mw,
+        ))
         .with_state(state);
 
     // Bind all interfaces so CloudFront can reach the origin (the SG locks the port to CloudFront's
@@ -1346,13 +1460,27 @@ mod migration_tests {
         ensure_schema(&conn).unwrap();
         ensure_schema(&conn).unwrap();
         let prt_cols: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert!(prt_cols >= 6, "password_reset_tokens should be created with its columns");
+        assert!(
+            prt_cols >= 6,
+            "password_reset_tokens should be created with its columns"
+        );
         let evt_cols: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('email_verification_tokens')", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('email_verification_tokens')",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert!(evt_cols >= 6, "email_verification_tokens should be created with its columns");
+        assert!(
+            evt_cols >= 6,
+            "email_verification_tokens should be created with its columns"
+        );
         let added: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",

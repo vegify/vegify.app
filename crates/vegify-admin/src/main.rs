@@ -54,7 +54,10 @@ fn base_url() -> String {
 /// A ureq agent that hands back non-2xx responses (with their JSON error body) rather than dropping
 /// the body into a bare status error — so [`read`]/[`expect_ok`] can surface the server's message.
 fn client() -> ureq::Agent {
-    ureq::Agent::config_builder().http_status_as_error(false).build().into()
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into()
 }
 
 /// A ureq transport failure → a message. With `http_status_as_error(false)`, a non-2xx is NOT an
@@ -64,12 +67,18 @@ fn err_msg(e: ureq::Error) -> String {
 }
 
 /// Read a 2xx JSON body, else the server's `{error}` message (or `HTTP <code>`) as a String error.
-fn read<T: serde::de::DeserializeOwned>(mut resp: ureq::http::Response<ureq::Body>) -> Result<T, String> {
+fn read<T: serde::de::DeserializeOwned>(
+    mut resp: ureq::http::Response<ureq::Body>,
+) -> Result<T, String> {
     if resp.status().is_success() {
         resp.body_mut().read_json::<T>().map_err(|e| e.to_string())
     } else {
         let code = resp.status().as_u16();
-        Err(resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}")))
+        Err(resp
+            .body_mut()
+            .read_json::<ApiError>()
+            .map(|b| b.error)
+            .unwrap_or_else(|_| format!("HTTP {code}")))
     }
 }
 
@@ -79,13 +88,18 @@ fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), String> {
         Ok(())
     } else {
         let code = resp.status().as_u16();
-        Err(resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}")))
+        Err(resp
+            .body_mut()
+            .read_json::<ApiError>()
+            .map(|b| b.error)
+            .unwrap_or_else(|_| format!("HTTP {code}")))
     }
 }
 
 pub fn login() -> Result<ApiSession, String> {
     let email = std::env::var("VEGIFY_EMAIL").map_err(|_| "set VEGIFY_EMAIL".to_string())?;
-    let password = std::env::var("VEGIFY_PASSWORD").map_err(|_| "set VEGIFY_PASSWORD".to_string())?;
+    let password =
+        std::env::var("VEGIFY_PASSWORD").map_err(|_| "set VEGIFY_PASSWORD".to_string())?;
     let resp = client()
         .post(format!("{}/api/auth/login", base_url()))
         .send_json(serde_json::json!({ "email": email, "password": password }))
@@ -104,7 +118,11 @@ pub fn pull(token: &str) -> Result<PullPayload, String> {
 
 impl ApiSession {
     /// POST a content mutation (`recipes` / `ingredients`), returning the created/updated id.
-    pub fn post_content(&self, collection: &str, body: &serde_json::Value) -> Result<String, String> {
+    pub fn post_content(
+        &self,
+        collection: &str,
+        body: &serde_json::Value,
+    ) -> Result<String, String> {
         #[derive(Deserialize)]
         struct Created {
             id: String,
@@ -148,7 +166,11 @@ fn purge(execute: bool) {
     let recipes = mine(&world.recipes);
     let ingredients = mine(&world.ingredients);
 
-    println!("\nOWNED CONTENT ({} recipes, {} ingredients):", recipes.len(), ingredients.len());
+    println!(
+        "\nOWNED CONTENT ({} recipes, {} ingredients):",
+        recipes.len(),
+        ingredients.len()
+    );
     for (_, name) in &recipes {
         println!("  recipe:     {name}");
     }
@@ -209,7 +231,10 @@ fn invite(args: &[String]) {
             std::process::exit(2);
         }
     };
-    let name = args.get(3).cloned().unwrap_or_else(|| email.split('@').next().unwrap_or("Guest").to_string());
+    let name = args
+        .get(3)
+        .cloned()
+        .unwrap_or_else(|| email.split('@').next().unwrap_or("Guest").to_string());
     let session = match login() {
         Ok(s) => s,
         Err(e) => {
@@ -233,7 +258,11 @@ fn invite(args: &[String]) {
         .send_json(serde_json::json!({ "name": name, "email": email, "password": password }))
     {
         Ok(mut resp) if resp.status().is_success() => {
-            let username = resp.body_mut().read_json::<Invited>().map(|i| i.user.username).unwrap_or_default();
+            let username = resp
+                .body_mut()
+                .read_json::<Invited>()
+                .map(|i| i.user.username)
+                .unwrap_or_default();
             println!("invited @{username}\n");
             println!("  email:    {email}");
             println!("  password: {password}");
@@ -241,7 +270,11 @@ fn invite(args: &[String]) {
         }
         Ok(mut resp) => {
             let code = resp.status().as_u16();
-            let msg = resp.body_mut().read_json::<ApiError>().map(|b| b.error).unwrap_or_else(|_| format!("HTTP {code}"));
+            let msg = resp
+                .body_mut()
+                .read_json::<ApiError>()
+                .map(|b| b.error)
+                .unwrap_or_else(|_| format!("HTTP {code}"));
             eprintln!("invite failed: {msg}");
             std::process::exit(1);
         }
@@ -256,14 +289,19 @@ fn invite(args: &[String]) {
 fn generate_password() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     const CH: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
-    let mut seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     seed ^= std::process::id() as u128;
     let mut out = String::new();
     for i in 0..20 {
         if i > 0 && i % 5 == 0 {
             out.push('-');
         }
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         out.push(CH[(seed >> 64) as usize % CH.len()] as char);
     }
     out

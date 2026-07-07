@@ -40,8 +40,12 @@ build:
 # All Rust tests: server + shared core + the desktop crate.
 rust: rust-core rust-desktop
 
+# Formatting is part of the rust gate (CI runs rust-core, so it rides along).
+rust-fmt:
+    cargo fmt --all --check
+
 # Server + shared core (CI's `ci` rust job — no dev DB needed).
-rust-core:
+rust-core: rust-fmt
     cargo test -p vegify-server -p vegify-core
     # Lint gate for every non-desktop member (the desktop crate needs the webview
     # stack, which CI's ubuntu runner doesn't carry — rust-desktop covers it).

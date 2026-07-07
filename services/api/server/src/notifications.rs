@@ -14,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use crate::error::AppError;
-pub use vegify_api_types::{Notification};
+pub use vegify_api_types::Notification;
 
 /// Bell dropdown depth — the page shows the recent window, not an infinite archive.
 const LIST_LIMIT: i64 = 50;
@@ -42,12 +42,16 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-
 /// Record an event for `user_id`. Callers pass a serializable payload. The generic producer —
 /// future event kinds enter here (today only tests use it directly; the ingredient producer below
 /// carries its own collapse logic).
 #[allow(dead_code)]
-pub fn notify(conn: &Connection, user_id: &str, kind: &str, payload: &Value) -> Result<(), AppError> {
+pub fn notify(
+    conn: &Connection,
+    user_id: &str,
+    kind: &str,
+    payload: &Value,
+) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO notifications (id, user_id, kind, payload, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![vegify_core::new_id(), user_id, kind, payload.to_string(), now_ms()],
@@ -151,7 +155,6 @@ pub fn mark_all_read(conn: &Connection, me_id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,13 +203,20 @@ mod tests {
         assert_eq!(notified, 2, "grace + alan use it; ada edited it");
         assert_eq!(unread_count(&conn, "u2").unwrap(), 1);
         assert_eq!(unread_count(&conn, "u3").unwrap(), 1);
-        assert_eq!(unread_count(&conn, "u1").unwrap(), 0, "the editor is never notified");
+        assert_eq!(
+            unread_count(&conn, "u1").unwrap(),
+            0,
+            "the editor is never notified"
+        );
         let rows = list(&conn, "u2").unwrap();
         assert_eq!(rows[0].kind, "ingredient-updated");
         assert_eq!(rows[0].payload["ingredient"]["name"], "Caputo 00 Flour");
         assert_eq!(rows[0].payload["by"]["username"], "ada");
         // An ingredient nobody uses (or an unknown id) notifies no one.
-        assert_eq!(notify_ingredient_updated(&conn, &ada(), "missing").unwrap(), 0);
+        assert_eq!(
+            notify_ingredient_updated(&conn, &ada(), "missing").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -215,7 +225,11 @@ mod tests {
         notify_ingredient_updated(&conn, &ada(), "i1").unwrap();
         notify_ingredient_updated(&conn, &ada(), "i1").unwrap();
         notify_ingredient_updated(&conn, &ada(), "i1").unwrap();
-        assert_eq!(unread_count(&conn, "u2").unwrap(), 1, "collapsed: one unread per ingredient");
+        assert_eq!(
+            unread_count(&conn, "u2").unwrap(),
+            1,
+            "collapsed: one unread per ingredient"
+        );
         assert_eq!(list(&conn, "u2").unwrap().len(), 1);
         // Grace reads it; a LATER edit is news again — a fresh unread row, the read one preserved.
         mark_all_read(&conn, "u2").unwrap();

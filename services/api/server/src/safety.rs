@@ -83,9 +83,13 @@ pub fn report(
 
 /// Resolve a username to its user id (for block-by-handle).
 fn user_id_by_username(conn: &Connection, username: &str) -> Result<String, AppError> {
-    conn.query_row("SELECT id FROM users WHERE username = ?1", [username], |r| r.get(0))
-        .optional()?
-        .ok_or_else(|| AppError::BadRequest("No such user.".into()))
+    conn.query_row(
+        "SELECT id FROM users WHERE username = ?1",
+        [username],
+        |r| r.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| AppError::BadRequest("No such user.".into()))
 }
 
 /// Block a user by handle (idempotent). You can't block yourself.
@@ -102,7 +106,11 @@ pub fn block(conn: &Connection, blocker_id: &str, blocked_username: &str) -> Res
 }
 
 /// Unblock (idempotent).
-pub fn unblock(conn: &Connection, blocker_id: &str, blocked_username: &str) -> Result<(), AppError> {
+pub fn unblock(
+    conn: &Connection,
+    blocker_id: &str,
+    blocked_username: &str,
+) -> Result<(), AppError> {
     let blocked_id = user_id_by_username(conn, blocked_username)?;
     conn.execute(
         "DELETE FROM user_blocks WHERE blocker_id = ?1 AND blocked_id = ?2",
@@ -156,7 +164,9 @@ mod tests {
         assert!(report(&c, "u1", "bogus", "x", "spam", None).is_err());
         assert!(report(&c, "u1", "recipe", "r1", "nonsense", None).is_err());
         report(&c, "u1", "recipe", "r1", "abuse", Some("mean")).unwrap();
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM reports", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM reports", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 1);
     }
 
@@ -169,7 +179,10 @@ mod tests {
         assert!(either_blocked(&c, "u1", "u2").unwrap());
         assert!(either_blocked(&c, "u2", "u1").unwrap(), "symmetric for DMs");
         assert_eq!(blocked_ids(&c, "u1").unwrap(), vec!["u2".to_string()]);
-        assert!(blocked_ids(&c, "u2").unwrap().is_empty(), "directional for reads");
+        assert!(
+            blocked_ids(&c, "u2").unwrap().is_empty(),
+            "directional for reads"
+        );
         unblock(&c, "u1", "bob").unwrap();
         assert!(!either_blocked(&c, "u1", "u2").unwrap());
     }

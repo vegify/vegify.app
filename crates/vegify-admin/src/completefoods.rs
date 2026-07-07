@@ -117,13 +117,18 @@ fn distill(row: &serde_json::Value) -> Option<(CfIngredient, CfItem)> {
     if name.is_empty() || grams <= 0.0 {
         return None; // pantry residue (295 zero-amount rows in the capture)
     }
-    let serving = row.get("serving").and_then(|v| v.as_f64()).filter(|s| *s > 0.0);
+    let serving = row
+        .get("serving")
+        .and_then(|v| v.as_f64())
+        .filter(|s| *s > 0.0);
     let mut calories = None;
     let mut readings = Vec::new();
     if let Some(serving) = serving {
         let scale = 100.0 / serving;
         for (cf_key, out_name, unit, factor) in NUTRIENTS {
-            let Some(v) = row.get(cf_key).and_then(|v| v.as_f64()) else { continue };
+            let Some(v) = row.get(cf_key).and_then(|v| v.as_f64()) else {
+                continue;
+            };
             if v <= 0.0 {
                 continue;
             }
@@ -136,7 +141,12 @@ fn distill(row: &serde_json::Value) -> Option<(CfIngredient, CfItem)> {
         }
     }
     Some((
-        CfIngredient { name: name.clone(), serving_grams: serving, calories_per_100g: calories, readings },
+        CfIngredient {
+            name: name.clone(),
+            serving_grams: serving,
+            calories_per_100g: calories,
+            readings,
+        },
         CfItem { name, grams },
     ))
 }
@@ -146,7 +156,9 @@ fn catalog_match<'a>(
     catalog: &'a BTreeMap<String, &'a PullRow>,
     cf: &CfIngredient,
 ) -> Result<Option<&'a PullRow>, String> {
-    let Some(hit) = catalog.get(&cf.name.to_lowercase()) else { return Ok(None) };
+    let Some(hit) = catalog.get(&cf.name.to_lowercase()) else {
+        return Ok(None);
+    };
     match (cf.calories_per_100g, hit.calories_per_100g) {
         (Some(a), Some(b)) if (a - b).abs() > (0.15 * b).max(15.0) => Err(format!(
             "name-hit but calorie mismatch (CF {a:.0} vs catalog {b:.0}/100g) — creating a custom instead"
@@ -245,7 +257,10 @@ pub fn run(execute: bool) {
     }
 
     if !empty_recipes.is_empty() {
-        println!("\nEMPTY (all-pantry CF templates, not imported): {}", empty_recipes.join(" · "));
+        println!(
+            "\nEMPTY (all-pantry CF templates, not imported): {}",
+            empty_recipes.join(" · ")
+        );
     }
     println!(
         "\nRESOLUTION: {} recipes ({} already exist, will skip), {} unique ingredients → {} catalog matches, {} customs to create; {} zero-amount rows skipped",
@@ -301,10 +316,15 @@ pub fn run(execute: bool) {
             })
             .collect();
         if wire_items.len() != items.len() {
-            eprintln!("SKIPPED recipe {title}: {} of {} items unresolved", items.len() - wire_items.len(), items.len());
+            eprintln!(
+                "SKIPPED recipe {title}: {} of {} items unresolved",
+                items.len() - wire_items.len(),
+                items.len()
+            );
             continue;
         }
-        let body = serde_json::json!({ "name": title, "visibility": "public", "items": wire_items });
+        let body =
+            serde_json::json!({ "name": title, "visibility": "public", "items": wire_items });
         match session.post_content("recipes", &body) {
             Ok(_) => {
                 done += 1;

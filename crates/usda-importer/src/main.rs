@@ -144,11 +144,15 @@ fn extract(food: Food, dataset: &'static str) -> Option<Entry> {
     if !PLANT_CATEGORIES.contains(&category.as_str()) {
         return None;
     }
-    let map: HashMap<&str, (&str, &str)> =
-        NUTRIENTS.iter().map(|(num, name, unit)| (*num, (*name, *unit))).collect();
+    let map: HashMap<&str, (&str, &str)> = NUTRIENTS
+        .iter()
+        .map(|(num, name, unit)| (*num, (*name, *unit)))
+        .collect();
     let mut by_number: HashMap<String, f64> = HashMap::new();
     for fnut in food.nutrients {
-        let Some(number) = fnut.nutrient.and_then(|n| n.number) else { continue };
+        let Some(number) = fnut.nutrient.and_then(|n| n.number) else {
+            continue;
+        };
         if !map.contains_key(number.as_str()) {
             continue;
         }
@@ -172,7 +176,11 @@ fn extract(food: Food, dataset: &'static str) -> Option<Entry> {
         .into_iter()
         .map(|(number, amount)| {
             let (name, unit) = map[number.as_str()];
-            OutNutrient { name: name.to_string(), unit: unit.to_string(), amount_per_100g: amount }
+            OutNutrient {
+                name: name.to_string(),
+                unit: unit.to_string(),
+                amount_per_100g: amount,
+            }
         })
         .collect();
     Some(Entry {
@@ -191,15 +199,16 @@ fn latest_foundation_path() -> Result<std::path::PathBuf, Box<dyn std::error::Er
     let mut candidates: Vec<_> = std::fs::read_dir(SRC)?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("FoodData_Central_foundation_food_json_") && n.ends_with(".json"))
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("FoodData_Central_foundation_food_json_") && n.ends_with(".json")
+            })
         })
         .collect();
     candidates.sort();
-    candidates
-        .pop()
-        .ok_or_else(|| format!("no Foundation JSON in {SRC} — download it from fdc.nal.usda.gov/download-datasets").into())
+    candidates.pop().ok_or_else(|| {
+        format!("no Foundation JSON in {SRC} — download it from fdc.nal.usda.gov/download-datasets")
+            .into()
+    })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -221,7 +230,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let (mut from_legacy, mut shadowed) = (0usize, 0usize);
     for food in legacy.foods.into_iter().flatten() {
-        let Some(e) = extract(food, "sr-legacy") else { continue };
+        let Some(e) = extract(food, "sr-legacy") else {
+            continue;
+        };
         let key = e.name.to_lowercase();
         if out.contains_key(&key) {
             shadowed += 1;
@@ -252,7 +263,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         counts.iter().min().unwrap(),
         counts.iter().max().unwrap()
     );
-    println!("raw {:.1} MB → gz {} KB", json.len() as f64 / 1e6, bytes / 1000);
+    println!(
+        "raw {:.1} MB → gz {} KB",
+        json.len() as f64 / 1e6,
+        bytes / 1000
+    );
     let mut per_cat: HashMap<&str, usize> = HashMap::new();
     for e in &entries {
         *per_cat.entry(e.category.as_str()).or_default() += 1;
