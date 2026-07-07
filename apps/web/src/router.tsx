@@ -1,7 +1,7 @@
-import { createRouter as createTanStackRouter } from '@tanstack/react-router'
-import { QueryClient } from '@tanstack/react-query'
-import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
-import { routeTree } from './routeTree.gen'
+import { QueryClient } from "@tanstack/react-query";
+import { createRouter as createTanStackRouter } from "@tanstack/react-router";
+import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
+import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {
   // One QueryClient per call — fresh per request on the server (no cross-request cache bleed), one on
@@ -16,24 +16,24 @@ export function getRouter() {
         retry: 1,
       },
     },
-  })
+  });
 
   const router = createTanStackRouter({
     routeTree,
     context: { queryClient },
     scrollRestoration: true,
-    defaultPreload: 'intent',
+    defaultPreload: "intent",
     // Let TanStack Query own read caching; don't double-cache loader data in the router.
     defaultPreloadStaleTime: 0,
-  })
+  });
 
-  setupRouterSsrQueryIntegration({ router, queryClient })
+  setupRouterSsrQueryIntegration({ router, queryClient });
 
-  return router
+  return router;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
-    router: ReturnType<typeof getRouter>
+    router: ReturnType<typeof getRouter>;
   }
 }

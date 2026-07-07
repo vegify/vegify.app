@@ -1,5 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
+import { isOwner, type Visibility } from "./access";
 import { db } from "./index";
+import { one } from "./rows";
 import {
   amounts,
   ingredientInRecipe,
@@ -8,7 +10,6 @@ import {
   nutrients,
   recipes,
 } from "./schema";
-import { isOwner, type Visibility } from "./access";
 
 // Shared domain mutations. Each app wraps these in its own framework-idiomatic
 // transport (Next server action / TanStack createServerFn) — the logic lives once.
@@ -42,10 +43,12 @@ async function upsertAmount(
     await db.update(amounts).set({ grams, unit }).where(eq(amounts.id, id));
     return id;
   }
-  const [a] = await db
-    .insert(amounts)
-    .values({ grams, unit, amount: 1, preferred: "grams" })
-    .returning();
+  const a = one(
+    await db
+      .insert(amounts)
+      .values({ grams, unit, amount: 1, preferred: "grams" })
+      .returning(),
+  );
   return a.id;
 }
 
@@ -61,21 +64,34 @@ async function findOrCreateNutrient(name: string) {
     where: (t, { eq }) => eq(t.name, name),
   });
   if (existing) return existing.id;
-  const [n] = await db.insert(nutrients).values({ name }).returning();
+  const n = one(await db.insert(nutrients).values({ name }).returning());
   return n.id;
 }
 
-export async function saveIngredient(input: SaveIngredientInput): Promise<string> {
+export async function saveIngredient(
+  input: SaveIngredientInput,
+): Promise<string> {
   // Upsert by id: an existing row updates; a provided-but-absent id inserts WITH that id (an offline
   // create's client ULID, or a pulled row). `userId` is set only on insert — an edit never reassigns
   // ownership. The owner guard applies only when the row already exists.
-  const existing = input.id
-    ? await db.query.ingredients.findFirst({ where: (t, { eq }) => eq(t.id, input.id!) })
+  const existingId = input.id;
+  const existing = existingId
+    ? await db.query.ingredients.findFirst({
+        where: (t, { eq }) => eq(t.id, existingId),
+      })
     : null;
   if (existing && !isOwner(existing.userId, input.userId))
     throw new Error("You can only edit your own ingredients.");
-  const servingSizeId = await upsertAmount(existing?.servingSizeId, input.servingGrams, "serving");
-  const batchSizeId = await upsertAmount(existing?.batchSizeId, input.packageGrams, "package");
+  const servingSizeId = await upsertAmount(
+    existing?.servingSizeId,
+    input.servingGrams,
+    "serving",
+  );
+  const batchSizeId = await upsertAmount(
+    existing?.batchSizeId,
+    input.packageGrams,
+    "package",
+  );
 
   let ingredientId: string;
   if (existing) {
@@ -92,23 +108,27 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
       })
       .where(eq(ingredients.id, existing.id));
     ingredientId = existing.id;
-    await db.delete(ingredientNutrient).where(eq(ingredientNutrient.ingredientId, ingredientId));
+    await db
+      .delete(ingredientNutrient)
+      .where(eq(ingredientNutrient.ingredientId, ingredientId));
   } else {
-    const [row] = await db
-      .insert(ingredients)
-      .values({
-        id: input.id, // honor a client-supplied id; undefined → drizzle mints a ULID
-        userId: input.userId ?? null,
-        visibility: input.visibility ?? "public",
-        name: input.name,
-        description: input.description ?? null,
-        isVegan: true,
-        price: input.price ?? null,
-        caloriesPer100g: input.caloriesPer100g ?? null,
-        servingSizeId,
-        batchSizeId,
-      })
-      .returning();
+    const row = one(
+      await db
+        .insert(ingredients)
+        .values({
+          id: input.id, // honor a client-supplied id; undefined → drizzle mints a ULID
+          userId: input.userId ?? null,
+          visibility: input.visibility ?? "public",
+          name: input.name,
+          description: input.description ?? null,
+          isVegan: true,
+          price: input.price ?? null,
+          caloriesPer100g: input.caloriesPer100g ?? null,
+          servingSizeId,
+          batchSizeId,
+        })
+        .returning(),
+    );
     ingredientId = row.id;
   }
 
@@ -128,7 +148,10 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<string
   return ingredientId;
 }
 
-export async function deleteIngredient(id: string, userId?: string | null): Promise<void> {
+export async function deleteIngredient(
+  id: string,
+  userId?: string | null,
+): Promise<void> {
   // ingredient_in_recipe / ingredient_img are onDelete:"restrict" — deleting an in-use
   // ingredient throws (intended). Its serving/batch `amounts` are not cascaded, so clean
   // them up after the row is gone.
@@ -144,7 +167,11 @@ export async function deleteIngredient(id: string, userId?: string | null): Prom
 
 // --- recipes ---
 
-export type RecipeItemInput = { ingredientId: string; grams: number; unit?: string | null };
+export type RecipeItemInput = {
+  ingredientId: string;
+  grams: number;
+  unit?: string | null;
+};
 export type SaveRecipeInput = {
   id?: string;
   asIngredientId?: string;
@@ -164,9 +191,10 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
   // recipe is consumed by id as a recipe item (a Biga inside a Dough), so its as-ingredient id must
   // also stay stable cross-replica or the consuming item's FK orphans after a pull. Owner guard only
   // when the row already exists.
-  const existing = input.id
+  const existingId = input.id;
+  const existing = existingId
     ? await db.query.recipes.findFirst({
-        where: (r, { eq }) => eq(r.id, input.id!),
+        where: (r, { eq }) => eq(r.id, existingId),
         with: { asIngredient: true },
       })
     : null;
@@ -175,15 +203,31 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
 
   let recipeId: string;
   if (existing) {
-    const servingSizeId = await upsertAmount(existing.asIngredient.servingSizeId, input.servingGrams, "serving");
-    const batchSizeId = await upsertAmount(existing.asIngredient.batchSizeId, input.batchGrams, "batch");
+    const servingSizeId = await upsertAmount(
+      existing.asIngredient.servingSizeId,
+      input.servingGrams,
+      "serving",
+    );
+    const batchSizeId = await upsertAmount(
+      existing.asIngredient.batchSizeId,
+      input.batchGrams,
+      "batch",
+    );
     await db
       .update(ingredients)
-      .set({ name: input.name, visibility: input.visibility ?? "public", servingSizeId, batchSizeId })
+      .set({
+        name: input.name,
+        visibility: input.visibility ?? "public",
+        servingSizeId,
+        batchSizeId,
+      })
       .where(eq(ingredients.id, existing.asIngredientId));
     await db
       .update(recipes)
-      .set({ subtitle: input.subtitle ?? null, directions: input.directions ?? null })
+      .set({
+        subtitle: input.subtitle ?? null,
+        directions: input.directions ?? null,
+      })
       .where(eq(recipes.id, existing.id));
     recipeId = existing.id;
     // Re-attach the item list from scratch. The join rows delete fine, but the per-item
@@ -193,42 +237,59 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
       .select({ amountId: ingredientInRecipe.amountId })
       .from(ingredientInRecipe)
       .where(eq(ingredientInRecipe.recipeId, recipeId));
-    await db.delete(ingredientInRecipe).where(eq(ingredientInRecipe.recipeId, recipeId));
+    await db
+      .delete(ingredientInRecipe)
+      .where(eq(ingredientInRecipe.recipeId, recipeId));
     await deleteAmounts(prevItems.map((r) => r.amountId));
   } else {
-    const servingSizeId = await upsertAmount(null, input.servingGrams, "serving");
+    const servingSizeId = await upsertAmount(
+      null,
+      input.servingGrams,
+      "serving",
+    );
     const batchSizeId = await upsertAmount(null, input.batchGrams, "batch");
-    const [ing] = await db
-      .insert(ingredients)
-      .values({
-        id: input.asIngredientId, // honor a client/pull-supplied as-ingredient id; undefined → mint
-        userId: input.userId ?? null,
-        visibility: input.visibility ?? "public",
-        name: input.name,
-        isVegan: true,
-        servingSizeId,
-        batchSizeId,
-      })
-      .returning();
-    const [rec] = await db
-      .insert(recipes)
-      .values({
-        id: input.id, // honor a client-supplied recipe id; undefined → drizzle mints
-        asIngredientId: ing.id,
-        subtitle: input.subtitle ?? null,
-        directions: input.directions ?? null,
-      })
-      .returning();
+    const ing = one(
+      await db
+        .insert(ingredients)
+        .values({
+          id: input.asIngredientId, // honor a client/pull-supplied as-ingredient id; undefined → mint
+          userId: input.userId ?? null,
+          visibility: input.visibility ?? "public",
+          name: input.name,
+          isVegan: true,
+          servingSizeId,
+          batchSizeId,
+        })
+        .returning(),
+    );
+    const rec = one(
+      await db
+        .insert(recipes)
+        .values({
+          id: input.id, // honor a client-supplied recipe id; undefined → drizzle mints
+          asIngredientId: ing.id,
+          subtitle: input.subtitle ?? null,
+          directions: input.directions ?? null,
+        })
+        .returning(),
+    );
     recipeId = rec.id;
   }
 
   let order = 0;
   for (const item of input.items) {
     if (!item.ingredientId || !item.grams) continue;
-    const [a] = await db
-      .insert(amounts)
-      .values({ grams: item.grams, amount: item.grams, unit: item.unit ?? "g", preferred: "grams" })
-      .returning();
+    const a = one(
+      await db
+        .insert(amounts)
+        .values({
+          grams: item.grams,
+          amount: item.grams,
+          unit: item.unit ?? "g",
+          preferred: "grams",
+        })
+        .returning(),
+    );
     await db.insert(ingredientInRecipe).values({
       order: order++,
       recipeId,
@@ -239,7 +300,10 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<string> {
   return recipeId;
 }
 
-export async function deleteRecipe(id: string, userId?: string | null): Promise<void> {
+export async function deleteRecipe(
+  id: string,
+  userId?: string | null,
+): Promise<void> {
   const recipe = await db.query.recipes.findFirst({
     where: (r, { eq }) => eq(r.id, id),
     with: { asIngredient: true },
@@ -265,7 +329,12 @@ export async function deleteRecipe(id: string, userId?: string | null): Promise<
     where: (t, { eq }) => eq(t.ingredientId, recipe.asIngredientId),
   });
   if (!stillConsumed) {
-    await db.delete(ingredients).where(eq(ingredients.id, recipe.asIngredientId)); // cascades ingredient_nutrient
-    await deleteAmounts([recipe.asIngredient.servingSizeId, recipe.asIngredient.batchSizeId]);
+    await db
+      .delete(ingredients)
+      .where(eq(ingredients.id, recipe.asIngredientId)); // cascades ingredient_nutrient
+    await deleteAmounts([
+      recipe.asIngredient.servingSizeId,
+      recipe.asIngredient.batchSizeId,
+    ]);
   }
 }

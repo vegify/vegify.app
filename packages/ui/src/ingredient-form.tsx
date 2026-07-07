@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useState } from "react";
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
-import { VisibilityField, type Visibility } from "./visibility-field";
+import { type Visibility, VisibilityField } from "./visibility-field";
 
 /** What `onSave` receives — the storage shape (per-100g), already converted. */
 export type IngredientFormInput = {
@@ -32,8 +32,11 @@ export type IngredientFormDefaults = {
   nutrients?: { name: string; amountPerServing: number; unit: string }[];
 };
 
-type Row = { name: string; amount: string; unit: string };
-const emptyRow = (): Row => ({ name: "", amount: "", unit: "" });
+type Row = { key: string; name: string; amount: string; unit: string };
+// Stable per-row identity so removing a middle row cannot bleed input state
+// into its neighbour (index keys break exactly there).
+const rowKey = () => crypto.randomUUID();
+const emptyRow = (): Row => ({ key: rowKey(), name: "", amount: "", unit: "" });
 const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
 // kill float noise from per-100g <-> per-serving conversions before showing in inputs
 const clean = (n: number) => String(Math.round(n * 1e6) / 1e6);
@@ -49,7 +52,9 @@ export function IngredientForm({
 }) {
   const [name, setName] = useState(defaults?.name ?? "");
   const [description, setDescription] = useState(defaults?.description ?? "");
-  const [visibility, setVisibility] = useState<Visibility>(defaults?.visibility ?? "public");
+  const [visibility, setVisibility] = useState<Visibility>(
+    defaults?.visibility ?? "public",
+  );
   const [price, setPrice] = useState(
     defaults?.priceCents != null ? clean(defaults.priceCents / 100) : "",
   );
@@ -60,11 +65,14 @@ export function IngredientForm({
     defaults?.servingGrams != null ? String(defaults.servingGrams) : "",
   );
   const [calories, setCalories] = useState(
-    defaults?.caloriesPerServing != null ? clean(defaults.caloriesPerServing) : "",
+    defaults?.caloriesPerServing != null
+      ? clean(defaults.caloriesPerServing)
+      : "",
   );
   const [rows, setRows] = useState<Row[]>(
     defaults?.nutrients?.length
       ? defaults.nutrients.map((n) => ({
+          key: rowKey(),
           name: n.name,
           amount: clean(n.amountPerServing),
           unit: n.unit,
@@ -98,7 +106,9 @@ export function IngredientForm({
       description: description.trim() || null,
       price: price.trim() ? Math.round(Number(price) * 100) : null,
       caloriesPer100g:
-        servingGrams && calories.trim() ? (Number(calories) * 100) / servingGrams : null,
+        servingGrams && calories.trim()
+          ? (Number(calories) * 100) / servingGrams
+          : null,
       servingGrams,
       packageGrams: numOrNull(packageWeight),
       nutrients: rows
@@ -232,7 +242,7 @@ export function IngredientForm({
           </p>
           <div className="space-y-2">
             {rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={r.key} className="flex items-center gap-2">
                 <Input
                   aria-label="Nutrient"
                   placeholder="Nutrient"

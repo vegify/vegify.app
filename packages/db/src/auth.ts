@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 import { argon2id, argon2Verify } from "hash-wasm";
 import { db } from "./index";
+import { one } from "./rows";
 import { sessions, users } from "./schema";
 
 // Self-hosted auth core: argon2id password hashing + opaque server-side sessions.
@@ -32,7 +33,7 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(
   hash: string,
-  password: string
+  password: string,
 ): Promise<boolean> {
   try {
     return await argon2Verify({ password, hash });
@@ -44,16 +45,26 @@ export async function verifyPassword(
 // A throwaway hash, verified on unknown-email logins so response timing doesn't reveal whether
 // an email exists. Computed once, lazily (argon2 is intentionally slow).
 let dummyHash: Promise<string> | null = null;
-const getDummyHash = () => (dummyHash ??= hashPassword("vegify-timing-equalizer"));
+const getDummyHash = () =>
+  (dummyHash ??= hashPassword("vegify-timing-equalizer"));
 
 // Derive a unique handle for a new user: slug the name (else the email local-part), then append
 // -1, -2, … until free. Mirrors vegify-server's auth::derive_unique_username (the live path); this
 // TS port stays in parity for the seed/tests that still use it.
 const slugifyHandle = (s: string) =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "").slice(0, 24);
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-+|-+$)/g, "")
+    .slice(0, 24);
 
-async function deriveUniqueUsername(name: string, email: string): Promise<string> {
-  const base = slugifyHandle(name) || slugifyHandle(email.split("@")[0] ?? "") || "user";
+async function deriveUniqueUsername(
+  name: string,
+  email: string,
+): Promise<string> {
+  const base =
+    slugifyHandle(name) || slugifyHandle(email.split("@")[0] ?? "") || "user";
   for (let n = 0; n < 10_000; n++) {
     const candidate = n === 0 ? base : `${base}-${n}`;
     const [taken] = await db
@@ -72,22 +83,24 @@ export async function createUser(input: {
   password: string;
 }): Promise<SessionUser> {
   const passwordHash = await hashPassword(input.password);
-  const [user] = await db
-    .insert(users)
-    .values({
-      name: input.name,
-      username: await deriveUniqueUsername(input.name, input.email),
-      email: normalizeEmail(input.email),
-      passwordHash,
-    })
-    .returning();
+  const user = one(
+    await db
+      .insert(users)
+      .values({
+        name: input.name,
+        username: await deriveUniqueUsername(input.name, input.email),
+        email: normalizeEmail(input.email),
+        passwordHash,
+      })
+      .returning(),
+  );
   return user;
 }
 
 /** Verify credentials. Returns the user on success, null otherwise. Timing-equalized. */
 export async function authenticate(
   email: string,
-  password: string
+  password: string,
 ): Promise<SessionUser | null> {
   const [user] = await db
     .select()
@@ -116,13 +129,16 @@ export async function createSession(userId: string): Promise<CreatedSession> {
 
 /** Resolve a raw session token to its user, or null if missing/expired. */
 export async function validateSession(
-  token: string
+  token: string,
 ): Promise<SessionUser | null> {
   const [row] = await db
     .select()
     .from(sessions)
     .where(
-      and(eq(sessions.hashedToken, tokenHash(token)), gt(sessions.expiresAt, new Date()))
+      and(
+        eq(sessions.hashedToken, tokenHash(token)),
+        gt(sessions.expiresAt, new Date()),
+      ),
     )
     .limit(1);
   if (!row) return null;
@@ -149,7 +165,7 @@ export async function invalidateAllSessions(userId: string): Promise<void> {
  */
 export async function setInitialPassword(
   email: string,
-  password: string
+  password: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const [user] = await db
     .select()
@@ -157,7 +173,8 @@ export async function setInitialPassword(
     .where(eq(users.email, normalizeEmail(email)))
     .limit(1);
   if (!user) return { ok: false, error: "No such account." };
-  if (user.passwordHash) return { ok: false, error: "Account already has a password." };
+  if (user.passwordHash)
+    return { ok: false, error: "Account already has a password." };
   await db
     .update(users)
     .set({ passwordHash: await hashPassword(password) })

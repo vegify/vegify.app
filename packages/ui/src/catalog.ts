@@ -11,7 +11,8 @@ export const SORT_OPTIONS: readonly { value: Sort; label: string }[] = [
 ];
 
 /** Coerce an unknown URL/search value to a valid Sort, defaulting to newest. */
-export const parseSort = (v: unknown): Sort => (SORT_OPTIONS.some((o) => o.value === v) ? (v as Sort) : "newest");
+export const parseSort = (v: unknown): Sort =>
+  SORT_OPTIONS.some((o) => o.value === v) ? (v as Sort) : "newest";
 
 /** Catalog page size for infinite scroll — one fetch per scroll into view. */
 export const PAGE_SIZE = 24;

@@ -1,5 +1,15 @@
+import {
+  Bell,
+  Carrot,
+  House,
+  LogOut,
+  Mail,
+  Salad,
+  Search,
+  Settings,
+  User,
+} from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import { Bell, Carrot, House, LogOut, Mail, Salad, Search, Settings, User } from "lucide-react";
 import { cn } from "./cn";
 import { VegifyLogo } from "./vegify-logo";
 
@@ -36,9 +46,27 @@ export type AppShellNavItem = {
  */
 export const APP_NAV: AppShellNavItem[] = [
   { key: "home", label: "Home", icon: House, href: "/", inMobileBar: true },
-  { key: "explore", label: "Explore", icon: Search, href: "/recipes", inMobileBar: true },
-  { key: "add", label: "Add Food", icon: Carrot, href: "/ingredients/new", inMobileBar: true },
-  { key: "notifications", label: "Notifications", icon: Bell, href: "/notifications", inMobileBar: true },
+  {
+    key: "explore",
+    label: "Explore",
+    icon: Search,
+    href: "/recipes",
+    inMobileBar: true,
+  },
+  {
+    key: "add",
+    label: "Add Food",
+    icon: Carrot,
+    href: "/ingredients/new",
+    inMobileBar: true,
+  },
+  {
+    key: "notifications",
+    label: "Notifications",
+    icon: Bell,
+    href: "/notifications",
+    inMobileBar: true,
+  },
   { key: "profile", label: "Profile", icon: User, inMobileBar: true },
   { key: "inbox", label: "Inbox", icon: Mail, href: "/messages" },
   { key: "settings", label: "Settings", icon: Settings, href: "/settings" },
@@ -47,7 +75,7 @@ export const APP_NAV: AppShellNavItem[] = [
 function pathIsActive(currentPath: string, href?: string) {
   if (!href) return false;
   if (href === "/") return currentPath === "/";
-  return currentPath === href || currentPath.startsWith(href + "/");
+  return currentPath === href || currentPath.startsWith(`${href}/`);
 }
 
 export function AppShell({
@@ -87,14 +115,20 @@ export function AppShell({
     items.map((it) => {
       if (it.key === "profile") return { ...it, href: profileHref };
       if (it.key === "inbox") return { ...it, badge: unreadMessages };
-      if (it.key === "notifications") return { ...it, badge: unreadNotifications };
+      if (it.key === "notifications")
+        return { ...it, badge: unreadNotifications };
       return it;
     });
   const navItems = withProfile(
     ingredientsNav
       ? [
           ...APP_NAV.slice(0, 2),
-          { key: "ingredients", label: "Ingredients", icon: Salad, href: "/ingredients" },
+          {
+            key: "ingredients",
+            label: "Ingredients",
+            icon: Salad,
+            href: "/ingredients",
+          },
           ...APP_NAV.slice(2),
         ]
       : APP_NAV,
@@ -124,8 +158,12 @@ export function AppShell({
                 {user.name.trim().charAt(0) || "?"}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold leading-tight">{user.name}</p>
-                <p className="truncate text-xs leading-tight text-white/70">{user.email}</p>
+                <p className="truncate text-sm font-semibold leading-tight">
+                  {user.name}
+                </p>
+                <p className="truncate text-xs leading-tight text-white/70">
+                  {user.email}
+                </p>
               </div>
               {onSignOut ? (
                 <button
@@ -156,7 +194,11 @@ export function AppShell({
           <LinkComponent href="/settings" aria-label="Settings">
             <Settings className="size-6" />
           </LinkComponent>
-          <LinkComponent href="/messages" aria-label="Messages" className="relative">
+          <LinkComponent
+            href="/messages"
+            aria-label="Messages"
+            className="relative"
+          >
             <Mail className="size-6" />
             {unreadMessages > 0 ? (
               <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none">
@@ -187,7 +229,10 @@ export function AppShell({
               placeholder="Search…"
               className="h-11 w-full rounded-full border border-input bg-card pl-5 pr-12 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
               {...(onSearchChange
-                ? { value: searchValue ?? "", onChange: (e) => onSearchChange(e.target.value) }
+                ? {
+                    value: searchValue ?? "",
+                    onChange: (e) => onSearchChange(e.target.value),
+                  }
                 : {})}
             />
             <span className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -195,7 +240,9 @@ export function AppShell({
             </span>
           </div>
         </div>
-        <main className="min-w-0 flex-1 overflow-y-auto pb-24 lg:pb-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto pb-24 lg:pb-8">
+          {children}
+        </main>
       </div>
 
       {/* ===== Mobile bottom tab bar ===== */}
@@ -231,7 +278,7 @@ function NavRow({
       <span>{item.label}</span>
       {(item.badge ?? 0) > 0 ? (
         <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-orange px-1.5 text-sm font-bold leading-none text-white">
-          {item.badge! > 99 ? "99+" : item.badge}
+          {(item.badge ?? 0) > 99 ? "99+" : item.badge}
         </span>
       ) : !item.href ? (
         <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">
@@ -242,7 +289,10 @@ function NavRow({
   );
   if (!item.href) {
     return (
-      <span aria-disabled className={cn(base, "cursor-not-allowed text-white/55")}>
+      <span
+        aria-disabled
+        className={cn(base, "cursor-not-allowed text-white/55")}
+      >
         {inner}
       </span>
     );
@@ -253,7 +303,9 @@ function NavRow({
       aria-current={active ? "page" : undefined}
       className={cn(
         base,
-        active ? "bg-white/15 text-white" : "text-white/85 hover:bg-white/10 hover:text-white",
+        active
+          ? "bg-white/15 text-white"
+          : "text-white/85 hover:bg-white/10 hover:text-white",
       )}
     >
       {inner}
@@ -281,14 +333,17 @@ function TabItem({
       <Icon className="size-6" />
       {(item.badge ?? 0) > 0 ? (
         <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-green-dark">
-          {item.badge! > 99 ? "99+" : item.badge}
+          {(item.badge ?? 0) > 99 ? "99+" : item.badge}
         </span>
       ) : null}
     </span>
   );
   if (!item.href) {
     return (
-      <span aria-disabled className="flex items-center justify-center opacity-55">
+      <span
+        aria-disabled
+        className="flex items-center justify-center opacity-55"
+      >
         {inner}
       </span>
     );

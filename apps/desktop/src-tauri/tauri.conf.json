@@ -28,15 +28,11 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "vegify"
-        ]
+        "schemes": ["vegify"]
       },
       "mobile": [
         {
-          "scheme": [
-            "vegify"
-          ]
+          "scheme": ["vegify"]
         }
       ]
     }

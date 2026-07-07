@@ -11,9 +11,17 @@ const STATIC_PATHS = ["/", "/recipes", "/ingredients", "/blog"];
 const xmlEscape = (s) =>
   s.replace(
     /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c],
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[c],
   );
-const urlTag = (origin, path) => `  <url><loc>${xmlEscape(origin + path)}</loc></url>`;
+const urlTag = (origin, path) =>
+  `  <url><loc>${xmlEscape(origin + path)}</loc></url>`;
 
 // Build the sitemap XML. `origin` is the public site origin (e.g. https://vegify.app); `apiBaseUrl` is
 // the Axum base (VEGIFY_API_URL). If the API is unreachable we still emit the static + blog URLs.
@@ -37,7 +45,9 @@ export async function sitemapResponse(apiBaseUrl, origin) {
     ...data.recipes.map((r) => `/${r.username}/${r.slug}`),
     // Owned ingredients are canonical under their creator; the catalog stays global.
     ...data.ingredients.map((i) =>
-      i.username ? `/${i.username}/ingredients/${i.slug}` : `/ingredients/${i.slug}`,
+      i.username
+        ? `/${i.username}/ingredients/${i.slug}`
+        : `/ingredients/${i.slug}`,
     ),
   ];
   const body =

@@ -1,4 +1,9 @@
-import { CfnDeletionPolicy, CfnOutput, Stack, type StackProps } from "aws-cdk-lib";
+import {
+  CfnDeletionPolicy,
+  CfnOutput,
+  Stack,
+  type StackProps,
+} from "aws-cdk-lib";
 import * as ses from "aws-cdk-lib/aws-ses";
 import type { Construct } from "constructs";
 import { resolveZone } from "./zone.js";
@@ -55,7 +60,8 @@ export class EmailStack extends Stack {
     const identity = new ses.EmailIdentity(this, "Identity", {
       identity: identitySource,
       mailFromDomain,
-      mailFromBehaviorOnMxFailure: ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE,
+      mailFromBehaviorOnMxFailure:
+        ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE,
     });
 
     // Protect the identity: an accidental stack delete must NOT destroy it (that would rotate Easy DKIM and
@@ -64,7 +70,9 @@ export class EmailStack extends Stack {
     cfnIdentity.cfnOptions.deletionPolicy = CfnDeletionPolicy.RETAIN;
     cfnIdentity.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN;
 
-    new CfnOutput(this, "EmailIdentityName", { value: identity.emailIdentityName });
+    new CfnOutput(this, "EmailIdentityName", {
+      value: identity.emailIdentityName,
+    });
     new CfnOutput(this, "EmailDomain", { value: domain });
   }
 }

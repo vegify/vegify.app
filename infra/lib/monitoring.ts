@@ -25,13 +25,19 @@ export const SERVER_METRIC_NS = "Vegify/Server";
  * The email subscription lands PendingConfirmation: AWS emails a one-time confirm link (once, not per
  * deploy) — until it's clicked, alarms fire but deliver nothing.
  */
-export function createAlarmTopic(scope: Construct, alarmEmail: string): sns.Topic {
-  const topic = new sns.Topic(scope, "AlarmTopic", { displayName: "Vegify alarms" });
+export function createAlarmTopic(
+  scope: Construct,
+  alarmEmail: string,
+): sns.Topic {
+  const topic = new sns.Topic(scope, "AlarmTopic", {
+    displayName: "Vegify alarms",
+  });
   topic.addSubscription(new subscriptions.EmailSubscription(alarmEmail));
   new ssm.StringParameter(scope, "AlarmTopicArnParam", {
     parameterName: ALARM_TOPIC_ARN_PARAM,
     stringValue: topic.topicArn,
-    description: "SNS topic CloudWatch alarms publish to (created by VegifyServer, read account-wide).",
+    description:
+      "SNS topic CloudWatch alarms publish to (created by VegifyServer, read account-wide).",
   });
   new CfnOutput(scope, "AlarmTopicArn", { value: topic.topicArn });
   return topic;
@@ -39,7 +45,10 @@ export function createAlarmTopic(scope: Construct, alarmEmail: string): sns.Topi
 
 /** Discover the alarm topic by ARN (deploy-time SSM lookup — no CDK cross-stack dependency). */
 export function importAlarmTopic(scope: Construct, id: string): sns.ITopic {
-  const arn = ssm.StringParameter.valueForStringParameter(scope, ALARM_TOPIC_ARN_PARAM);
+  const arn = ssm.StringParameter.valueForStringParameter(
+    scope,
+    ALARM_TOPIC_ARN_PARAM,
+  );
   return sns.Topic.fromTopicArn(scope, id, arn);
 }
 
@@ -52,7 +61,7 @@ export function importAlarmTopic(scope: Construct, id: string): sns.ITopic {
  * without an explicit region. `4xx/5xxErrorRate` are percentages (Average); `Requests` is a Sum.
  */
 export function cloudFrontMetric(
-  scope: Construct,
+  _scope: Construct,
   distributionId: string,
   metricName: "Requests" | "4xxErrorRate" | "5xxErrorRate",
   period: Duration,
@@ -72,7 +81,10 @@ export function cloudFrontMetric(
  * changes the InstanceId dimension) and would email an "OK" as each re-settles — a recurring flurry on
  * every server-path merge. Break alerts are what matter; recovery is visible on the dashboards.
  */
-export function notify(alarm: cloudwatch.Alarm, topic: sns.ITopic): cloudwatch.Alarm {
+export function notify(
+  alarm: cloudwatch.Alarm,
+  topic: sns.ITopic,
+): cloudwatch.Alarm {
   alarm.addAlarmAction(new cwActions.SnsAction(topic));
   return alarm;
 }

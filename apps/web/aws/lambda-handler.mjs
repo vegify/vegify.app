@@ -6,7 +6,8 @@ import { SITEMAP_PATH, sitemapResponse } from "./sitemap.mjs";
 
 const app = await import("./server/server.js");
 const target = app.default ?? app;
-const fetchHandler = typeof target === "function" ? target : target.fetch.bind(target);
+const fetchHandler =
+  typeof target === "function" ? target : target.fetch.bind(target);
 
 // A WinterCG Response → the Lambda Function-URL result shape (base64 body + split Set-Cookie).
 async function toLambda(response) {
@@ -36,14 +37,33 @@ const ON_LAMBDA = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 export const handler = async (event) => {
   if (ON_LAMBDA && !ORIGIN_SECRET) {
-    return { statusCode: 503, headers: { "content-type": "text/plain" }, body: "Service Unavailable" };
+    return {
+      statusCode: 503,
+      headers: { "content-type": "text/plain" },
+      body: "Service Unavailable",
+    };
   }
   if (ORIGIN_SECRET && event.headers?.["x-vegify-origin"] !== ORIGIN_SECRET) {
-    return { statusCode: 403, headers: { "content-type": "text/plain" }, body: "Forbidden" };
+    return {
+      statusCode: 403,
+      headers: { "content-type": "text/plain" },
+      body: "Forbidden",
+    };
   }
-  const { rawPath = "/", rawQueryString = "", headers = {}, cookies, body, isBase64Encoded } = event;
+  const {
+    rawPath = "/",
+    rawQueryString = "",
+    headers = {},
+    cookies,
+    body,
+    isBase64Encoded,
+  } = event;
   const method = event.requestContext?.http?.method ?? "GET";
-  const host = headers["x-forwarded-host"] || headers.host || event.requestContext?.domainName || "localhost";
+  const host =
+    headers["x-forwarded-host"] ||
+    headers.host ||
+    event.requestContext?.domainName ||
+    "localhost";
   const proto = headers["x-forwarded-proto"] || "https";
   const url = `${proto}://${host}${rawPath}${rawQueryString ? `?${rawQueryString}` : ""}`;
 

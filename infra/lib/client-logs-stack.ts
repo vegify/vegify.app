@@ -1,5 +1,12 @@
 import * as path from "node:path";
-import { CfnOutput, CustomResource, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import {
+  CfnOutput,
+  CustomResource,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+} from "aws-cdk-lib";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -8,7 +15,10 @@ import type { Construct } from "constructs";
 import { importAlarmTopic, notify } from "./monitoring.js";
 
 const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");
-const secretLambdaDir = path.join(import.meta.dirname, "../lambda/origin-secret");
+const secretLambdaDir = path.join(
+  import.meta.dirname,
+  "../lambda/origin-secret",
+);
 
 /** Parameter Store home of the origin-verify secret (SSM SecureString, generated on first deploy). */
 const ORIGIN_SECRET_PARAM = "/vegify/origin-verify";
@@ -64,7 +74,9 @@ export class ClientLogsStack extends Stack {
     secretFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ssm:GetParameter", "ssm:PutParameter"],
-        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${ORIGIN_SECRET_PARAM}`],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter${ORIGIN_SECRET_PARAM}`,
+        ],
       }),
     );
     const secret = new CustomResource(this, "OriginSecret", {
@@ -92,7 +104,10 @@ export class ClientLogsStack extends Stack {
       code: lambda.Code.fromAsset(lambdaDir),
       memorySize: 128,
       timeout: Duration.seconds(10),
-      environment: { LOG_GROUP_NAME: logGroup.logGroupName, ORIGIN_SECRET: this.originSecret },
+      environment: {
+        LOG_GROUP_NAME: logGroup.logGroupName,
+        ORIGIN_SECRET: this.originSecret,
+      },
       // The function's OWN execution logs (distinct from the browser-log group it writes into).
       logGroup: new logs.LogGroup(this, "IngestFnLogs", {
         retention: logs.RetentionDays.ONE_MONTH,
@@ -114,7 +129,8 @@ export class ClientLogsStack extends Stack {
 
     new CfnOutput(this, "IngestUrl", {
       value: url.url,
-      description: "Browser log ingestion endpoint — set as VITE_CLIENT_LOG_URL in the web build",
+      description:
+        "Browser log ingestion endpoint — set as VITE_CLIENT_LOG_URL in the web build",
     });
     new CfnOutput(this, "LogGroupName", { value: logGroup.logGroupName });
 
@@ -123,11 +139,13 @@ export class ClientLogsStack extends Stack {
     // shared alarm topic is discovered by ARN from SSM (ServerStack owns it; bin/ orders us after it).
     notify(
       new cloudwatch.Alarm(this, "IngestErrorsAlarm", {
-        alarmDescription: "Client-log ingest Lambda erroring — browser logs are being dropped.",
+        alarmDescription:
+          "Client-log ingest Lambda erroring — browser logs are being dropped.",
         metric: fn.metricErrors({ period: Duration.minutes(5) }),
         threshold: 10,
         evaluationPeriods: 3,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       importAlarmTopic(this, "AlarmTopic"),

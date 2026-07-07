@@ -13,7 +13,8 @@ import { apiUrl, listenPort, publicUrl } from "@vegify/config";
 import { SITEMAP_PATH, sitemapResponse } from "./aws/sitemap.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const serverPath = process.env.SERVER_PATH ?? join(here, "dist/server/server.js");
+const serverPath =
+  process.env.SERVER_PATH ?? join(here, "dist/server/server.js");
 const clientDir = join(dirname(dirname(serverPath)), "client");
 const port = listenPort(3001);
 

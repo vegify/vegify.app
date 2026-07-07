@@ -11,9 +11,9 @@ const authToken = databaseAuthToken();
 export const client = createClient(authToken ? { url, authToken } : { url });
 export const db = drizzle(client, { schema });
 
-export * from "./schema";
-export * as schema from "./schema";
+export * from "./access";
+export * from "./auth";
 export * from "./mutations";
 export * from "./nutrition";
-export * from "./auth";
-export * from "./access";
+export * from "./schema";
+export * as schema from "./schema";

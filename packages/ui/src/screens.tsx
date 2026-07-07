@@ -1,17 +1,24 @@
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
-import type { AppShellLinkProps } from "./app-shell";
-import { buttonClasses } from "./button";
-import { cn } from "./cn";
-import { SORT_OPTIONS, type Sort } from "./catalog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./dropdown-menu";
+  type ComponentType,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { AppShellLinkProps } from "./app-shell";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "./breadcrumb";
+import { buttonClasses } from "./button";
+import { SORT_OPTIONS, type Sort } from "./catalog";
+import { cn } from "./cn";
+import { DetailHero } from "./detail-hero";
 import {
   Dialog,
   DialogClose,
@@ -21,21 +28,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./dialog";
-import { InlineNumber, InlinePillSelect, InlineText, InlineTextarea } from "./inline";
-import { DETAIL_SHORTCUTS, INGREDIENT_SHORTCUTS, useDetailShortcuts } from "./use-detail-shortcuts";
-import type { IngredientSearchItem } from "./recipe-form";
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "./breadcrumb";
-import { DetailHero } from "./detail-hero";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
+import {
+  InlineNumber,
+  InlinePillSelect,
+  InlineText,
+  InlineTextarea,
+} from "./inline";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
 import { NutritionFactsFab } from "./nutrition-facts-fab";
+import type { IngredientSearchItem } from "./recipe-form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./select";
 import { ThemeSetting } from "./theme-setting";
+import {
+  DETAIL_SHORTCUTS,
+  INGREDIENT_SHORTCUTS,
+  useDetailShortcuts,
+} from "./use-detail-shortcuts";
 
 /**
  * SHARED SCREENS — the actual pages (recipe list, detail, ingredient list/detail, search, home),
@@ -63,9 +84,22 @@ export type RecipeListItem = {
 };
 
 /** A card's photo tile: the hero when present, the muted placeholder when not. */
-function CardTile({ photoUrl, name, size }: { photoUrl?: string | null; name: string; size: string }) {
+function CardTile({
+  photoUrl,
+  name,
+  size,
+}: {
+  photoUrl?: string | null;
+  name: string;
+  size: string;
+}) {
   return photoUrl ? (
-    <img src={photoUrl} alt={name} loading="lazy" className={`${size} shrink-0 rounded-lg object-cover`} />
+    <img
+      src={photoUrl}
+      alt={name}
+      loading="lazy"
+      className={`${size} shrink-0 rounded-lg object-cover`}
+    />
   ) : (
     <div className={`${size} shrink-0 rounded-lg bg-muted`} />
   );
@@ -73,7 +107,11 @@ function CardTile({ photoUrl, name, size }: { photoUrl?: string | null; name: st
 
 /** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
  * (which 301s to canonical). One helper so every card + search result links the same way. */
-export function recipeHref(r: { id: string; username?: string | null; slug?: string | null }): string {
+export function recipeHref(r: {
+  id: string;
+  username?: string | null;
+  slug?: string | null;
+}): string {
   return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`;
 }
 export type IngredientListItem = {
@@ -89,7 +127,11 @@ export type IngredientListItem = {
 
 /** Canonical link for an ingredient: owned → `/<username>/ingredients/<slug>` (browsable under its
  * creator); catalog → `/ingredients/<slug>`; no slug yet → `/ingredients/<id>` (which 301s). */
-export function ingredientHref(i: { id: string; slug?: string | null; username?: string | null }): string {
+export function ingredientHref(i: {
+  id: string;
+  slug?: string | null;
+  username?: string | null;
+}): string {
   if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`;
   return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
 }
@@ -146,8 +188,15 @@ export type RecipeEditRow = {
  *  ÷ total grams) — the same math the server's CTE does, run client-side so the nutrition panel
  *  tracks a scrub/type LIVE. Returns null if any item lacks readings (→ keep the committed panel). */
 function aggregateItems(
-  rows: { grams: number; caloriesPer100g?: number | null; readings?: { name: string; amountPer100g: number; unit: string }[] }[],
-): { caloriesPer100g: number; readings: { name: string; amountPer100g: number; unit: string }[] } | null {
+  rows: {
+    grams: number;
+    caloriesPer100g?: number | null;
+    readings?: { name: string; amountPer100g: number; unit: string }[];
+  }[],
+): {
+  caloriesPer100g: number;
+  readings: { name: string; amountPer100g: number; unit: string }[];
+} | null {
   if (rows.some((r) => r.readings == null)) return null;
   const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0);
   if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] };
@@ -165,7 +214,11 @@ function aggregateItems(
   const per100 = 100 / totalGrams;
   return {
     caloriesPer100g: cal * per100,
-    readings: [...totals].map(([name, abs]) => ({ name, amountPer100g: abs * per100, unit: units.get(name)! })),
+    readings: [...totals].map(([name, abs]) => {
+      const unit = units.get(name);
+      if (!unit) throw new Error(`unit missing for nutrient ${name}`);
+      return { name, amountPer100g: abs * per100, unit };
+    }),
   };
 }
 
@@ -249,17 +302,33 @@ const cardClass =
 function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
-      <LinkComponent href="/blog" className="font-medium transition-colors hover:text-foreground">
+      <LinkComponent
+        href="/blog"
+        className="font-medium transition-colors hover:text-foreground"
+      >
         Blog
       </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/download" className="font-medium transition-colors hover:text-foreground">
+      <LinkComponent
+        href="/download"
+        className="font-medium transition-colors hover:text-foreground"
+      >
         Get the app
       </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/terms" className="transition-colors hover:text-foreground">Terms</LinkComponent>
+      <LinkComponent
+        href="/terms"
+        className="transition-colors hover:text-foreground"
+      >
+        Terms
+      </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/privacy" className="transition-colors hover:text-foreground">Privacy</LinkComponent>
+      <LinkComponent
+        href="/privacy"
+        className="transition-colors hover:text-foreground"
+      >
+        Privacy
+      </LinkComponent>
       <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
@@ -269,7 +338,9 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
 export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-3xl flex-col items-center justify-center gap-6 p-8 text-center">
-      <h1 className="font-serif text-5xl font-bold text-primary-dark">Vegify</h1>
+      <h1 className="font-serif text-5xl font-bold text-primary-dark">
+        Vegify
+      </h1>
       <p className="w-full max-w-md text-lg text-gray-500">
         Micronutrition tracking for plant-based cooking
       </p>
@@ -281,9 +352,19 @@ export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
 }
 
 /** Sort dropdown for the catalog lists. The selected value is owned by the shell (URL-backed). */
-function SortControl({ value, onChange }: { value: Sort; onChange: (s: Sort) => void }) {
+function SortControl({
+  value,
+  onChange,
+}: {
+  value: Sort;
+  onChange: (s: Sort) => void;
+}) {
   return (
-    <Select items={SORT_OPTIONS} value={value} onValueChange={(v) => v && onChange(v as Sort)}>
+    <Select
+      items={SORT_OPTIONS}
+      value={value}
+      onValueChange={(v) => v && onChange(v as Sort)}
+    >
       <SelectTrigger size="sm" aria-label="Sort order">
         <SelectValue />
       </SelectTrigger>
@@ -318,9 +399,12 @@ function InfiniteSentinel({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const obs = new IntersectionObserver((entries) => setIntersecting(entries[0]?.isIntersecting ?? false), {
-      rootMargin: "400px",
-    });
+    const obs = new IntersectionObserver(
+      (entries) => setIntersecting(entries[0]?.isIntersecting ?? false),
+      {
+        rootMargin: "400px",
+      },
+    );
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
@@ -328,7 +412,10 @@ function InfiniteSentinel({
     if (intersecting && hasMore && !isLoading) onLoadMore();
   }, [intersecting, hasMore, isLoading, onLoadMore]);
   return (
-    <div ref={ref} className="flex justify-center py-6 text-sm text-muted-foreground">
+    <div
+      ref={ref}
+      className="flex justify-center py-6 text-sm text-muted-foreground"
+    >
       {isLoading ? "Loading…" : null}
     </div>
   );
@@ -360,13 +447,20 @@ export function RecipeListView({
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Recipes</h1>
+          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+            Recipes
+          </h1>
           <p className="text-gray-500">{recipes.length} recipes</p>
         </div>
         <div className="flex items-center gap-2">
-          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {onSortChange ? (
+            <SortControl value={sort ?? "newest"} onChange={onSortChange} />
+          ) : null}
           {canCreate ? (
-            <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
+            <LinkComponent
+              href="/recipes/new"
+              className={buttonClasses({ size: "sm" })}
+            >
               + New recipe
             </LinkComponent>
           ) : null}
@@ -381,14 +475,22 @@ export function RecipeListView({
               <div className={cardClass}>
                 <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
-                  <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
+                  <h3 className="truncate font-serif text-2xl font-semibold">
+                    {r.name}
+                  </h3>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {r.subtitle ?? "Recipe"}
+                  </p>
                 </div>
               </div>
             </LinkComponent>
           ))}
           {onLoadMore ? (
-            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+            <InfiniteSentinel
+              hasMore={hasMore}
+              isLoading={isLoadingMore}
+              onLoadMore={onLoadMore}
+            />
           ) : null}
         </div>
       )}
@@ -437,7 +539,10 @@ export function ReportDialog({
         </DialogHeader>
         {done ? null : (
           <div className="flex flex-col gap-3">
-            <Select value={reason} onValueChange={(v) => setReason(v as ReportReason)}>
+            <Select
+              value={reason}
+              onValueChange={(v) => setReason(v as ReportReason)}
+            >
               <SelectTrigger aria-label="Reason">
                 <SelectValue />
               </SelectTrigger>
@@ -460,12 +565,20 @@ export function ReportDialog({
         )}
         <DialogFooter>
           {done ? (
-            <button type="button" className={buttonClasses({ size: "sm" })} onClick={() => onOpenChange(false)}>
+            <button
+              type="button"
+              className={buttonClasses({ size: "sm" })}
+              onClick={() => onOpenChange(false)}
+            >
               Close
             </button>
           ) : (
             <>
-              <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+              <DialogClose
+                className={buttonClasses({ variant: "ghost", size: "sm" })}
+              >
+                Cancel
+              </DialogClose>
               <button
                 type="button"
                 disabled={sending}
@@ -516,7 +629,9 @@ export function ProfileView({
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center">
-        <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">@{username}</h1>
+        <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">
+          @{username}
+        </h1>
         <p className="text-muted-foreground">No one goes by that handle.</p>
       </div>
     );
@@ -536,8 +651,12 @@ export function ProfileView({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
-          <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
+          <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">
+            {profile.name}
+          </h1>
+          <p className="truncate text-lg text-muted-foreground">
+            @{profile.username}
+          </p>
         </div>
         {canMessage ? (
           <LinkComponent
@@ -557,7 +676,9 @@ export function ProfileView({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {onReport ? (
-                <DropdownMenuItem onClick={() => setReportOpen(true)}>Report @{profile.username}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setReportOpen(true)}>
+                  Report @{profile.username}
+                </DropdownMenuItem>
               ) : null}
               {onToggleBlock ? (
                 <DropdownMenuItem onClick={() => void onToggleBlock()}>
@@ -584,7 +705,9 @@ export function ProfileView({
             key={label}
             className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
           >
-            <span className="text-sm font-medium text-muted-foreground">{label}</span>
+            <span className="text-sm font-medium text-muted-foreground">
+              {label}
+            </span>
             <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
               soon
             </span>
@@ -594,7 +717,10 @@ export function ProfileView({
 
       <section className="mb-10">
         <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
-          Recipes <span className="font-normal text-muted-foreground">· {profile.recipes.length}</span>
+          Recipes{" "}
+          <span className="font-normal text-muted-foreground">
+            · {profile.recipes.length}
+          </span>
         </h2>
         {profile.recipes.length === 0 ? (
           <p className="text-muted-foreground">No public recipes yet.</p>
@@ -603,10 +729,18 @@ export function ProfileView({
             {profile.recipes.map((r) => (
               <LinkComponent key={r.id} href={recipeHref(r)} className="block">
                 <div className={cardClass}>
-                  <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
+                  <CardTile
+                    photoUrl={r.photoUrl}
+                    name={r.name}
+                    size="size-16"
+                  />
                   <div className="min-w-0">
-                    <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
-                    <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
+                    <h3 className="truncate font-serif text-2xl font-semibold">
+                      {r.name}
+                    </h3>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {r.subtitle ?? "Recipe"}
+                    </p>
                   </div>
                 </div>
               </LinkComponent>
@@ -618,18 +752,26 @@ export function ProfileView({
       <section className="mb-10">
         <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
           Ingredients{" "}
-          <span className="font-normal text-muted-foreground">· {profile.ingredients.length}</span>
+          <span className="font-normal text-muted-foreground">
+            · {profile.ingredients.length}
+          </span>
         </h2>
         {profile.ingredients.length === 0 ? (
           <p className="text-muted-foreground">No public ingredients yet.</p>
         ) : (
           <div className="flex flex-col gap-3">
             {profile.ingredients.map((i) => (
-              <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
+              <LinkComponent
+                key={i.id}
+                href={ingredientHref(i)}
+                className="block"
+              >
                 <div className={cardClass}>
                   <div className="size-12 shrink-0 rounded-lg bg-muted" />
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-serif text-xl font-semibold">{i.name}</h3>
+                    <h3 className="truncate font-serif text-xl font-semibold">
+                      {i.name}
+                    </h3>
                   </div>
                   {i.caloriesPer100g != null ? (
                     <span className="shrink-0 text-sm text-muted-foreground">
@@ -672,13 +814,20 @@ export function IngredientListView({
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Ingredients</h1>
+          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+            Ingredients
+          </h1>
           <p className="text-gray-500">{ingredients.length} ingredients</p>
         </div>
         <div className="flex items-center gap-2">
-          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {onSortChange ? (
+            <SortControl value={sort ?? "newest"} onChange={onSortChange} />
+          ) : null}
           {canCreate ? (
-            <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
+            <LinkComponent
+              href="/ingredients/new"
+              className={buttonClasses({ size: "sm" })}
+            >
               + New ingredient
             </LinkComponent>
           ) : null}
@@ -689,11 +838,17 @@ export function IngredientListView({
       ) : (
         <div className="flex flex-col gap-4">
           {ingredients.map((i) => (
-            <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
+            <LinkComponent
+              key={i.id}
+              href={ingredientHref(i)}
+              className="block"
+            >
               <div className={cardClass}>
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{i.name}</h3>
+                  <h3 className="truncate font-serif text-2xl font-semibold">
+                    {i.name}
+                  </h3>
                   {i.caloriesPer100g != null ? (
                     <p className="text-sm text-muted-foreground">
                       {Math.round(i.caloriesPer100g)} cal/100g
@@ -704,7 +859,11 @@ export function IngredientListView({
             </LinkComponent>
           ))}
           {onLoadMore ? (
-            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+            <InfiniteSentinel
+              hasMore={hasMore}
+              isLoading={isLoadingMore}
+              onLoadMore={onLoadMore}
+            />
           ) : null}
         </div>
       )}
@@ -713,7 +872,13 @@ export function IngredientListView({
 }
 
 /** A discreet "Report" text button for a non-owner on a detail page. */
-function ReportControl({ subject, onOpen }: { subject: string; onOpen: () => void }) {
+function ReportControl({
+  subject,
+  onOpen,
+}: {
+  subject: string;
+  onOpen: () => void;
+}) {
   return (
     <button
       type="button"
@@ -752,14 +917,19 @@ export function RecipeDetailView({
   const [reportOpen, setReportOpen] = useState(false);
   // LIVE nutrition: while an item's amount is scrubbed/typed, hold its in-flight grams here and
   // recompute the panel client-side (aggregateItems). Cleared on commit — the refetch brings truth.
-  const [previewGrams, setPreviewGrams] = useState<{ id: string; grams: number } | null>(null);
+  const [previewGrams, setPreviewGrams] = useState<{
+    id: string;
+    grams: number;
+  } | null>(null);
 
   // The panel shown: the committed `recipe.nutrition`, OR — mid-scrub, when the item readings are
   // available — a live client-side aggregate with the previewed grams substituted in.
   const liveNutrition = useMemo(() => {
     if (!previewGrams || !edit) return recipe.nutrition;
     const rows = edit.items.map((r) =>
-      r.ingredientId === previewGrams.id ? { ...r, grams: previewGrams.grams } : r,
+      r.ingredientId === previewGrams.id
+        ? { ...r, grams: previewGrams.grams }
+        : r,
     );
     const agg = aggregateItems(rows);
     if (!agg) return recipe.nutrition;
@@ -768,7 +938,9 @@ export function RecipeDetailView({
     return {
       ...recipe.nutrition,
       caloriesPerServing:
-        serving?.grams != null ? (agg.caloriesPer100g * serving.grams) / 100 : agg.caloriesPer100g,
+        serving?.grams != null
+          ? (agg.caloriesPer100g * serving.grams) / 100
+          : agg.caloriesPer100g,
       readings: agg.readings,
     };
   }, [previewGrams, edit, recipe.nutrition]);
@@ -797,7 +969,10 @@ export function RecipeDetailView({
               <BreadcrumbList>
                 <BreadcrumbItem>
                   {recipe.creator ? (
-                    <LinkComponent href={`/${recipe.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                    <LinkComponent
+                      href={`/${recipe.creator}`}
+                      className="transition-colors hover:text-foreground hover:underline"
+                    >
                       @{recipe.creator}
                     </LinkComponent>
                   ) : (
@@ -806,7 +981,9 @@ export function RecipeDetailView({
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{recipe.name || "Untitled recipe"}</BreadcrumbPage>
+                  <BreadcrumbPage>
+                    {recipe.name || "Untitled recipe"}
+                  </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -830,11 +1007,19 @@ export function RecipeDetailView({
                 />
               </div>
             ) : onReportContent ? (
-              <ReportControl subject="this recipe" onOpen={() => setReportOpen(true)} />
+              <ReportControl
+                subject="this recipe"
+                onOpen={() => setReportOpen(true)}
+              />
             ) : null}
           </div>
           {onReportContent ? (
-            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this recipe" onSubmit={onReportContent} />
+            <ReportDialog
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+              subject="this recipe"
+              onSubmit={onReportContent}
+            />
           ) : null}
 
           <DetailHero
@@ -842,7 +1027,9 @@ export function RecipeDetailView({
             photoUrl={recipe.photoUrl}
             onUploadPhoto={edit ? onUploadPhoto : undefined}
             // Inline mode is the editor now — the hero no longer links to the /edit form.
-            editHref={recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined}
+            editHref={
+              recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined
+            }
             LinkComponent={LinkComponent}
             className="mt-4"
           />
@@ -877,12 +1064,20 @@ export function RecipeDetailView({
             </p>
           ) : null}
 
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Ingredients</h2>
+          <h2 className="mt-8 text-center font-serif text-xl font-bold">
+            Ingredients
+          </h2>
           <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {edit
               ? edit.items.map((row) => (
-                  <li key={row.ingredientId} className="group flex items-start gap-2">
-                    <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
+                  <li
+                    key={row.ingredientId}
+                    className="group flex items-start gap-2"
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary"
+                    />
                     <span className="min-w-0 flex-1 text-left">
                       <InlineNumber
                         value={row.grams}
@@ -893,12 +1088,19 @@ export function RecipeDetailView({
                           return edit.setItemAmount(row.ingredientId, n);
                         }}
                         onPreview={(n) =>
-                          setPreviewGrams(n == null ? null : { id: row.ingredientId, grams: n })
+                          setPreviewGrams(
+                            n == null
+                              ? null
+                              : { id: row.ingredientId, grams: n },
+                          )
                         }
                         ariaLabel={`grams for ${row.name}`}
                         className="font-medium"
                       />{" "}
-                      <LinkComponent href={row.href} className="hover:text-primary hover:underline">
+                      <LinkComponent
+                        href={row.href}
+                        className="hover:text-primary hover:underline"
+                      >
                         {row.name}
                       </LinkComponent>
                     </span>
@@ -921,12 +1123,20 @@ export function RecipeDetailView({
                       className="group flex items-start gap-2"
                       title="Ingredient was deleted — restore?"
                     >
-                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-                      <span className="text-left text-muted-foreground/60 line-through">{item.label}</span>
+                      <span
+                        aria-hidden
+                        className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                      />
+                      <span className="text-left text-muted-foreground/60 line-through">
+                        {item.label}
+                      </span>
                       {onRestoreIngredient && item.ingredientId ? (
                         <button
                           type="button"
-                          onClick={() => onRestoreIngredient(item.ingredientId!)}
+                          onClick={() =>
+                            item.ingredientId &&
+                            onRestoreIngredient(item.ingredientId)
+                          }
                           className="rounded px-1.5 py-0.5 text-xs font-medium text-primary opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover:opacity-100"
                         >
                           Restore
@@ -935,8 +1145,14 @@ export function RecipeDetailView({
                     </li>
                   ) : (
                     <li key={item.key} className="flex items-start gap-2">
-                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
-                      <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
+                      <span
+                        aria-hidden
+                        className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary"
+                      />
+                      <LinkComponent
+                        href={item.href}
+                        className="text-left hover:text-primary hover:underline"
+                      >
                         {item.label}
                       </LinkComponent>
                     </li>
@@ -944,12 +1160,18 @@ export function RecipeDetailView({
                 )}
             {edit ? (
               <li className="col-span-full">
-                <AddIngredientRow open={addOpen} onOpenChange={setAddOpen} edit={edit} />
+                <AddIngredientRow
+                  open={addOpen}
+                  onOpenChange={setAddOpen}
+                  edit={edit}
+                />
               </li>
             ) : null}
           </ul>
 
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Directions</h2>
+          <h2 className="mt-8 text-center font-serif text-xl font-bold">
+            Directions
+          </h2>
           <InlineTextarea
             value={recipe.directions ?? ""}
             onCommit={edit?.setDirections}
@@ -1061,9 +1283,13 @@ function AddIngredientRow({
       {query ? (
         <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
           {searching ? (
-            <li className="px-2 py-1.5 text-sm text-muted-foreground">Searching…</li>
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">
+              Searching…
+            </li>
           ) : results.length === 0 ? (
-            <li className="px-2 py-1.5 text-sm text-muted-foreground">No matches.</li>
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">
+              No matches.
+            </li>
           ) : (
             results.map((r) => (
               <li key={r.id}>
@@ -1116,9 +1342,16 @@ function RecipeOverflowMenu({
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        <UndoRedoItems
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
         {isDraft && onDiscard ? (
-          <DropdownMenuItem onClick={() => void onDiscard()}>Discard draft</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void onDiscard()}>
+            Discard draft
+          </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
         <DropdownMenuItem
@@ -1149,11 +1382,15 @@ function UndoRedoItems({
     <>
       <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
         Undo
-        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘Z</span>
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">
+          ⌘Z
+        </span>
       </DropdownMenuItem>
       <DropdownMenuItem disabled={!canRedo} onClick={() => redo?.()}>
         Redo
-        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘⇧Z</span>
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">
+          ⌘⇧Z
+        </span>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
     </>
@@ -1180,7 +1417,11 @@ function DeleteRecipeDialog({
           <DialogDescription>This can’t be undone.</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <DialogClose className={buttonClasses({ variant: "outline", size: "sm" })}>Cancel</DialogClose>
+          <DialogClose
+            className={buttonClasses({ variant: "outline", size: "sm" })}
+          >
+            Cancel
+          </DialogClose>
           <button
             type="button"
             disabled={busy}
@@ -1219,7 +1460,10 @@ function ShortcutSheet({
         </DialogHeader>
         <ul className="divide-y divide-border">
           {shortcuts.map((s) => (
-            <li key={s.keys} className="flex items-center justify-between py-2 text-sm">
+            <li
+              key={s.keys}
+              className="flex items-center justify-between py-2 text-sm"
+            >
               <span className="text-muted-foreground">{s.label}</span>
               <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
                 {s.keys}
@@ -1270,7 +1514,10 @@ export function IngredientDetailView({
               <BreadcrumbList>
                 <BreadcrumbItem>
                   {ingredient.creator ? (
-                    <LinkComponent href={`/${ingredient.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                    <LinkComponent
+                      href={`/${ingredient.creator}`}
+                      className="transition-colors hover:text-foreground hover:underline"
+                    >
                       @{ingredient.creator}
                     </LinkComponent>
                   ) : (
@@ -1279,7 +1526,9 @@ export function IngredientDetailView({
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{ingredient.name || "Untitled"}</BreadcrumbPage>
+                  <BreadcrumbPage>
+                    {ingredient.name || "Untitled"}
+                  </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -1309,16 +1558,28 @@ export function IngredientDetailView({
                 />
               </div>
             ) : onReportContent ? (
-              <ReportControl subject="this ingredient" onOpen={() => setReportOpen(true)} />
+              <ReportControl
+                subject="this ingredient"
+                onOpen={() => setReportOpen(true)}
+              />
             ) : null}
           </div>
           {onReportContent ? (
-            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this ingredient" onSubmit={onReportContent} />
+            <ReportDialog
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+              subject="this ingredient"
+              onSubmit={onReportContent}
+            />
           ) : null}
 
           <DetailHero
             label="Ingredient Image"
-            editHref={ingredient.canEdit && !edit ? `/ingredients/${ingredient.id}/edit` : undefined}
+            editHref={
+              ingredient.canEdit && !edit
+                ? `/ingredients/${ingredient.id}/edit`
+                : undefined
+            }
             LinkComponent={LinkComponent}
             className="mt-4"
           />
@@ -1335,7 +1596,9 @@ export function IngredientDetailView({
               inputClassName="text-center"
             />
           </h1>
-          <h2 className="mt-6 text-center font-serif text-xl font-bold">Information</h2>
+          <h2 className="mt-6 text-center font-serif text-xl font-bold">
+            Information
+          </h2>
           <InlineTextarea
             value={ingredient.description ?? ""}
             onCommit={edit?.setDescription}
@@ -1363,7 +1626,11 @@ export function IngredientDetailView({
             name={ingredient.name || "this ingredient"}
             onConfirm={edit.remove}
           />
-          <ShortcutSheet open={helpOpen} onOpenChange={setHelpOpen} shortcuts={INGREDIENT_SHORTCUTS} />
+          <ShortcutSheet
+            open={helpOpen}
+            onOpenChange={setHelpOpen}
+            shortcuts={INGREDIENT_SHORTCUTS}
+          />
         </>
       ) : null}
     </div>
@@ -1395,7 +1662,12 @@ function IngredientOverflowMenu({
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        <UndoRedoItems
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
         <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
         <DropdownMenuItem
           onClick={onDelete}
@@ -1408,7 +1680,17 @@ function IngredientOverflowMenu({
   );
 }
 
-function ResultRow({ name, sub, href, LinkComponent }: { name: string; sub: string; href: string; LinkComponent: NavLink }) {
+function ResultRow({
+  name,
+  sub,
+  href,
+  LinkComponent,
+}: {
+  name: string;
+  sub: string;
+  href: string;
+  LinkComponent: NavLink;
+}) {
   return (
     <LinkComponent href={href} className="block">
       <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
@@ -1436,12 +1718,16 @@ export function SearchResultsView({
   const total = recipes.length + ingredients.length;
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Search</h1>
+      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+        Search
+      </h1>
       <p className="mb-8 text-gray-500">
         {total} {total === 1 ? "result" : "results"} for “{query}”
       </p>
       {total === 0 ? (
-        <p className="text-muted-foreground">No recipes or ingredients match.</p>
+        <p className="text-muted-foreground">
+          No recipes or ingredients match.
+        </p>
       ) : (
         <div className="space-y-8">
           {recipes.length > 0 && (
@@ -1468,7 +1754,11 @@ export function SearchResultsView({
                   <ResultRow
                     key={i.id}
                     name={i.name}
-                    sub={i.caloriesPer100g != null ? `${Math.round(i.caloriesPer100g)} cal/100g` : "Ingredient"}
+                    sub={
+                      i.caloriesPer100g != null
+                        ? `${Math.round(i.caloriesPer100g)} cal/100g`
+                        : "Ingredient"
+                    }
                     href={ingredientHref(i)}
                     LinkComponent={LinkComponent}
                   />
@@ -1482,14 +1772,20 @@ export function SearchResultsView({
   );
 }
 
-export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password: string) => Promise<void> }) {
+export function SettingsView({
+  onDeleteAccount,
+}: {
+  onDeleteAccount?: (password: string) => Promise<void>;
+}) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Settings</h1>
+      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+        Settings
+      </h1>
       <p className="mb-8 text-gray-500">Preferences for this account</p>
 
       <section>
@@ -1507,18 +1803,24 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
 
       {onDeleteAccount ? (
         <section className="mt-10">
-          <h2 className="mb-3 font-serif text-xl font-bold text-destructive">Danger zone</h2>
+          <h2 className="mb-3 font-serif text-xl font-bold text-destructive">
+            Danger zone
+          </h2>
           <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-destructive/30 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="min-w-0">
               <p className="font-semibold">Delete account</p>
               <p className="text-sm text-muted-foreground">
-                Permanently delete your account and your recipes. Ingredients others cook with become
-                part of the shared catalog. This can't be undone.
+                Permanently delete your account and your recipes. Ingredients
+                others cook with become part of the shared catalog. This can't
+                be undone.
               </p>
             </div>
             <button
               type="button"
-              className={cn(buttonClasses({ variant: "ghost", size: "sm" }), "shrink-0 text-destructive ring-1 ring-destructive/40")}
+              className={cn(
+                buttonClasses({ variant: "ghost", size: "sm" }),
+                "shrink-0 text-destructive ring-1 ring-destructive/40",
+              )}
               onClick={() => {
                 setError(null);
                 setPassword("");
@@ -1533,8 +1835,8 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
               <DialogHeader>
                 <DialogTitle>Delete your account?</DialogTitle>
                 <DialogDescription>
-                  This permanently deletes your account, sessions, and messages, and removes your
-                  recipes. Enter your password to confirm.
+                  This permanently deletes your account, sessions, and messages,
+                  and removes your recipes. Enter your password to confirm.
                 </DialogDescription>
               </DialogHeader>
               <input
@@ -1545,13 +1847,22 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-border bg-transparent p-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               />
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {error ? (
+                <p className="text-sm text-destructive">{error}</p>
+              ) : null}
               <DialogFooter>
-                <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+                <DialogClose
+                  className={buttonClasses({ variant: "ghost", size: "sm" })}
+                >
+                  Cancel
+                </DialogClose>
                 <button
                   type="button"
                   disabled={deleting || !password}
-                  className={cn(buttonClasses({ size: "sm" }), "bg-destructive text-destructive-foreground")}
+                  className={cn(
+                    buttonClasses({ size: "sm" }),
+                    "bg-destructive text-destructive-foreground",
+                  )}
                   onClick={async () => {
                     setDeleting(true);
                     setError(null);

@@ -112,11 +112,12 @@ export const DETAIL_SHORTCUTS: readonly { keys: string; label: string }[] = [
   { keys: "?", label: "Show shortcuts" },
 ];
 
-export const INGREDIENT_SHORTCUTS: readonly { keys: string; label: string }[] = [
-  { keys: "e", label: "Edit name" },
-  { keys: "v", label: "Change visibility" },
-  { keys: "⌘Z", label: "Undo" },
-  { keys: "⌘⇧Z", label: "Redo" },
-  { keys: "⌘⌫", label: "Delete ingredient" },
-  { keys: "?", label: "Show shortcuts" },
-];
+export const INGREDIENT_SHORTCUTS: readonly { keys: string; label: string }[] =
+  [
+    { keys: "e", label: "Edit name" },
+    { keys: "v", label: "Change visibility" },
+    { keys: "⌘Z", label: "Undo" },
+    { keys: "⌘⇧Z", label: "Redo" },
+    { keys: "⌘⌫", label: "Delete ingredient" },
+    { keys: "?", label: "Show shortcuts" },
+  ];

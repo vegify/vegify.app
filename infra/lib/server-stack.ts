@@ -1,20 +1,34 @@
 import * as path from "node:path";
-import { CfnOutput, Duration, Fn, RemovalPolicy, Size, Stack, Tags, type StackProps } from "aws-cdk-lib";
+import {
+  CfnOutput,
+  Duration,
+  Fn,
+  RemovalPolicy,
+  Size,
+  Stack,
+  type StackProps,
+  Tags,
+} from "aws-cdk-lib";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import * as ssm from "aws-cdk-lib/aws-ssm";
-import { resolveZone } from "./zone.js";
-import { cloudFrontMetric, createAlarmTopic, notify, SERVER_METRIC_NS } from "./monitoring.js";
 import type { Construct } from "constructs";
+import {
+  cloudFrontMetric,
+  createAlarmTopic,
+  notify,
+  SERVER_METRIC_NS,
+} from "./monitoring.js";
+import { resolveZone } from "./zone.js";
 
 /** The CloudWatch log group the on-box agent ships the server's stdout/stderr to. */
 const SERVER_LOG_GROUP = "/vegify/server";
@@ -85,7 +99,17 @@ export class ServerStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ServerStackProps) {
     super(scope, id, props);
-    const { vpc, publicUrl, emailFrom, emailDomain, signupsOpen, adminEmails, domainNames, domainsConfigured, alarmEmail } = props;
+    const {
+      vpc,
+      publicUrl,
+      emailFrom,
+      emailDomain,
+      signupsOpen,
+      adminEmails,
+      domainNames,
+      domainsConfigured,
+      alarmEmail,
+    } = props;
 
     // Durable WAL replica + the restore source on a fresh/replaced instance.
     // Reference DATA (the USDA catalog artifact, future imports) — data lives in S3, not the repo.
@@ -119,8 +143,12 @@ export class ServerStack extends Stack {
     });
 
     // Shipped artifacts (CI builds these into infra/assets/; a placeholder binary is fine for synth).
-    const serverBin = new Asset(this, "ServerBin", { path: path.join(assetsDir, "vegify-server") });
-    const seedDb = new Asset(this, "SeedDb", { path: path.join(assetsDir, "seed.db") });
+    const serverBin = new Asset(this, "ServerBin", {
+      path: path.join(assetsDir, "vegify-server"),
+    });
+    const seedDb = new Asset(this, "SeedDb", {
+      path: path.join(assetsDir, "seed.db"),
+    });
 
     // The server's stdout/stderr ships here via the on-box CloudWatch agent. RETAIN so operational
     // history survives a stack teardown; one month is plenty for a solo service's debugging window.
@@ -134,9 +162,13 @@ export class ServerStack extends Stack {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
       managedPolicies: [
         // SSM session access for debugging — no SSH, no inbound 22.
-        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "AmazonSSMManagedInstanceCore",
+        ),
         // Lets the on-box agent create log streams + put events and publish the mem/disk metrics.
-        iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchAgentServerPolicy"),
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "CloudWatchAgentServerPolicy",
+        ),
       ],
     });
     serverBin.grantRead(role);
@@ -147,20 +179,33 @@ export class ServerStack extends Stack {
     // The instance self-attaches its data volume in user-data (robust across replacement — a CFN
     // VolumeAttachment deadlocks a replace, since the new attach can't precede the old detach on one
     // volume). DescribeVolumes is account-wide (no resource-level support); tighten attach/detach later.
-    role.addToPolicy(new iam.PolicyStatement({ actions: ["ec2:DescribeVolumes"], resources: ["*"] }));
     role.addToPolicy(
-      new iam.PolicyStatement({ actions: ["ec2:AttachVolume", "ec2:DetachVolume"], resources: ["*"] }),
+      new iam.PolicyStatement({
+        actions: ["ec2:DescribeVolumes"],
+        resources: ["*"],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ec2:AttachVolume", "ec2:DetachVolume"],
+        resources: ["*"],
+      }),
     );
     // Transactional email (password reset, A5) via SES — send-only, scoped to the deployment's own
     // verified domain identity (VegifyEmail). Parameterized: a self-host's grant follows ITS domain.
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${emailDomain}`],
+        resources: [
+          `arn:aws:ses:${this.region}:${this.account}:identity/${emailDomain}`,
+        ],
       }),
     );
 
-    const sg = new ec2.SecurityGroup(this, "Sg", { vpc, allowAllOutbound: true });
+    const sg = new ec2.SecurityGroup(this, "Sg", {
+      vpc,
+      allowAllOutbound: true,
+    });
     sg.addIngressRule(
       ec2.Peer.prefixList(CLOUDFRONT_ORIGIN_PL),
       ec2.Port.tcp(APP_PORT),
@@ -175,12 +220,12 @@ export class ServerStack extends Stack {
       // Self-attach the dedicated data volume (found by tag) to THIS instance — robust across instance
       // replacement (force-detach from any prior holder, then attach). No CFN VolumeAttachment.
       "TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' || true)",
-      "IID=$(curl -s -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/instance-id)",
+      'IID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)',
       "VOL=$(aws ec2 describe-volumes --filters Name=tag:vegify:role,Values=data --query 'Volumes[0].VolumeId' --output text)",
       "for i in $(seq 1 50); do",
       "  OWNER=$(aws ec2 describe-volumes --volume-ids \"$VOL\" --query 'Volumes[0].Attachments[0].InstanceId' --output text 2>/dev/null || echo None)",
-      "  if [ \"$OWNER\" = \"$IID\" ]; then break; fi",
-      "  if [ \"$OWNER\" = \"None\" ] || [ -z \"$OWNER\" ]; then aws ec2 attach-volume --volume-id \"$VOL\" --instance-id \"$IID\" --device /dev/sdf 2>/dev/null || true; else aws ec2 detach-volume --volume-id \"$VOL\" --force 2>/dev/null || true; fi",
+      '  if [ "$OWNER" = "$IID" ]; then break; fi',
+      '  if [ "$OWNER" = "None" ] || [ -z "$OWNER" ]; then aws ec2 attach-volume --volume-id "$VOL" --instance-id "$IID" --device /dev/sdf 2>/dev/null || true; else aws ec2 detach-volume --volume-id "$VOL" --force 2>/dev/null || true; fi',
       "  sleep 6",
       "done",
       // Mount the dedicated EBS data volume at /data — format on first boot, preserve on reattach (the
@@ -188,8 +233,8 @@ export class ServerStack extends Stack {
       "for i in $(seq 1 60); do [ $(lsblk -dno NAME | grep -c nvme) -ge 2 ] && break || sleep 2; done",
       "ROOTDISK=/dev/$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -1)",
       // Restrict to NVMe disks — excludes AL2023's zram0 swap device, which lsblk also reports as a disk.
-      "DATADEV=$(lsblk -dpno NAME,TYPE | awk '$2==\"disk\"{print $1}' | grep /dev/nvme | grep -vx \"$ROOTDISK\" | head -1)",
-      "blkid \"$DATADEV\" || mkfs.ext4 -L vegifydata \"$DATADEV\"",
+      'DATADEV=$(lsblk -dpno NAME,TYPE | awk \'$2=="disk"{print $1}\' | grep /dev/nvme | grep -vx "$ROOTDISK" | head -1)',
+      'blkid "$DATADEV" || mkfs.ext4 -L vegifydata "$DATADEV"',
       "mkdir -p /data",
       "mount LABEL=vegifydata /data",
       "grep -q vegifydata /etc/fstab || echo 'LABEL=vegifydata /data ext4 defaults,nofail 0 2' >> /etc/fstab",
@@ -299,8 +344,10 @@ export class ServerStack extends Stack {
 
     // Dedicated gp3 EBS data volume for the SQLite DB — RETAIN so it (and the data) survives instance
     // replacement; pinned to the instance's AZ. Litestream→S3 is the off-box replica/restore on top.
+    const primarySubnet = vpc.publicSubnets[0];
+    if (!primarySubnet) throw new Error("vpc has no public subnets");
     const dataVolume = new ec2.Volume(this, "DataVolume", {
-      availabilityZone: vpc.publicSubnets[0].availabilityZone,
+      availabilityZone: primarySubnet.availabilityZone,
       size: Size.gibibytes(10),
       volumeType: ec2.EbsDeviceVolumeType.GP3,
       removalPolicy: RemovalPolicy.RETAIN,
@@ -309,9 +356,14 @@ export class ServerStack extends Stack {
 
     const instance = new ec2.Instance(this, "Server", {
       vpc,
-      vpcSubnets: { subnets: [vpc.publicSubnets[0]] }, // pin the AZ to match the data volume
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
-      machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: ec2.AmazonLinuxCpuType.ARM_64 }),
+      vpcSubnets: { subnets: [primarySubnet] }, // pin the AZ to match the data volume
+      instanceType: ec2.InstanceType.of(
+        ec2.InstanceClass.T4G,
+        ec2.InstanceSize.NANO,
+      ),
+      machineImage: ec2.MachineImage.latestAmazonLinux2023({
+        cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+      }),
       securityGroup: sg,
       role,
       userData,
@@ -320,13 +372,17 @@ export class ServerStack extends Stack {
       blockDevices: [
         {
           deviceName: "/dev/xvda", // AL2023 root
-          volume: ec2.BlockDeviceVolume.ebs(8, { volumeType: ec2.EbsDeviceVolumeType.GP3 }),
+          volume: ec2.BlockDeviceVolume.ebs(8, {
+            volumeType: ec2.EbsDeviceVolumeType.GP3,
+          }),
         },
       ],
     });
 
     // Stable address so the CloudFront origin survives instance replacement.
-    const eip = new ec2.CfnEIP(this, "Eip", { instanceId: instance.instanceId });
+    const eip = new ec2.CfnEIP(this, "Eip", {
+      instanceId: instance.instanceId,
+    });
     // us-east-1 public DNS for the EIP: ec2-<dashed-ip>.compute-1.amazonaws.com
     const originDns = Fn.join("", [
       "ec2-",
@@ -338,9 +394,11 @@ export class ServerStack extends Stack {
     // *.cloudfront.net domain stays alive as an alias-less default, so everything already pointing
     // at it keeps working; web + desktop adopt the stable name on their next deploys). The cert is
     // DNS-validated in the site zone, issued automatically on first deploy.
-    const apiDomain = `api.${domainNames[0]}`;
+    const primaryDomain = domainNames[0];
+    if (!primaryDomain) throw new Error("domain names are empty");
+    const apiDomain = `api.${primaryDomain}`;
     const zone = resolveZone(this, "Zone", {
-      zoneName: domainNames[0],
+      zoneName: primaryDomain,
       configured: domainsConfigured,
       overrideZoneId: props.hostedZoneIdOverride,
     });
@@ -357,7 +415,8 @@ export class ServerStack extends Stack {
         // User media, cached hard at the edge (immutable keys — a re-upload mints a new key).
         "/media/*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(media),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
       },
@@ -370,14 +429,25 @@ export class ServerStack extends Stack {
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         // Forward everything except Host so the Authorization Bearer header reaches the server.
-        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
       },
     });
 
     if (domainsConfigured) {
-      const aliasTarget = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
-      new route53.ARecord(this, "ApiA", { zone, recordName: "api", target: aliasTarget });
-      new route53.AaaaRecord(this, "ApiAaaa", { zone, recordName: "api", target: aliasTarget });
+      const aliasTarget = route53.RecordTarget.fromAlias(
+        new targets.CloudFrontTarget(distribution),
+      );
+      new route53.ARecord(this, "ApiA", {
+        zone,
+        recordName: "api",
+        target: aliasTarget,
+      });
+      new route53.AaaaRecord(this, "ApiAaaa", {
+        zone,
+        recordName: "api",
+        target: aliasTarget,
+      });
     }
 
     this.apiUrl = domainsConfigured
@@ -412,7 +482,10 @@ export class ServerStack extends Stack {
     const alarmTopic = createAlarmTopic(this, alarmEmail);
 
     const instanceDim = { InstanceId: instance.instanceId };
-    const ec2Metric = (metricName: string, extra?: Partial<cloudwatch.MetricProps>) =>
+    const ec2Metric = (
+      metricName: string,
+      extra?: Partial<cloudwatch.MetricProps>,
+    ) =>
       new cloudwatch.Metric({
         namespace: "AWS/EC2",
         metricName,
@@ -433,8 +506,14 @@ export class ServerStack extends Stack {
     // Reference the {InstanceId, path} aggregation the agent config emits (not the raw metric, whose
     // device/fstype dimensions vary per boot). Root and the DB volume are watched separately — either
     // filling is bad, for different reasons (system breakage vs. the DB going read-only).
-    const rootDisk = agentMetric("disk_used_percent", { ...instanceDim, path: "/" });
-    const dataDisk = agentMetric("disk_used_percent", { ...instanceDim, path: "/data" });
+    const rootDisk = agentMetric("disk_used_percent", {
+      ...instanceDim,
+      path: "/",
+    });
+    const dataDisk = agentMetric("disk_used_percent", {
+      ...instanceDim,
+      path: "/data",
+    });
 
     // A metric filter turns "ERROR" server log lines into a countable metric we can alarm on. The
     // Rust logs are `LEVEL message…`; the pattern matches the ERROR level token.
@@ -473,11 +552,13 @@ export class ServerStack extends Stack {
 
     const alarms: cloudwatch.Alarm[] = [
       new cloudwatch.Alarm(this, "InstanceStatusAlarm", {
-        alarmDescription: "EC2 instance/system status check failing — the backend host is unhealthy.",
+        alarmDescription:
+          "EC2 instance/system status check failing — the backend host is unhealthy.",
         metric: ec2Metric("StatusCheckFailed", { statistic: "Maximum" }),
         threshold: 1,
         evaluationPeriods: 2,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         // MISSING, not BREACHING: a running-but-unhealthy instance emits StatusCheckFailed=1 (a real
         // datapoint that fires this regardless), whereas a just-replaced instance emits NO data for its
         // first ~10 min — BREACHING turned that into a false alarm on every deploy. A truly dead +
@@ -492,59 +573,78 @@ export class ServerStack extends Stack {
       // healthy. 20 min of >85% average CPU catches genuine overload in either credit mode and rides
       // out brief boot spikes.
       new cloudwatch.Alarm(this, "CpuHighAlarm", {
-        alarmDescription: "Server CPU > 85% sustained (20 min) — genuine overload (credit mode aside).",
+        alarmDescription:
+          "Server CPU > 85% sustained (20 min) — genuine overload (credit mode aside).",
         metric: ec2Metric("CPUUtilization", { statistic: "Average" }),
         threshold: 85,
         evaluationPeriods: 4,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "MemoryAlarm", {
-        alarmDescription: "Server memory > 85% — the 512 MB nano is under pressure (OOM risk).",
+        alarmDescription:
+          "Server memory > 85% — the 512 MB nano is under pressure (OOM risk).",
         metric: memUsed,
         threshold: 85,
         evaluationPeriods: 3,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "RootDiskAlarm", {
-        alarmDescription: "Root disk > 85% — logs/system filling the 8 GiB root volume.",
+        alarmDescription:
+          "Root disk > 85% — logs/system filling the 8 GiB root volume.",
         metric: rootDisk,
         threshold: 85,
         evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "DataDiskAlarm", {
-        alarmDescription: "DB volume (/data) > 85% — SQLite + litestream WAL are filling the EBS volume.",
+        alarmDescription:
+          "DB volume (/data) > 85% — SQLite + litestream WAL are filling the EBS volume.",
         metric: dataDisk,
         threshold: 85,
         evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "ApiCloudFront5xxAlarm", {
-        alarmDescription: "API CloudFront 5xx rate > 5% — the backend is erroring or unreachable.",
-        metric: cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+        alarmDescription:
+          "API CloudFront 5xx rate > 5% — the backend is erroring or unreachable.",
+        metric: cloudFrontMetric(
+          this,
+          distribution.distributionId,
+          "5xxErrorRate",
+          Duration.minutes(5),
+        ),
         threshold: 5,
         evaluationPeriods: 2,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "ServerErrorLogAlarm", {
-        alarmDescription: "Server logged ERROR lines — application-level failures (email, DB, panics).",
+        alarmDescription:
+          "Server logged ERROR lines — application-level failures (email, DB, panics).",
         metric: errorMetric,
         threshold: 5,
         evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       new cloudwatch.Alarm(this, "RateLimitAbuseAlarm", {
-        alarmDescription: "Sustained rate-limit rejections (>100/5min) — credential stuffing, scraping, or a misconfigured client.",
+        alarmDescription:
+          "Sustained rate-limit rejections (>100/5min) — credential stuffing, scraping, or a misconfigured client.",
         metric: rateLimitMetric,
         threshold: 100,
         evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
     ];
@@ -573,14 +673,31 @@ export class ServerStack extends Stack {
         [
           new cloudwatch.GraphWidget({
             title: "API requests",
-            left: [cloudFrontMetric(this, distribution.distributionId, "Requests", Duration.minutes(5))],
+            left: [
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "Requests",
+                Duration.minutes(5),
+              ),
+            ],
             width: 8,
           }),
           new cloudwatch.GraphWidget({
             title: "API error rates %",
             left: [
-              cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
-              cloudFrontMetric(this, distribution.distributionId, "4xxErrorRate", Duration.minutes(5)),
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "5xxErrorRate",
+                Duration.minutes(5),
+              ),
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "4xxErrorRate",
+                Duration.minutes(5),
+              ),
             ],
             width: 8,
           }),

@@ -8,10 +8,10 @@
  * user ids. Threads are addressed by public handle — a profile's "Message" button links to
  * /messages/<username>, which renders an empty composer even before a conversation exists.
  */
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
+import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
 import { cn } from "./cn";
-import type { AppShellLinkProps } from "./app-shell";
 
 type NavLink = ComponentType<AppShellLinkProps>;
 
@@ -65,9 +65,13 @@ export function MessagesView({
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8">
-        <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Inbox</h1>
+        <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+          Inbox
+        </h1>
         <p className="text-gray-500">
-          {conversations.length === 1 ? "1 conversation" : `${conversations.length} conversations`}
+          {conversations.length === 1
+            ? "1 conversation"
+            : `${conversations.length} conversations`}
         </p>
       </div>
       {conversations.length === 0 ? (
@@ -77,20 +81,30 @@ export function MessagesView({
       ) : (
         <div className="flex flex-col gap-3">
           {conversations.map((c) => (
-            <LinkComponent key={c.id} href={`/messages/${c.with.username}`} className="block">
+            <LinkComponent
+              key={c.id}
+              href={`/messages/${c.with.username}`}
+              className="block"
+            >
               <div className="flex items-center gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition hover:ring-primary/40">
                 <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-xl font-bold uppercase text-primary-dark">
                   {c.with.name.trim().charAt(0) || "?"}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="truncate font-serif text-xl font-semibold">{c.with.name}</h3>
-                    <span className="shrink-0 text-xs text-muted-foreground">{shortWhen(c.lastAt)}</span>
+                    <h3 className="truncate font-serif text-xl font-semibold">
+                      {c.with.name}
+                    </h3>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {shortWhen(c.lastAt)}
+                    </span>
                   </div>
                   <p
                     className={cn(
                       "truncate text-sm",
-                      c.unread > 0 ? "font-semibold text-foreground" : "text-muted-foreground",
+                      c.unread > 0
+                        ? "font-semibold text-foreground"
+                        : "text-muted-foreground",
                     )}
                   >
                     {c.lastIsMine ? "You: " : ""}
@@ -142,16 +156,26 @@ export function ThreadView({
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col p-8">
       <header className="mb-6 flex items-center gap-4">
-        <LinkComponent href="/messages" className="text-sm text-muted-foreground hover:text-foreground">
+        <LinkComponent
+          href="/messages"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
           ← Inbox
         </LinkComponent>
-        <LinkComponent href={`/${thread.with.username}`} className="flex min-w-0 items-center gap-3">
+        <LinkComponent
+          href={`/${thread.with.username}`}
+          className="flex min-w-0 items-center gap-3"
+        >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-lg font-bold uppercase text-primary-dark">
             {thread.with.name.trim().charAt(0) || "?"}
           </div>
           <div className="min-w-0">
-            <h1 className="truncate font-serif text-2xl font-bold text-primary-dark">{thread.with.name}</h1>
-            <p className="truncate text-sm text-muted-foreground">@{thread.with.username}</p>
+            <h1 className="truncate font-serif text-2xl font-bold text-primary-dark">
+              {thread.with.name}
+            </h1>
+            <p className="truncate text-sm text-muted-foreground">
+              @{thread.with.username}
+            </p>
           </div>
         </LinkComponent>
       </header>
@@ -159,11 +183,15 @@ export function ThreadView({
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">
         {thread.messages.length === 0 ? (
           <p className="pt-8 text-center text-muted-foreground">
-            Say hi — this is the start of your conversation with {thread.with.name}.
+            Say hi — this is the start of your conversation with{" "}
+            {thread.with.name}.
           </p>
         ) : (
           thread.messages.map((m) => (
-            <div key={m.id} className={cn("flex", m.mine ? "justify-end" : "justify-start")}>
+            <div
+              key={m.id}
+              className={cn("flex", m.mine ? "justify-end" : "justify-start")}
+            >
               <div
                 className={cn(
                   "max-w-[75%] rounded-2xl px-4 py-2.5",
@@ -172,8 +200,17 @@ export function ThreadView({
                     : "rounded-bl-sm bg-card ring-1 ring-foreground/10",
                 )}
               >
-                <p className="whitespace-pre-wrap break-words text-sm">{m.body}</p>
-                <p className={cn("mt-1 text-right text-[0.65rem]", m.mine ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {m.body}
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-right text-[0.65rem]",
+                    m.mine
+                      ? "text-primary-foreground/70"
+                      : "text-muted-foreground",
+                  )}
+                >
                   {shortWhen(m.createdAt)}
                 </p>
               </div>
@@ -204,7 +241,11 @@ export function ThreadView({
           aria-label="Message"
           className="min-h-[2.75rem] flex-1 resize-none rounded-xl border border-input bg-card px-4 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
         />
-        <button type="submit" disabled={sending || !draft.trim()} className={cn(buttonClasses({ size: "sm" }), "disabled:opacity-50")}>
+        <button
+          type="submit"
+          disabled={sending || !draft.trim()}
+          className={cn(buttonClasses({ size: "sm" }), "disabled:opacity-50")}
+        >
           {sending ? "Sending…" : "Send"}
         </button>
       </form>

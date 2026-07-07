@@ -60,7 +60,9 @@ GROUP BY n.id
 ORDER BY name`;
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe) — one recursive CTE. */
-async function per100gForIngredient(ingredientId: string): Promise<AggregatedNutrition> {
+async function per100gForIngredient(
+  ingredientId: string,
+): Promise<AggregatedNutrition> {
   const rs = await client.execute({ sql: CTE, args: { id: ingredientId } });
   let caloriesPer100g: number | null = null;
   const readings: AggregatedNutrition["readings"] = [];
@@ -69,13 +71,19 @@ async function per100gForIngredient(ingredientId: string): Promise<AggregatedNut
     if (row.kind === "cal") {
       caloriesPer100g = v;
     } else if (v != null) {
-      readings.push({ name: String(row.name), amountPer100g: v, unit: String(row.unit) });
+      readings.push({
+        name: String(row.name),
+        amountPer100g: v,
+        unit: String(row.unit),
+      });
     }
   }
   return { caloriesPer100g, readings };
 }
 
-export async function getRecipeNutrition(recipeId: string): Promise<AggregatedNutrition> {
+export async function getRecipeNutrition(
+  recipeId: string,
+): Promise<AggregatedNutrition> {
   const recipe = await db.query.recipes.findFirst({
     where: (r, { eq }) => eq(r.id, recipeId),
   });
@@ -84,7 +92,9 @@ export async function getRecipeNutrition(recipeId: string): Promise<AggregatedNu
 }
 
 /** Effective per-100g nutrition of any ingredient (leaf or recipe). */
-export async function getIngredientNutrition(ingredientId: string): Promise<AggregatedNutrition> {
+export async function getIngredientNutrition(
+  ingredientId: string,
+): Promise<AggregatedNutrition> {
   return per100gForIngredient(ingredientId);
 }
 
@@ -106,7 +116,10 @@ export async function searchIngredients(
     where: (i, { and, or, eq, like }) =>
       and(
         q ? like(i.name, `%${q}%`) : undefined,
-        or(eq(i.visibility, "public"), userId ? eq(i.userId, userId) : undefined),
+        or(
+          eq(i.visibility, "public"),
+          userId ? eq(i.userId, userId) : undefined,
+        ),
       ),
     with: { servingSize: true },
     orderBy: (i, { asc }) => [asc(i.name)],
@@ -115,7 +128,12 @@ export async function searchIngredients(
   const out: IngredientSearchResult[] = [];
   for (const r of rows) {
     const n = await getIngredientNutrition(r.id);
-    out.push({ id: r.id, name: r.name, servingGrams: r.servingSize?.grams ?? null, ...n });
+    out.push({
+      id: r.id,
+      name: r.name,
+      servingGrams: r.servingSize?.grams ?? null,
+      ...n,
+    });
   }
   return out;
 }

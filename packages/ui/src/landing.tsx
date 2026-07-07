@@ -1,7 +1,7 @@
-import { ArrowRight, Layers, Laptop, Search } from "lucide-react";
+import { ArrowRight, Laptop, Layers, Search } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { buttonClasses } from "./button";
 import { SIGNUPS_ENABLED } from "./auth-form";
+import { buttonClasses } from "./button";
 import type { NavLink } from "./screens";
 import { VegifyLogo } from "./vegify-logo";
 
@@ -50,6 +50,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: MOTION_CSS is a local constant stylesheet; no user input reaches it */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
       <JsonLd />
 
@@ -446,6 +447,7 @@ function JsonLd() {
   return (
     <script
       type="application/ld+json"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD of locally built page metadata; the standard way to emit structured data
       dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
     />
   );

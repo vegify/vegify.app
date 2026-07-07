@@ -40,7 +40,10 @@ export class WebStartFargateStack extends Stack {
     const { vpc } = props;
 
     const cluster = new ecs.Cluster(this, "Cluster", { vpc });
-    const taskDef = new ecs.FargateTaskDefinition(this, "Task", { cpu: 512, memoryLimitMiB: 1024 });
+    const taskDef = new ecs.FargateTaskDefinition(this, "Task", {
+      cpu: 512,
+      memoryLimitMiB: 1024,
+    });
 
     // In-process libSQL on a persistent EBS volume (proper file locking; WAL works here).
     const volume = new ecs.ServiceManagedVolume(this, "Data", {
@@ -56,13 +59,21 @@ export class WebStartFargateStack extends Stack {
     const container = taskDef.addContainer("web", {
       image: ecs.ContainerImage.fromAsset(webStart, { file: "Dockerfile" }),
       portMappings: [{ containerPort: 3001 }],
-      environment: { DATABASE_URL: "file:/data/vegify.db", PORT: "3001", NODE_ENV: "production" },
+      environment: {
+        DATABASE_URL: "file:/data/vegify.db",
+        PORT: "3001",
+        NODE_ENV: "production",
+      },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "web-start",
         logRetention: logs.RetentionDays.ONE_MONTH,
       }),
     });
-    container.addMountPoints({ containerPath: "/data", sourceVolume: volume.name, readOnly: false });
+    container.addMountPoints({
+      containerPath: "/data",
+      sourceVolume: volume.name,
+      readOnly: false,
+    });
 
     const service = new ecs.FargateService(this, "Service", {
       cluster,
@@ -77,7 +88,10 @@ export class WebStartFargateStack extends Stack {
     service.addVolume(volume);
 
     // ALB is the stable origin; CloudFront in front for HTTPS (its default cert) + asset caching.
-    const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", { vpc, internetFacing: true });
+    const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", {
+      vpc,
+      internetFacing: true,
+    });
     alb.addListener("Http", { port: 80, open: true }).addTargets("Web", {
       port: 3001,
       targets: [service],
@@ -96,6 +110,8 @@ export class WebStartFargateStack extends Stack {
       },
     });
 
-    new CfnOutput(this, "Url", { value: `https://${distribution.distributionDomainName}` });
+    new CfnOutput(this, "Url", {
+      value: `https://${distribution.distributionDomainName}`,
+    });
   }
 }

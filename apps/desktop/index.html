@@ -6,12 +6,12 @@
     <title>Vegify</title>
     <!-- No-FOUC: set the theme class before paint (mirrors @vegify/ui themeScript). -->
     <script>
-      (function () {
+      (() => {
         try {
-          var t = localStorage.getItem("vegify-theme") || "system";
-          var d = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          const t = localStorage.getItem("vegify-theme") || "system";
+          const d = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", d);
-        } catch (e) {}
+        } catch {}
       })();
     </script>
   </head>

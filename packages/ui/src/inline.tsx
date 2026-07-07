@@ -3,6 +3,13 @@
 import * as React from "react";
 import { cn } from "./cn";
 
+// Pure DOM helper: size a textarea to its content (used by the editing
+// effect and change handlers; module scope keeps effect deps honest).
+const autoGrow = (el: HTMLTextAreaElement) => {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+};
+
 /**
  * INLINE EDITING PRIMITIVES — the Linear-like edit-in-place contract (docs/design/inline-edit.md).
  *
@@ -31,9 +38,12 @@ function useInlineCommit<T>(value: T, onCommit?: (next: T) => Promise<void>) {
     setOptimistic(null);
   }, [value]);
 
-  React.useEffect(() => () => {
-    if (errorTimer.current) clearTimeout(errorTimer.current);
-  }, []);
+  React.useEffect(
+    () => () => {
+      if (errorTimer.current) clearTimeout(errorTimer.current);
+    },
+    [],
+  );
 
   const commit = React.useCallback(
     async (next: T, unchanged: boolean) => {
@@ -118,7 +128,10 @@ export function InlineText({
   selectAllOnEdit?: boolean;
   ariaLabel?: string;
 }) {
-  const { editing, setEditing, display, error, commit } = useInlineCommit(value, onCommit);
+  const { editing, setEditing, display, error, commit } = useInlineCommit(
+    value,
+    onCommit,
+  );
   const inputRef = React.useRef<HTMLInputElement>(null);
   const openedAuto = React.useRef(false);
   useEditingMarker(editing);
@@ -182,7 +195,12 @@ export function InlineText({
       tabIndex={0}
       aria-label={ariaLabel ? `Edit ${ariaLabel}` : "Edit"}
       data-inline-field={ariaLabel}
-      className={cn(className, AFFORDANCE, error && ERROR_FLASH, !display && "text-muted-foreground")}
+      className={cn(
+        className,
+        AFFORDANCE,
+        error && ERROR_FLASH,
+        !display && "text-muted-foreground",
+      )}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
@@ -214,14 +232,12 @@ export function InlineTextarea({
   placeholder?: string;
   ariaLabel?: string;
 }) {
-  const { editing, setEditing, display, error, commit } = useInlineCommit(value, onCommit);
+  const { editing, setEditing, display, error, commit } = useInlineCommit(
+    value,
+    onCommit,
+  );
   const ref = React.useRef<HTMLTextAreaElement>(null);
   useEditingMarker(editing);
-
-  const autoGrow = (el: HTMLTextAreaElement) => {
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
 
   React.useEffect(() => {
     if (!editing) return;
@@ -273,7 +289,12 @@ export function InlineTextarea({
       tabIndex={0}
       aria-label={ariaLabel ? `Edit ${ariaLabel}` : "Edit"}
       data-inline-field={ariaLabel}
-      className={cn(className, AFFORDANCE, error && ERROR_FLASH, !display && "text-muted-foreground")}
+      className={cn(
+        className,
+        AFFORDANCE,
+        error && ERROR_FLASH,
+        !display && "text-muted-foreground",
+      )}
       onClick={() => setEditing(true)}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
@@ -328,7 +349,10 @@ export function InlineNumber({
   className?: string;
   ariaLabel?: string;
 }) {
-  const { editing, setEditing, display, error, commit } = useInlineCommit(value, onCommit);
+  const { editing, setEditing, display, error, commit } = useInlineCommit(
+    value,
+    onCommit,
+  );
   const inputRef = React.useRef<HTMLInputElement>(null);
   const hostRef = React.useRef<HTMLButtonElement>(null);
   useEditingMarker(editing);
@@ -351,9 +375,13 @@ export function InlineNumber({
   const hopToNext = () => {
     if (!group) return;
     const chips = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(`[data-inline-group="${group}"]`),
+      document.querySelectorAll<HTMLButtonElement>(
+        `[data-inline-group="${group}"]`,
+      ),
     );
-    const i = chips.indexOf(hostRef.current!);
+    const host = hostRef.current;
+    if (!host) return;
+    const i = chips.indexOf(host);
     const next = chips[i + 1];
     if (next) next.click();
   };
@@ -403,7 +431,10 @@ export function InlineNumber({
               e.preventDefault();
               const cur = parse(input.value) ?? value;
               const base = stepFor(cur) * (e.shiftKey ? 10 : 1);
-              const next = Math.max(min, cur + (e.key === "ArrowUp" ? base : -base));
+              const next = Math.max(
+                min,
+                cur + (e.key === "ArrowUp" ? base : -base),
+              );
               input.value = fmt(next);
               input.select();
               preview(next); // live on ↑/↓ too
@@ -415,7 +446,9 @@ export function InlineNumber({
             void commit(n, n === value);
           }}
         />
-        {suffix ? <span className="text-muted-foreground">{suffix}</span> : null}
+        {suffix ? (
+          <span className="text-muted-foreground">{suffix}</span>
+        ) : null}
       </span>
     );
   }
@@ -470,7 +503,12 @@ function ScrubButton({
   onOpen: () => void;
 }) {
   // Drag bookkeeping in a ref so the pointer handlers don't re-render mid-scrub.
-  const drag = React.useRef<{ startX: number; startVal: number; last: number; moved: boolean } | null>(null);
+  const drag = React.useRef<{
+    startX: number;
+    startVal: number;
+    last: number;
+    moved: boolean;
+  } | null>(null);
   // The value shown WHILE dragging (null = not scrubbing → show the committed `display`). State, so
   // the number in the field itself tracks the drag — not only the external preview consumer.
   const [scrubValue, setScrubValue] = React.useState<number | null>(null);
@@ -489,7 +527,11 @@ function ScrubButton({
       type="button"
       data-inline-group={group}
       data-inline-field={ariaLabel}
-      aria-label={ariaLabel ? `Edit ${ariaLabel} (drag to adjust, click to type)` : "Edit amount"}
+      aria-label={
+        ariaLabel
+          ? `Edit ${ariaLabel} (drag to adjust, click to type)`
+          : "Edit amount"
+      }
       style={{ cursor: "ew-resize", touchAction: "none" }}
       className={cn(
         className,
@@ -499,7 +541,12 @@ function ScrubButton({
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { startX: e.clientX, startVal: base, last: base, moved: false };
+        drag.current = {
+          startX: e.clientX,
+          startVal: base,
+          last: base,
+          moved: false,
+        };
       }}
       onPointerMove={(e) => {
         const d = drag.current;
@@ -517,7 +564,8 @@ function ScrubButton({
       onPointerUp={(e) => {
         const d = drag.current;
         drag.current = null;
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        if (e.currentTarget.hasPointerCapture(e.pointerId))
+          e.currentTarget.releasePointerCapture(e.pointerId);
         if (!d) return;
         if (d.moved) {
           setScrubValue(null);

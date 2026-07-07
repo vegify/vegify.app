@@ -25,7 +25,7 @@ const pk = () =>
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(
-    () => new Date()
+    () => new Date(),
   ),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .$defaultFn(() => new Date())
@@ -62,7 +62,7 @@ export const sessions = sqliteTable(
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     ...timestamps,
   },
-  (t) => [index("sessions_user_idx").on(t.userId)]
+  (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
 // Single-use, expiring password-reset tokens. Like `sessions`, only the SHA-256 hash of the raw token
@@ -80,7 +80,7 @@ export const passwordResetTokens = sqliteTable(
     usedAt: integer("used_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
-  (t) => [index("password_reset_tokens_user_idx").on(t.userId)]
+  (t) => [index("password_reset_tokens_user_idx").on(t.userId)],
 );
 
 export const amounts = sqliteTable("amounts", {
@@ -141,7 +141,7 @@ export const ingredients = sqliteTable(
     index("ingredients_user_idx").on(t.userId),
     index("ingredients_name_idx").on(t.name),
     index("ingredients_slug_idx").on(t.slug),
-  ]
+  ],
 );
 
 // Old→current slug redirects. On a rename that changes the slug, the previous slug is logged here so
@@ -160,7 +160,7 @@ export const slugHistory = sqliteTable(
       .references(() => ingredients.id, { onDelete: "cascade" }),
     ...timestamps,
   },
-  (t) => [uniqueIndex("slug_history_scope_slug_uq").on(t.scope, t.slug)]
+  (t) => [uniqueIndex("slug_history_scope_slug_uq").on(t.scope, t.slug)],
 );
 
 export const videos = sqliteTable("videos", {
@@ -185,7 +185,7 @@ export const recipes = sqliteTable(
     videoId: text("video_id").references(() => videos.id),
     ...timestamps,
   },
-  (t) => [uniqueIndex("recipes_as_ingredient_uq").on(t.asIngredientId)]
+  (t) => [uniqueIndex("recipes_as_ingredient_uq").on(t.asIngredientId)],
 );
 
 export const ingredientInRecipe = sqliteTable(
@@ -204,7 +204,7 @@ export const ingredientInRecipe = sqliteTable(
       .references(() => amounts.id, { onDelete: "cascade" }),
     ...timestamps,
   },
-  (t) => [index("iir_recipe_idx").on(t.recipeId)]
+  (t) => [index("iir_recipe_idx").on(t.recipeId)],
 );
 
 export const nutrients = sqliteTable("nutrients", {
@@ -232,7 +232,7 @@ export const ingredientNutrient = sqliteTable(
   },
   (t) => [
     uniqueIndex("ingredient_nutrient_uq").on(t.ingredientId, t.nutrientId),
-  ]
+  ],
 );
 
 export const imgs = sqliteTable("imgs", {
@@ -348,7 +348,7 @@ export const ingredientInRecipeRelations = relations(
       fields: [ingredientInRecipe.amountId],
       references: [amounts.id],
     }),
-  })
+  }),
 );
 
 export const ingredientNutrientRelations = relations(
@@ -362,7 +362,7 @@ export const ingredientNutrientRelations = relations(
       fields: [ingredientNutrient.nutrientId],
       references: [nutrients.id],
     }),
-  })
+  }),
 );
 
 export const ingredientImgRelations = relations(ingredientImg, ({ one }) => ({

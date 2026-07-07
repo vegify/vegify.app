@@ -1,4 +1,6 @@
-import { db, client } from "./index";
+import { hashPassword } from "./auth";
+import { client, db } from "./index";
+import { one } from "./rows";
 import {
   amounts,
   ingredientInRecipe,
@@ -8,7 +10,6 @@ import {
   recipes,
   users,
 } from "./schema";
-import { hashPassword } from "./auth";
 
 // Seed content ported in spirit from vegify-laravel's seeders (Caputo 00 Flour, Biga)
 // plus a nested-recipe example to exercise the recipe-as-ingredient pattern.
@@ -25,23 +26,22 @@ async function main() {
   await db.delete(users);
 
   // Dev login: dev@example.com / "dev-password" (local seed only — not a real credential).
-  const [john] = await db
-    .insert(users)
-    .values({
-      name: "Dev User",
-      username: "dev-user",
-      email: "dev@example.com",
-      passwordHash: await hashPassword("dev-password"),
-    })
-    .returning();
+  const john = one(
+    await db
+      .insert(users)
+      .values({
+        name: "Dev User",
+        username: "dev-user",
+        email: "dev@example.com",
+        passwordHash: await hashPassword("dev-password"),
+      })
+      .returning(),
+  );
 
   const amount = async (unit: string, qty: number, grams: number) =>
-    (
-      await db
-        .insert(amounts)
-        .values({ unit, amount: qty, grams })
-        .returning()
-    )[0];
+    one(
+      await db.insert(amounts).values({ unit, amount: qty, grams }).returning(),
+    );
 
   const ingredient = async (opts: {
     name: string;
@@ -53,7 +53,7 @@ async function main() {
   }) => {
     const serving = await amount(...opts.serving);
     const batch = opts.batch ? await amount(...opts.batch) : null;
-    return (
+    return one(
       await db
         .insert(ingredients)
         .values({
@@ -66,8 +66,8 @@ async function main() {
           servingSizeId: serving.id,
           batchSizeId: batch?.id,
         })
-        .returning()
-    )[0];
+        .returning(),
+    );
   };
 
   const flour = await ingredient({
@@ -107,14 +107,40 @@ async function main() {
       { name: "Protein" },
     ])
     .returning();
+  if (!iron || !b12 || !protein) throw new Error("nutrient seed rows missing");
 
   await db.insert(ingredientNutrient).values([
-    { ingredientId: blackBeans.id, nutrientId: iron.id, amountPer100g: 2.1, unit: "mg" },
-    { ingredientId: blackBeans.id, nutrientId: protein.id, amountPer100g: 8.9, unit: "g" },
-    { ingredientId: blackBeans.id, nutrientId: b12.id, amountPer100g: 0, unit: "µg" },
+    {
+      ingredientId: blackBeans.id,
+      nutrientId: iron.id,
+      amountPer100g: 2.1,
+      unit: "mg",
+    },
+    {
+      ingredientId: blackBeans.id,
+      nutrientId: protein.id,
+      amountPer100g: 8.9,
+      unit: "g",
+    },
+    {
+      ingredientId: blackBeans.id,
+      nutrientId: b12.id,
+      amountPer100g: 0,
+      unit: "µg",
+    },
     // Flour carries protein + iron so the Biga/Dough recipes show aggregated micros.
-    { ingredientId: flour.id, nutrientId: protein.id, amountPer100g: 10, unit: "g" },
-    { ingredientId: flour.id, nutrientId: iron.id, amountPer100g: 1.2, unit: "mg" },
+    {
+      ingredientId: flour.id,
+      nutrientId: protein.id,
+      amountPer100g: 10,
+      unit: "g",
+    },
+    {
+      ingredientId: flour.id,
+      nutrientId: iron.id,
+      amountPer100g: 1.2,
+      unit: "mg",
+    },
   ]);
 
   // Biga — recipe that is itself an ingredient
@@ -125,17 +151,19 @@ async function main() {
     serving: ["biga", 1, 415],
     batch: ["biga", 1, 415],
   });
-  const [biga] = await db
-    .insert(recipes)
-    .values({
-      asIngredientId: bigaIngredient.id,
-      subtitle: "Italian pre-ferment",
-      directions:
-        "Stir the yeast into the water, then mix in the flour until shaggy. Cover and ferment at room temperature for 12–16 hours, until bubbly and risen.",
-      prepMinutes: 10,
-      totalTime: 970,
-    })
-    .returning();
+  const biga = one(
+    await db
+      .insert(recipes)
+      .values({
+        asIngredientId: bigaIngredient.id,
+        subtitle: "Italian pre-ferment",
+        directions:
+          "Stir the yeast into the water, then mix in the flour until shaggy. Cover and ferment at room temperature for 12–16 hours, until bubbly and risen.",
+        prepMinutes: 10,
+        totalTime: 970,
+      })
+      .returning(),
+  );
   const bigaItems: [string, string, number, number][] = [
     [flour.id, "g", 250, 250],
     [water.id, "g", 162.5, 162.5],
@@ -159,17 +187,19 @@ async function main() {
     serving: ["dough ball", 1, 260],
     batch: ["dough balls", 3, 780],
   });
-  const [dough] = await db
-    .insert(recipes)
-    .values({
-      asIngredientId: doughIngredient.id,
-      subtitle: "Built on the biga",
-      directions:
-        "Dissolve the biga and salt into the water, then work in the flour and knead to a smooth dough. Cold-ferment 24 hours, divide into balls, and proof before stretching.",
-      prepMinutes: 30,
-      totalTime: 1440,
-    })
-    .returning();
+  const dough = one(
+    await db
+      .insert(recipes)
+      .values({
+        asIngredientId: doughIngredient.id,
+        subtitle: "Built on the biga",
+        directions:
+          "Dissolve the biga and salt into the water, then work in the flour and knead to a smooth dough. Cold-ferment 24 hours, divide into balls, and proof before stretching.",
+        prepMinutes: 30,
+        totalTime: 1440,
+      })
+      .returning(),
+  );
   const doughItems: [string, string, number, number][] = [
     [bigaIngredient.id, "biga", 1, 415],
     [flour.id, "g", 250, 250],
@@ -240,14 +270,17 @@ async function main() {
     serving: ["scoop", 1, 100],
     batch: ["batch", 1, shakeItems.reduce((s, [, , , g]) => s + g, 0)],
   });
-  const [shake] = await db
-    .insert(recipes)
-    .values({
-      asIngredientId: shakeIngredient.id,
-      subtitle: "20 ingredients · full micronutrient panel",
-      directions: "Combine all ingredients, blend with water, and shake well.",
-    })
-    .returning();
+  const shake = one(
+    await db
+      .insert(recipes)
+      .values({
+        asIngredientId: shakeIngredient.id,
+        subtitle: "20 ingredients · full micronutrient panel",
+        directions:
+          "Combine all ingredients, blend with water, and shake well.",
+      })
+      .returning(),
+  );
   order = 0;
   for (const [ingredientId, unit, qty, grams] of shakeItems) {
     const a = await amount(unit, qty, grams);

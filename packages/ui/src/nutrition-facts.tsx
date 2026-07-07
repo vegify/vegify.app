@@ -7,19 +7,28 @@ import { cn } from "./cn";
  * (`ingredient_nutrient`); the panel scales them to the serving and computes %DV.
  */
 
-export type NutritionReading = { name: string; amountPer100g: number; unit: string };
+export type NutritionReading = {
+  name: string;
+  amountPer100g: number;
+  unit: string;
+};
 
 export type NutritionFactsData = {
   heading?: string; // "This Ingredient" | "This Recipe"
   servingsPerBatch?: number | null;
-  serving?: { amount?: number | null; unit?: string | null; grams: number } | null;
+  serving?: {
+    amount?: number | null;
+    unit?: string | null;
+    grams: number;
+  } | null;
   caloriesPerServing?: number | null;
   readings: NutritionReading[];
 };
 
 // --- units → micrograms (common base for %DV ratios) ---
 const TO_UG: Record<string, number> = { g: 1e6, mg: 1e3, µg: 1, mcg: 1, ug: 1 };
-const toUg = (amt: number, unit: string) => amt * (TO_UG[unit.toLowerCase()] ?? NaN);
+const toUg = (amt: number, unit: string) =>
+  amt * (TO_UG[unit.toLowerCase()] ?? NaN);
 
 // FDA Daily Values (adults / children ≥4y). null = no established DV.
 const DV: Record<string, { dv: number; unit: string } | null> = {
@@ -68,7 +77,13 @@ const ALIASES: Record<string, string[]> = {
   polyunsaturated: ["polyunsaturated fat"],
   "omega-3s": ["omega-3", "omega 3", "omega-3 fatty acids"],
   "omega-6s": ["omega-6", "omega 6", "omega-6 fatty acids"],
-  "total carbohydrates": ["carbohydrate", "carbohydrates", "carbs", "carb", "total carbohydrate"],
+  "total carbohydrates": [
+    "carbohydrate",
+    "carbohydrates",
+    "carbs",
+    "carb",
+    "total carbohydrate",
+  ],
   "total protein": ["protein"],
   thiamin: ["thiamine", "vitamin b1"],
   riboflavin: ["vitamin b2"],
@@ -90,19 +105,57 @@ const MACROS: Macro[] = [
   { key: "total carbohydrates", label: "Total Carbohydrates", indent: 0 },
   { key: "total protein", label: "Total Protein", indent: 0 },
 ];
-const MICRO_LEFT = ["calcium", "chloride", "chromium", "copper", "iodine", "iron", "magnesium", "manganese", "phosphorus", "potassium", "selenium", "sodium", "sulfur"];
-const MICRO_RIGHT = ["vitamin a", "vitamin b6", "vitamin b12", "vitamin c", "vitamin d", "vitamin e", "vitamin k", "thiamin", "riboflavin", "niacin", "folate", "pantothenic acid", "biotin", "choline"];
+const MICRO_LEFT = [
+  "calcium",
+  "chloride",
+  "chromium",
+  "copper",
+  "iodine",
+  "iron",
+  "magnesium",
+  "manganese",
+  "phosphorus",
+  "potassium",
+  "selenium",
+  "sodium",
+  "sulfur",
+];
+const MICRO_RIGHT = [
+  "vitamin a",
+  "vitamin b6",
+  "vitamin b12",
+  "vitamin c",
+  "vitamin d",
+  "vitamin e",
+  "vitamin k",
+  "thiamin",
+  "riboflavin",
+  "niacin",
+  "folate",
+  "pantothenic acid",
+  "biotin",
+  "choline",
+];
 const MICRO_LABEL: Record<string, string> = {
-  "vitamin a": "Vitamin A", "vitamin b6": "Vitamin B6", "vitamin b12": "Vitamin B12",
-  "vitamin c": "Vitamin C", "vitamin d": "Vitamin D", "vitamin e": "Vitamin E", "vitamin k": "Vitamin K",
+  "vitamin a": "Vitamin A",
+  "vitamin b6": "Vitamin B6",
+  "vitamin b12": "Vitamin B12",
+  "vitamin c": "Vitamin C",
+  "vitamin d": "Vitamin D",
+  "vitamin e": "Vitamin E",
+  "vitamin k": "Vitamin K",
   "pantothenic acid": "Pantothenic Acid",
 };
-const micLabel = (k: string) => MICRO_LABEL[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
+const micLabel = (k: string) =>
+  MICRO_LABEL[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
 
 const fmt = (n: number) => {
-  if (!isFinite(n)) return "0";
+  if (!Number.isFinite(n)) return "0";
   const r = Math.round(n * 10) / 10;
-  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace(/\.0$/, "");
+  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace(
+    /\.0$/,
+    "",
+  );
 };
 
 export function NutritionFacts({
@@ -130,7 +183,8 @@ export function NutritionFacts({
     if (dv && r) {
       const base = toUg(perServing, r.unit);
       const dvBase = toUg(dv.dv, dv.unit);
-      if (isFinite(base) && dvBase) pct = Math.round((base / dvBase) * 100);
+      if (Number.isFinite(base) && dvBase)
+        pct = Math.round((base / dvBase) * 100);
     } else if (dv && !r) {
       pct = 0;
     }
@@ -143,11 +197,15 @@ export function NutritionFacts({
   return (
     <div className={cn("text-sm text-foreground", className)}>
       <div className="flex items-center justify-between border-b-4 border-foreground pb-1">
-        <h2 className="text-2xl font-extrabold tracking-tight">Nutrition Facts</h2>
+        <h2 className="text-2xl font-extrabold tracking-tight">
+          Nutrition Facts
+        </h2>
         <FileTextIcon className="size-6" aria-hidden />
       </div>
 
-      <p className="mt-2 text-lg font-semibold">{data.heading ?? "This Ingredient"}</p>
+      <p className="mt-2 text-lg font-semibold">
+        {data.heading ?? "This Ingredient"}
+      </p>
       {data.servingsPerBatch != null && (
         <p>{fmt(data.servingsPerBatch)} servings per batch</p>
       )}
@@ -162,9 +220,7 @@ export function NutritionFacts({
         <span className="text-3xl font-extrabold">Calories</span>
         <span className="text-3xl font-extrabold">{fmt(cal)}</span>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {macroPct(valueFor, cal)}
-      </p>
+      <p className="text-xs text-muted-foreground">{macroPct(valueFor, cal)}</p>
 
       <p className="mt-1 border-b border-foreground pb-0.5 text-right text-xs font-bold">
         % Daily Value*
@@ -187,14 +243,20 @@ export function NutritionFacts({
       </dl>
 
       <div className="mt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 border-t-4 border-foreground pt-1 text-xs">
-        {[MICRO_LEFT, MICRO_RIGHT].map((col, i) => (
-          <div key={i} className="space-y-0.5">
+        {(
+          [
+            ["left", MICRO_LEFT],
+            ["right", MICRO_RIGHT],
+          ] as const
+        ).map(([side, col]) => (
+          <div key={side} className="space-y-0.5">
             {col.map((k) => {
               const { amount, unit, pct } = valueFor(k);
               return (
                 <div key={k} className="flex justify-between gap-1">
                   <span>
-                    <span className="font-bold">{micLabel(k)}</span> {fmt(amount)}
+                    <span className="font-bold">{micLabel(k)}</span>{" "}
+                    {fmt(amount)}
                     {unit}
                   </span>
                   <span>{pct == null ? "" : `${pct}%`}</span>

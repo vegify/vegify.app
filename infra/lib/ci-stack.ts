@@ -31,14 +31,18 @@ export class CiStack extends Stack {
 
     const role = new iam.Role(this, "DeployRole", {
       roleName: "vegify-github-deploy",
-      description: "Assumed by GitHub Actions (OIDC) to run cdk deploy via the CDK bootstrap roles.",
-      assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
-        StringEquals: {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          // Only this repo's workflows on the main branch may assume the role.
-          "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+      description:
+        "Assumed by GitHub Actions (OIDC) to run cdk deploy via the CDK bootstrap roles.",
+      assumedBy: new iam.WebIdentityPrincipal(
+        provider.openIdConnectProviderArn,
+        {
+          StringEquals: {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+            // Only this repo's workflows on the main branch may assume the role.
+            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+          },
         },
-      }),
+      ),
     });
 
     role.addToPolicy(
@@ -62,7 +66,9 @@ export class CiStack extends Stack {
       new iam.PolicyStatement({
         sid: "ReadDeployDecisions",
         actions: ["ssm:GetParameter", "ssm:GetParametersByPath"],
-        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/*`],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/*`,
+        ],
       }),
     );
 
@@ -76,20 +82,25 @@ export class CiStack extends Stack {
       roleName: "vegify-release-signing",
       description:
         "Assumed by GitHub Actions (OIDC) to read the shared Apple signing secret for notarized desktop releases.",
-      assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
-        StringEquals: {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          // Only this repo's workflows on the main branch may assume the role.
-          "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+      assumedBy: new iam.WebIdentityPrincipal(
+        provider.openIdConnectProviderArn,
+        {
+          StringEquals: {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+            // Only this repo's workflows on the main branch may assume the role.
+            "token.actions.githubusercontent.com:sub": `repo:${props.githubRepo}:ref:refs/heads/main`,
+          },
         },
-      }),
+      ),
     });
     releaseRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "ReadSharedAppleSigningSecret",
         actions: ["secretsmanager:GetSecretValue"],
         // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard.
-        resources: [`arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`],
+        resources: [
+          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`,
+        ],
       }),
     );
     // publish-desktop resolves its two non-secret inputs from Parameter Store instead of repository
@@ -105,6 +116,8 @@ export class CiStack extends Stack {
         ],
       }),
     );
-    new CfnOutput(this, "ReleaseSigningRoleArn", { value: releaseRole.roleArn });
+    new CfnOutput(this, "ReleaseSigningRoleArn", {
+      value: releaseRole.roleArn,
+    });
   }
 }

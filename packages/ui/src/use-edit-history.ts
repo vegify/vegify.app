@@ -27,8 +27,8 @@ export function useEditHistory<S>(commit: (state: S) => Promise<void>) {
 
   const undo = useCallback(
     async (current: S) => {
-      if (past.length === 0) return;
       const prev = past[past.length - 1];
+      if (prev === undefined) return;
       setPast((p) => p.slice(0, -1));
       setFuture((f) => [...f, current]);
       await commit(prev);
@@ -38,8 +38,8 @@ export function useEditHistory<S>(commit: (state: S) => Promise<void>) {
 
   const redo = useCallback(
     async (current: S) => {
-      if (future.length === 0) return;
       const next = future[future.length - 1];
+      if (next === undefined) return;
       setFuture((f) => f.slice(0, -1));
       setPast((p) => [...p, current]);
       await commit(next);
@@ -47,5 +47,11 @@ export function useEditHistory<S>(commit: (state: S) => Promise<void>) {
     [future, commit],
   );
 
-  return { record, undo, redo, canUndo: past.length > 0, canRedo: future.length > 0 };
+  return {
+    record,
+    undo,
+    redo,
+    canUndo: past.length > 0,
+    canRedo: future.length > 0,
+  };
 }

@@ -20,7 +20,6 @@ body {
   font-family: var(--font-sans);
 }
 
-
 /* iOS (Tauri mobile) device polish: respect the notch/home-indicator safe areas and stop the OS
    from auto-inflating text. The web build ignores these (no insets on desktop browsers). */
 :root {

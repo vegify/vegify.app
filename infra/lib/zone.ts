@@ -17,7 +17,11 @@ export interface ZoneSpec {
  * which every real deploy has); the unconfigured placeholder path never touches AWS, preserving the
  * fresh-clone zero-env `cdk synth` guarantee.
  */
-export function resolveZone(scope: Construct, id: string, spec: ZoneSpec): route53.IHostedZone {
+export function resolveZone(
+  scope: Construct,
+  id: string,
+  spec: ZoneSpec,
+): route53.IHostedZone {
   if (spec.overrideZoneId) {
     return route53.HostedZone.fromHostedZoneAttributes(scope, id, {
       hostedZoneId: spec.overrideZoneId,
@@ -30,5 +34,7 @@ export function resolveZone(scope: Construct, id: string, spec: ZoneSpec): route
       zoneName: spec.zoneName,
     });
   }
-  return route53.HostedZone.fromLookup(scope, id, { domainName: spec.zoneName });
+  return route53.HostedZone.fromLookup(scope, id, {
+    domainName: spec.zoneName,
+  });
 }

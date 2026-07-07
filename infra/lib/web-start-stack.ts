@@ -1,18 +1,25 @@
 import * as path from "node:path";
-import { CfnOutput, Duration, Fn, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import {
+  CfnOutput,
+  Duration,
+  Fn,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+} from "aws-cdk-lib";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as s3 from "aws-cdk-lib/aws-s3";
-import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
-import { resolveZone } from "./zone.js";
 import { cloudFrontMetric, importAlarmTopic, notify } from "./monitoring.js";
+import { resolveZone } from "./zone.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const webStart = path.join(repoRoot, "apps/web");
@@ -98,7 +105,9 @@ export class WebStartStack extends Stack {
         ORIGIN_SECRET: props.originSecret,
       },
     });
-    const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+    const fnUrl = fn.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+    });
 
     const assets = new s3.Bucket(this, "Assets", {
       removalPolicy: RemovalPolicy.DESTROY,
@@ -110,8 +119,10 @@ export class WebStartStack extends Stack {
       destinationBucket: assets,
     });
 
+    const primaryDomain = domainNames[0];
+    if (!primaryDomain) throw new Error("domain names are empty");
     const zone = resolveZone(this, "Zone", {
-      zoneName: domainNames[0],
+      zoneName: primaryDomain,
       configured: props.domainsConfigured,
       overrideZoneId: props.hostedZoneIdOverride,
     });
@@ -119,9 +130,13 @@ export class WebStartStack extends Stack {
     // create a DNS-validated cert for the domains in the zone above. Issuance is automatic (minutes,
     // first deploy only) — no manual ACM step.
     const certificate = props.certificateArnOverride
-      ? acm.Certificate.fromCertificateArn(this, "Cert", props.certificateArnOverride)
+      ? acm.Certificate.fromCertificateArn(
+          this,
+          "Cert",
+          props.certificateArnOverride,
+        )
       : new acm.Certificate(this, "ManagedCert", {
-          domainName: domainNames[0],
+          domainName: primaryDomain,
           subjectAlternativeNames: domainNames.slice(1),
           validation: acm.CertificateValidation.fromDns(zone),
         });
@@ -132,13 +147,23 @@ export class WebStartStack extends Stack {
     // never recognizes the domain (1Password offers nothing at the sign-in form). override=true so it
     // replaces S3's default type. (The AASA is the only well-known file today; revisit if a non-JSON
     // /.well-known/* file is ever added.)
-    const wellKnownJson = new cloudfront.ResponseHeadersPolicy(this, "WellKnownJson", {
-      customHeadersBehavior: {
-        customHeaders: [{ header: "content-type", value: "application/json", override: true }],
+    const wellKnownJson = new cloudfront.ResponseHeadersPolicy(
+      this,
+      "WellKnownJson",
+      {
+        customHeadersBehavior: {
+          customHeaders: [
+            {
+              header: "content-type",
+              value: "application/json",
+              override: true,
+            },
+          ],
+        },
       },
-    });
+    );
 
-// A CloudFront behavior serving a static file from the client S3 bucket (used for the root statics).
+    // A CloudFront behavior serving a static file from the client S3 bucket (used for the root statics).
     const staticFromS3: cloudfront.BehaviorOptions = {
       origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -148,18 +173,22 @@ export class WebStartStack extends Stack {
       domainNames,
       certificate,
       defaultBehavior: {
-        origin: new origins.FunctionUrlOrigin(fnUrl, { customHeaders: verifyHeaders }),
+        origin: new origins.FunctionUrlOrigin(fnUrl, {
+          customHeaders: verifyHeaders,
+        }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         // Forward everything except Host so the session cookie reaches the SSR handler.
-        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
       },
       additionalBehaviors: {
         // Built client assets (hashed JS/CSS) — immutable, cache hard.
         "/assets/*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
         // First-party browser-log ingestion. The client beacons same-origin POST /__ingest; we forward
@@ -167,11 +196,15 @@ export class WebStartStack extends Stack {
         // caching; POST allowed; ALL_VIEWER_EXCEPT_HOST_HEADER so CloudFront sets Host to the Function
         // URL host (a Lambda Function URL rejects a mismatched Host).
         "/__ingest": {
-          origin: new origins.HttpOrigin(ingestHost, { customHeaders: verifyHeaders }),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          origin: new origins.HttpOrigin(ingestHost, {
+            customHeaders: verifyHeaders,
+          }),
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          originRequestPolicy:
+            cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
         // Apple App Site Association (and any future /.well-known/*) — static, from S3, uncached so a
         // Team-ID fix or rotation goes live immediately. Lets macOS Password AutoFill associate the
@@ -179,7 +212,8 @@ export class WebStartStack extends Stack {
         // binary/octet-stream to application/json (swcd requires it — see above).
         "/.well-known/*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           responseHeadersPolicy: wellKnownJson,
         },
@@ -192,7 +226,8 @@ export class WebStartStack extends Stack {
         // Lambda behavior and enumerates every public recipe + ingredient. See apps/web/aws/sitemap.mjs.)
         "/robots.txt": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(assets),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         },
         // Root static files (PWA icons + manifest + favicon), from public/ → S3, NOT the SSR Lambda
@@ -207,13 +242,25 @@ export class WebStartStack extends Stack {
     });
 
     // Point the apex + www at the distribution (alias A/AAAA; both are covered by the cert above).
-    const aliasTarget = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
+    const aliasTarget = route53.RecordTarget.fromAlias(
+      new targets.CloudFrontTarget(distribution),
+    );
     new route53.ARecord(this, "ApexA", { zone, target: aliasTarget });
     new route53.AaaaRecord(this, "ApexAaaa", { zone, target: aliasTarget });
-    new route53.ARecord(this, "WwwA", { zone, recordName: "www", target: aliasTarget });
-    new route53.AaaaRecord(this, "WwwAaaa", { zone, recordName: "www", target: aliasTarget });
+    new route53.ARecord(this, "WwwA", {
+      zone,
+      recordName: "www",
+      target: aliasTarget,
+    });
+    new route53.AaaaRecord(this, "WwwAaaa", {
+      zone,
+      recordName: "www",
+      target: aliasTarget,
+    });
 
-    new CfnOutput(this, "Url", { value: `https://${distribution.distributionDomainName}` });
+    new CfnOutput(this, "Url", {
+      value: `https://${distribution.distributionDomainName}`,
+    });
     new CfnOutput(this, "CustomDomain", { value: `https://${domainNames[0]}` });
     new CfnOutput(this, "FunctionUrl", { value: fnUrl.url });
 
@@ -224,33 +271,44 @@ export class WebStartStack extends Stack {
     const p5 = { period: Duration.minutes(5) };
     notify(
       new cloudwatch.Alarm(this, "SsrErrorsAlarm", {
-        alarmDescription: "Web SSR Lambda erroring — every page render hits this function.",
+        alarmDescription:
+          "Web SSR Lambda erroring — every page render hits this function.",
         metric: fn.metricErrors(p5),
         threshold: 5,
         evaluationPeriods: 2,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       alarmTopic,
     );
     notify(
       new cloudwatch.Alarm(this, "SsrThrottlesAlarm", {
-        alarmDescription: "Web SSR Lambda throttled — concurrency ceiling hit; pages will 5xx.",
+        alarmDescription:
+          "Web SSR Lambda throttled — concurrency ceiling hit; pages will 5xx.",
         metric: fn.metricThrottles(p5),
         threshold: 1,
         evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       alarmTopic,
     );
     notify(
       new cloudwatch.Alarm(this, "WebCloudFront5xxAlarm", {
-        alarmDescription: "Web CloudFront 5xx rate > 5% — the site is serving errors.",
-        metric: cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
+        alarmDescription:
+          "Web CloudFront 5xx rate > 5% — the site is serving errors.",
+        metric: cloudFrontMetric(
+          this,
+          distribution.distributionId,
+          "5xxErrorRate",
+          Duration.minutes(5),
+        ),
         threshold: 5,
         evaluationPeriods: 2,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }),
       alarmTopic,
@@ -262,14 +320,31 @@ export class WebStartStack extends Stack {
         [
           new cloudwatch.GraphWidget({
             title: "Site requests",
-            left: [cloudFrontMetric(this, distribution.distributionId, "Requests", Duration.minutes(5))],
+            left: [
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "Requests",
+                Duration.minutes(5),
+              ),
+            ],
             width: 8,
           }),
           new cloudwatch.GraphWidget({
             title: "Site error rates %",
             left: [
-              cloudFrontMetric(this, distribution.distributionId, "5xxErrorRate", Duration.minutes(5)),
-              cloudFrontMetric(this, distribution.distributionId, "4xxErrorRate", Duration.minutes(5)),
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "5xxErrorRate",
+                Duration.minutes(5),
+              ),
+              cloudFrontMetric(
+                this,
+                distribution.distributionId,
+                "4xxErrorRate",
+                Duration.minutes(5),
+              ),
             ],
             width: 8,
           }),
@@ -287,7 +362,10 @@ export class WebStartStack extends Stack {
           }),
           new cloudwatch.GraphWidget({
             title: "SSR duration (p50/p99 ms)",
-            left: [fn.metricDuration({ ...p5, statistic: "p50" }), fn.metricDuration({ ...p5, statistic: "p99" })],
+            left: [
+              fn.metricDuration({ ...p5, statistic: "p50" }),
+              fn.metricDuration({ ...p5, statistic: "p99" }),
+            ],
             width: 12,
           }),
         ],

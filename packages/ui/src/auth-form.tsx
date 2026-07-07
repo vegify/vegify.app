@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { buttonClasses } from "./button";
 import { cn } from "./cn";
 import { Input } from "./input";
@@ -13,7 +19,7 @@ import { VegifyLogo } from "./vegify-logo";
  * → IPC over HTTPS in A2), and navigation to the `LinkComponent` port. Sibling to recipe-form /
  * ingredient-form (the interactive-form pattern), keeping screens.tsx stateless.
  */
-export type AuthSubmitResult = { error?: string } | void;
+export type AuthSubmitResult = { error?: string } | undefined;
 
 /**
  * Signups are disabled (invite-only). The server is the authority (`POST /api/auth/signup` → 403);
@@ -55,7 +61,10 @@ export function LoginView({
   onSubmit,
   LinkComponent,
 }: {
-  onSubmit: (values: { email: string; password: string }) => Promise<AuthSubmitResult>;
+  onSubmit: (values: {
+    email: string;
+    password: string;
+  }) => Promise<AuthSubmitResult>;
   LinkComponent: NavLink;
 }) {
   const [email, setEmail] = useState("");
@@ -86,9 +95,14 @@ export function LoginView({
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">Welcome back</h1>
+        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+          Welcome back
+        </h1>
         {error ? (
-          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}
@@ -118,14 +132,20 @@ export function LoginView({
           {pending ? "Signing in…" : "Sign in"}
         </button>
         <p className="text-center text-sm text-muted-foreground">
-          <LinkComponent href="/forgot" className="font-semibold text-primary hover:underline">
+          <LinkComponent
+            href="/forgot"
+            className="font-semibold text-primary hover:underline"
+          >
             Forgot your password?
           </LinkComponent>
         </p>
         {SIGNUPS_ENABLED ? (
           <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
-            <LinkComponent href="/signup" className="font-semibold text-primary hover:underline">
+            <LinkComponent
+              href="/signup"
+              className="font-semibold text-primary hover:underline"
+            >
               Sign up
             </LinkComponent>
           </p>
@@ -139,7 +159,11 @@ export function SignupView({
   onSubmit,
   LinkComponent,
 }: {
-  onSubmit: (values: { name: string; email: string; password: string }) => Promise<AuthSubmitResult>;
+  onSubmit: (values: {
+    name: string;
+    email: string;
+    password: string;
+  }) => Promise<AuthSubmitResult>;
   LinkComponent: NavLink;
 }) {
   const [name, setName] = useState("");
@@ -175,7 +199,10 @@ export function SignupView({
           Create your account
         </h1>
         {error ? (
-          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}
@@ -216,7 +243,10 @@ export function SignupView({
         </button>
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <LinkComponent href="/login" className="font-semibold text-primary hover:underline">
+          <LinkComponent
+            href="/login"
+            className="font-semibold text-primary hover:underline"
+          >
             Sign in
           </LinkComponent>
         </p>
@@ -260,15 +290,20 @@ export function ForgotPasswordView({
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">Reset password</h1>
+        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+          Reset password
+        </h1>
         {sent ? (
           <>
             <p className="text-center text-sm text-muted-foreground">
               If an account exists for{" "}
-              <span className="font-medium text-foreground">{email}</span>, we&apos;ve sent a link to
-              reset your password. Check your inbox.
+              <span className="font-medium text-foreground">{email}</span>,
+              we&apos;ve sent a link to reset your password. Check your inbox.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Back to sign in
             </LinkComponent>
           </>
@@ -281,10 +316,14 @@ export function ForgotPasswordView({
             className="space-y-4"
           >
             <p className="text-center text-sm text-muted-foreground">
-              Enter your email and we&apos;ll send you a link to reset your password.
+              Enter your email and we&apos;ll send you a link to reset your
+              password.
             </p>
             {error ? (
-              <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
                 {error}
               </p>
             ) : null}
@@ -305,7 +344,10 @@ export function ForgotPasswordView({
               {pending ? "Sending…" : "Send reset link"}
             </button>
             <p className="text-center text-sm text-muted-foreground">
-              <LinkComponent href="/login" className="font-semibold text-primary hover:underline">
+              <LinkComponent
+                href="/login"
+                className="font-semibold text-primary hover:underline"
+              >
                 Back to sign in
               </LinkComponent>
             </p>
@@ -327,7 +369,10 @@ export function ResetPasswordView({
   LinkComponent,
 }: {
   token: string;
-  onSubmit: (values: { token: string; password: string }) => Promise<AuthSubmitResult>;
+  onSubmit: (values: {
+    token: string;
+    password: string;
+  }) => Promise<AuthSubmitResult>;
   LinkComponent: NavLink;
 }) {
   const [password, setPassword] = useState("");
@@ -368,7 +413,10 @@ export function ResetPasswordView({
         {!token ? (
           <p className="text-center text-sm text-muted-foreground">
             This reset link is missing its token. Request a new one from{" "}
-            <LinkComponent href="/forgot" className="font-semibold text-primary hover:underline">
+            <LinkComponent
+              href="/forgot"
+              className="font-semibold text-primary hover:underline"
+            >
               Reset password
             </LinkComponent>
             .
@@ -376,9 +424,13 @@ export function ResetPasswordView({
         ) : done ? (
           <>
             <p className="text-center text-sm text-muted-foreground">
-              Your password has been reset. You can now sign in with your new password.
+              Your password has been reset. You can now sign in with your new
+              password.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Sign in
             </LinkComponent>
           </>
@@ -391,7 +443,10 @@ export function ResetPasswordView({
             className="space-y-4"
           >
             {error ? (
-              <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
                 {error}
               </p>
             ) : null}
@@ -444,7 +499,9 @@ export function VerifyEmailView({
   onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>;
   LinkComponent: NavLink;
 }) {
-  const [status, setStatus] = useState<"verifying" | "done" | "error">(token ? "verifying" : "error");
+  const [status, setStatus] = useState<"verifying" | "done" | "error">(
+    token ? "verifying" : "error",
+  );
   const [error, setError] = useState<string | null>(
     token ? null : "This verification link is missing its token.",
   );
@@ -476,25 +533,37 @@ export function VerifyEmailView({
           {status === "done" ? "Email confirmed" : "Confirm your email"}
         </h1>
         {status === "verifying" ? (
-          <p className="text-center text-sm text-muted-foreground">Confirming your email address…</p>
+          <p className="text-center text-sm text-muted-foreground">
+            Confirming your email address…
+          </p>
         ) : status === "done" ? (
           <>
             <p className="text-center text-sm text-muted-foreground">
               Your email address is verified — you&apos;re all set.
             </p>
-            <LinkComponent href="/" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Continue to Vegify
             </LinkComponent>
           </>
         ) : (
           <>
-            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
               {error}
             </p>
             <p className="text-center text-sm text-muted-foreground">
-              The link may have expired or already been used. Sign in and we can send you a fresh one.
+              The link may have expired or already been used. Sign in and we can
+              send you a fresh one.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Go to sign in
             </LinkComponent>
           </>
@@ -532,12 +601,15 @@ export function EmailVerificationBanner({
     <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-primary/20 bg-primary/5 px-4 py-2 text-center text-sm text-foreground">
       {state === "sent" ? (
         <span>
-          Verification link sent to <span className="font-medium">{email}</span>. Check your inbox.
+          Verification link sent to <span className="font-medium">{email}</span>
+          . Check your inbox.
         </span>
       ) : (
         <>
           <span>
-            Please verify your email <span className="font-medium">({email})</span> to secure your account.
+            Please verify your email{" "}
+            <span className="font-medium">({email})</span> to secure your
+            account.
           </span>
           <button
             type="button"

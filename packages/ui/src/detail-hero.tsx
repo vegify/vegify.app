@@ -1,5 +1,5 @@
-import type { ComponentType } from "react";
 import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react";
+import type { ComponentType } from "react";
 import type { AppShellLinkProps } from "./app-shell";
 import { cn } from "./cn";
 
@@ -36,7 +36,11 @@ export function DetailHero({
   return (
     <div className={cn("relative", className)}>
       {photoUrl ? (
-        <img src={photoUrl} alt={label} className="aspect-video w-full rounded-xl object-cover" />
+        <img
+          src={photoUrl}
+          alt={label}
+          className="aspect-video w-full rounded-xl object-cover"
+        />
       ) : (
         <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-muted">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -73,11 +77,20 @@ export function DetailHero({
             <SaveIcon className="size-5" />
           </button>
           {LinkComponent && editHref ? (
-            <LinkComponent href={editHref} aria-label="Edit" className={editFabClass}>
+            <LinkComponent
+              href={editHref}
+              aria-label="Edit"
+              className={editFabClass}
+            >
               <PencilIcon className="size-5" />
             </LinkComponent>
           ) : onEdit ? (
-            <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label="Edit"
+              className={editFabClass}
+            >
               <PencilIcon className="size-5" />
             </button>
           ) : (

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-import { App } from "aws-cdk-lib";
 import { deployConfig } from "@vegify/config/deploy";
-import { VpcStack } from "../lib/vpc-stack.js";
-import { WebStartStack } from "../lib/web-start-stack.js";
-import { ServerStack } from "../lib/server-stack.js";
-import { ClientLogsStack } from "../lib/client-logs-stack.js";
+import { App } from "aws-cdk-lib";
 import { CiStack } from "../lib/ci-stack.js";
+import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { DnsStack } from "../lib/dns-stack.js";
 import { EmailStack } from "../lib/email-stack.js";
+import { ServerStack } from "../lib/server-stack.js";
+import { VpcStack } from "../lib/vpc-stack.js";
+import { WebStartStack } from "../lib/web-start-stack.js";
 
 // Hosting decision (see infra/README "Hosting decision"): the bake-off winner is TanStack Start
 // (web-start); web-next is dropped. As of P4 (web-SSR-calls-Axum) the web is a STATELESS SSR shell —
@@ -88,7 +88,11 @@ new WebStartStack(app, "VegifyWebStart", {
 // CI: the GitHub Actions OIDC deploy role. One-time `cdk deploy VegifyCi`; the workflow assumes it. The
 // repo for the OIDC trust comes from GITHUB_REPOSITORY (auto-set in Actions; falls back to vegify's only
 // for local hand-deploys), so a fork's CI works without editing this file.
-new CiStack(app, "VegifyCi", { env, githubRepo: cfg.githubRepo, appleSecretId: cfg.appleSecretId });
+new CiStack(app, "VegifyCi", {
+  env,
+  githubRepo: cfg.githubRepo,
+  appleSecretId: cfg.appleSecretId,
+});
 
 // DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's
 // Terraform so the domain is owned in this repo. Standing stack — deploy on demand, NOT in the cascade.

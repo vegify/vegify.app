@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
 import { cn } from "./cn";
-import { useTheme, type Theme } from "./use-theme";
+import { type Theme, useTheme } from "./use-theme";
 
 /**
  * Theme setting — the System / Light / Dark control shown on the Settings screen. A segmented
@@ -24,8 +24,7 @@ export function ThemeSetting({ className }: { className?: string }) {
   const current: Theme = mounted ? theme : "system";
 
   return (
-    <div
-      role="radiogroup"
+    <fieldset
       aria-label="Theme"
       className={cn(
         "inline-flex items-center gap-1 rounded-xl bg-muted p-1 ring-1 ring-foreground/10",
@@ -38,8 +37,7 @@ export function ThemeSetting({ className }: { className?: string }) {
           <button
             key={value}
             type="button"
-            role="radio"
-            aria-checked={active}
+            aria-pressed={active}
             onClick={() => setTheme(value)}
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
@@ -53,6 +51,6 @@ export function ThemeSetting({ className }: { className?: string }) {
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

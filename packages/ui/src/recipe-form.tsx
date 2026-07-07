@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   CarrotIcon,
   ImageIcon,
@@ -9,9 +8,14 @@ import {
   SearchIcon,
   Trash2Icon,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Input } from "./input";
-import { NutritionFacts, type NutritionFactsData, type NutritionReading } from "./nutrition-facts";
-import { VisibilityField, type Visibility } from "./visibility-field";
+import {
+  NutritionFacts,
+  type NutritionFactsData,
+  type NutritionReading,
+} from "./nutrition-facts";
+import { type Visibility, VisibilityField } from "./visibility-field";
 
 export type IngredientSearchItem = {
   id: string;
@@ -60,7 +64,10 @@ export function composeRecipeInput(state: RecipeEditState): RecipeFormInput {
     directions: state.directions,
     servingGrams: totalGrams > 0 ? totalGrams / servingsN : null,
     batchGrams: totalGrams > 0 ? totalGrams : null,
-    items: state.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams })),
+    items: state.items.map((i) => ({
+      ingredientId: i.ingredientId,
+      grams: i.grams,
+    })),
   };
 }
 
@@ -106,7 +113,9 @@ export function RecipeForm({
   const [name, setName] = useState(defaults?.name ?? "");
   const [subtitle, setSubtitle] = useState(defaults?.subtitle ?? "");
   const [directions, setDirections] = useState(defaults?.directions ?? "");
-  const [visibility, setVisibility] = useState<Visibility>(defaults?.visibility ?? "public");
+  const [visibility, setVisibility] = useState<Visibility>(
+    defaults?.visibility ?? "public",
+  );
   const [servings, setServings] = useState(
     defaults?.servings != null ? clean(defaults.servings) : "1",
   );
@@ -151,7 +160,7 @@ export function RecipeForm({
 
   // live aggregate (grams-weighted) → recipe per-100g, same shape as getRecipeNutrition
   const calTotal = rows.reduce(
-    (s, r) => s + (r.caloriesPer100g ?? 0) * (Number(r.grams) || 0) / 100,
+    (s, r) => s + ((r.caloriesPer100g ?? 0) * (Number(r.grams) || 0)) / 100,
     0,
   );
   const calKnown = rows.some((r) => r.caloriesPer100g != null);
@@ -281,9 +290,13 @@ export function RecipeForm({
               onChange={(e) => setSubtitle(e.target.value)}
               className="h-11"
             />
-            <label className="flex items-center gap-3 text-sm text-muted-foreground">
+            <label
+              htmlFor="servings-per-batch"
+              className="flex items-center gap-3 text-sm text-muted-foreground"
+            >
               <span className="shrink-0">Servings per batch</span>
               <Input
+                id="servings-per-batch"
                 aria-label="Servings per batch"
                 type="number"
                 value={servings}
@@ -297,16 +310,22 @@ export function RecipeForm({
             <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">Ingredients</h2>
+          <h2 className="mt-8 mb-3 text-center text-xl font-bold">
+            Ingredients
+          </h2>
           <div className="space-y-2">
             {rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={r.ingredientId} className="flex items-center gap-2">
                 <Input
                   aria-label={`Amount for ${r.name}`}
                   type="number"
                   value={r.grams}
                   onChange={(e) =>
-                    setRows((rs) => rs.map((x, j) => (j === i ? { ...x, grams: e.target.value } : x)))
+                    setRows((rs) =>
+                      rs.map((x, j) =>
+                        j === i ? { ...x, grams: e.target.value } : x,
+                      ),
+                    )
                   }
                   className="h-11 w-20"
                 />
@@ -323,7 +342,9 @@ export function RecipeForm({
               </div>
             ))}
             {rows.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">No ingredients yet.</p>
+              <p className="text-center text-sm text-muted-foreground">
+                No ingredients yet.
+              </p>
             )}
           </div>
 
@@ -341,7 +362,11 @@ export function RecipeForm({
                 />
               </div>
               <ul className="mt-2 max-h-56 overflow-y-auto">
-                {searching && <li className="px-2 py-1.5 text-sm text-muted-foreground">Searching…</li>}
+                {searching && (
+                  <li className="px-2 py-1.5 text-sm text-muted-foreground">
+                    Searching…
+                  </li>
+                )}
                 {!searching &&
                   results.map((item) => (
                     <li key={item.id}>
@@ -352,7 +377,9 @@ export function RecipeForm({
                       >
                         <span className="font-medium">{item.name}</span>
                         <span className="text-muted-foreground">
-                          {item.caloriesPer100g != null ? `${Math.round(item.caloriesPer100g)} cal/100g` : ""}
+                          {item.caloriesPer100g != null
+                            ? `${Math.round(item.caloriesPer100g)} cal/100g`
+                            : ""}
                         </span>
                       </button>
                     </li>
@@ -360,7 +387,10 @@ export function RecipeForm({
                 {!searching && results.length === 0 && (
                   <li className="px-2 py-1.5 text-sm text-muted-foreground">
                     No matches.{" "}
-                    <a href={createIngredientHref} className="text-primary hover:underline">
+                    <a
+                      href={createIngredientHref}
+                      className="text-primary hover:underline"
+                    >
                       Create a new ingredient
                     </a>
                   </li>
@@ -377,7 +407,9 @@ export function RecipeForm({
             </button>
           )}
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">Directions</h2>
+          <h2 className="mt-8 mb-3 text-center text-xl font-bold">
+            Directions
+          </h2>
           <textarea
             aria-label="Directions"
             placeholder="Directions…"
