@@ -29,7 +29,7 @@ export function VisibilityField({
             onClick={() => onChange(o.value)}
             aria-pressed={value === o.value}
             className={cn(
-              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition",
+              "flex-1 rounded-md px-3 py-1.5 font-medium text-sm transition",
               value === o.value
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -39,7 +39,7 @@ export function VisibilityField({
           </button>
         ))}
       </div>
-      <p className="mt-1 text-center text-xs text-muted-foreground">
+      <p className="mt-1 text-center text-muted-foreground text-xs">
         {OPTIONS.find((o) => o.value === value)?.hint}
       </p>
     </div>

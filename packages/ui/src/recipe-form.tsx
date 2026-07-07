@@ -261,7 +261,7 @@ export function RecipeForm({
           </div>
 
           <div className="mt-10 flex items-center justify-center gap-3">
-            <h1 className="text-center text-3xl font-bold text-primary-dark">
+            <h1 className="text-center font-bold text-3xl text-primary-dark">
               Create / Edit Recipe
             </h1>
             {onDelete && (
@@ -293,7 +293,7 @@ export function RecipeForm({
             />
             <label
               htmlFor="servings-per-batch"
-              className="flex items-center gap-3 text-sm text-muted-foreground"
+              className="flex items-center gap-3 text-muted-foreground text-sm"
             >
               <span className="shrink-0">Servings per batch</span>
               <Input
@@ -311,7 +311,7 @@ export function RecipeForm({
             <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">
+          <h2 className="mt-8 mb-3 text-center font-bold text-xl">
             Ingredients
           </h2>
           <div className="space-y-2">
@@ -330,7 +330,7 @@ export function RecipeForm({
                   }
                   className="h-11 w-20"
                 />
-                <span className="text-sm text-muted-foreground">g</span>
+                <span className="text-muted-foreground text-sm">g</span>
                 <span className="flex-1 truncate font-medium">{r.name}</span>
                 <button
                   type="button"
@@ -343,7 +343,7 @@ export function RecipeForm({
               </div>
             ))}
             {rows.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">
+              <p className="text-center text-muted-foreground text-sm">
                 No ingredients yet.
               </p>
             )}
@@ -364,7 +364,7 @@ export function RecipeForm({
               </div>
               <ul className="mt-2 max-h-56 overflow-y-auto">
                 {searching && (
-                  <li className="px-2 py-1.5 text-sm text-muted-foreground">
+                  <li className="px-2 py-1.5 text-muted-foreground text-sm">
                     Searching…
                   </li>
                 )}
@@ -386,7 +386,7 @@ export function RecipeForm({
                     </li>
                   ))}
                 {!searching && results.length === 0 && (
-                  <li className="px-2 py-1.5 text-sm text-muted-foreground">
+                  <li className="px-2 py-1.5 text-muted-foreground text-sm">
                     No matches.{" "}
                     <a
                       href={createIngredientHref}
@@ -402,13 +402,13 @@ export function RecipeForm({
             <button
               type="button"
               onClick={() => setPicking(true)}
-              className="mt-4 flex items-center gap-2 rounded-lg bg-green-dark px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+              className="mt-4 flex items-center gap-2 rounded-lg bg-green-dark px-4 py-2.5 font-semibold text-sm text-white transition hover:brightness-110"
             >
               <CarrotIcon className="size-4" /> Add Ingredient
             </button>
           )}
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">
+          <h2 className="mt-8 mb-3 text-center font-bold text-xl">
             Directions
           </h2>
           <textarea
@@ -421,7 +421,7 @@ export function RecipeForm({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={nutrition} />
         </div>

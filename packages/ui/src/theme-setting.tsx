@@ -41,7 +41,7 @@ export function ThemeSetting({ className }: { className?: string }) {
             aria-pressed={active}
             onClick={() => setTheme(value)}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium text-sm transition",
               active
                 ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/10"
                 : "text-muted-foreground hover:text-foreground",

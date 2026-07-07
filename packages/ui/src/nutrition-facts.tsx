@@ -196,15 +196,15 @@ export function NutritionFacts({
   const serving = data.serving;
 
   return (
-    <div className={cn("text-sm text-foreground", className)}>
-      <div className="flex items-center justify-between border-b-4 border-foreground pb-1">
-        <h2 className="text-2xl font-extrabold tracking-tight">
+    <div className={cn("text-foreground text-sm", className)}>
+      <div className="flex items-center justify-between border-foreground border-b-4 pb-1">
+        <h2 className="font-extrabold text-2xl tracking-tight">
           Nutrition Facts
         </h2>
         <FileTextIcon className="size-6" aria-hidden />
       </div>
 
-      <p className="mt-2 text-lg font-semibold">
+      <p className="mt-2 font-semibold text-lg">
         {data.heading ?? "This Ingredient"}
       </p>
       {data.servingsPerBatch != null && (
@@ -215,15 +215,15 @@ export function NutritionFacts({
         {serving?.unit ?? (serving?.grams ? `${fmt(serving.grams)} g` : "")}
       </p>
 
-      <div className="mt-1 border-t-8 border-foreground" />
-      <p className="pt-1 text-xs font-semibold">Amount per serving</p>
-      <div className="flex items-end justify-between border-b-4 border-foreground pb-1">
-        <span className="text-3xl font-extrabold">Calories</span>
-        <span className="text-3xl font-extrabold">{fmt(cal)}</span>
+      <div className="mt-1 border-foreground border-t-8" />
+      <p className="pt-1 font-semibold text-xs">Amount per serving</p>
+      <div className="flex items-end justify-between border-foreground border-b-4 pb-1">
+        <span className="font-extrabold text-3xl">Calories</span>
+        <span className="font-extrabold text-3xl">{fmt(cal)}</span>
       </div>
-      <p className="text-xs text-muted-foreground">{macroPct(valueFor, cal)}</p>
+      <p className="text-muted-foreground text-xs">{macroPct(valueFor, cal)}</p>
 
-      <p className="mt-1 border-b border-foreground pb-0.5 text-right text-xs font-bold">
+      <p className="mt-1 border-foreground border-b pb-0.5 text-right font-bold text-xs">
         % Daily Value*
       </p>
 
@@ -243,7 +243,7 @@ export function NutritionFacts({
         })}
       </dl>
 
-      <div className="mt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 border-t-4 border-foreground pt-1 text-xs">
+      <div className="mt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 border-foreground border-t-4 pt-1 text-xs">
         {(
           [
             ["left", MICRO_LEFT],
@@ -268,7 +268,7 @@ export function NutritionFacts({
         ))}
       </div>
 
-      <p className="mt-2 border-t border-foreground pt-1 text-[10px] leading-tight text-muted-foreground">
+      <p className="mt-2 border-foreground border-t pt-1 text-[10px] text-muted-foreground leading-tight">
         * Percent Daily Values are based on a 2,000 calorie diet.
       </p>
     </div>
@@ -291,7 +291,7 @@ function LeaderRow({
   return (
     <div
       className={cn(
-        "flex items-baseline border-b border-foreground/15 py-0.5",
+        "flex items-baseline border-foreground/15 border-b py-0.5",
         bold ? "font-bold" : "font-normal",
       )}
       style={{ paddingLeft: indent * 14 }}
@@ -299,7 +299,7 @@ function LeaderRow({
       <span>
         {label} {value}
       </span>
-      <span className="mx-1 flex-1 self-center border-b border-dotted border-foreground/30" />
+      <span className="mx-1 flex-1 self-center border-foreground/30 border-b border-dotted" />
       <span className="font-bold">{pct == null ? "—" : `${pct}%`}</span>
     </div>
   );

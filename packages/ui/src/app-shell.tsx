@@ -155,14 +155,14 @@ export function AppShell({
         <div className="mt-auto space-y-3 px-3 pb-5">
           {user ? (
             <div className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-bold uppercase">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 font-bold text-sm uppercase">
                 {user.name.trim().charAt(0) || "?"}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold leading-tight">
+                <p className="truncate font-semibold text-sm leading-tight">
                   {user.name}
                 </p>
-                <p className="truncate text-xs leading-tight text-white/70">
+                <p className="truncate text-white/70 text-xs leading-tight">
                   {user.email}
                 </p>
               </div>
@@ -180,7 +180,7 @@ export function AppShell({
           ) : (
             <LinkComponent
               href="/login"
-              className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+              className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 font-semibold text-sm text-white transition hover:bg-white/20"
             >
               <User className="size-5" />
               Sign in
@@ -202,7 +202,7 @@ export function AppShell({
           >
             <Mail className="size-6" />
             {unreadMessages > 0 ? (
-              <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none">
+              <span className="absolute -top-1 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 font-bold text-[0.6rem] leading-none">
                 {unreadMessages > 99 ? "99+" : unreadMessages}
               </span>
             ) : null}
@@ -228,7 +228,7 @@ export function AppShell({
               type="search"
               aria-label="Search"
               placeholder="Search…"
-              className="h-11 w-full rounded-full border border-input bg-card pl-5 pr-12 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+              className="h-11 w-full rounded-full border border-input bg-card pr-12 pl-5 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
               {...(onSearchChange
                 ? {
                     value: searchValue ?? "",
@@ -236,7 +236,7 @@ export function AppShell({
                   }
                 : {})}
             />
-            <span className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <span className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <Search className="size-4" />
             </span>
           </div>
@@ -278,11 +278,11 @@ function NavRow({
       <Icon className="size-6 shrink-0" strokeWidth={2} />
       <span>{item.label}</span>
       {(item.badge ?? 0) > 0 ? (
-        <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-orange px-1.5 text-sm font-bold leading-none text-white">
+        <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-orange px-1.5 font-bold text-sm text-white leading-none">
           {(item.badge ?? 0) > 99 ? "99+" : item.badge}
         </span>
       ) : !item.href ? (
-        <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">
+        <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 font-semibold text-xs uppercase tracking-wide">
           soon
         </span>
       ) : null}
@@ -333,7 +333,7 @@ function TabItem({
     >
       <Icon className="size-6" />
       {(item.badge ?? 0) > 0 ? (
-        <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-green-dark">
+        <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange px-1 font-bold text-[0.6rem] text-white leading-none ring-2 ring-green-dark">
           {(item.badge ?? 0) > 99 ? "99+" : item.badge}
         </span>
       ) : null}

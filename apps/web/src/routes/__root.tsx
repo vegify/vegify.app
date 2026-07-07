@@ -106,16 +106,16 @@ function RootErrorBoundary() {
   const router = useRouter();
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-8 text-center">
-      <p className="text-lg font-medium">
+      <p className="font-medium text-lg">
         Something went wrong loading this page.
       </p>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         It may have been a brief hiccup.
       </p>
       <button
         type="button"
         onClick={() => router.invalidate()}
-        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+        className="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground text-sm hover:opacity-90"
       >
         Retry
       </button>

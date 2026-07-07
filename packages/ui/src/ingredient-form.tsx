@@ -166,7 +166,7 @@ export function IngredientForm({
           </div>
 
           <div className="mt-10 flex items-center justify-center gap-3">
-            <h1 className="text-center text-3xl font-bold text-primary-dark">
+            <h1 className="text-center font-bold text-3xl text-primary-dark">
               Create / Edit Ingredient
             </h1>
             {onDelete && (
@@ -237,8 +237,8 @@ export function IngredientForm({
             <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
-          <h2 className="mt-8 mb-3 text-center text-lg font-bold">Nutrients</h2>
-          <p className="mb-3 text-center text-xs text-muted-foreground">
+          <h2 className="mt-8 mb-3 text-center font-bold text-lg">Nutrients</h2>
+          <p className="mb-3 text-center text-muted-foreground text-xs">
             Amounts are per serving{servingGrams ? ` (${servingGrams} g)` : ""}.
           </p>
           <div className="space-y-2">
@@ -279,7 +279,7 @@ export function IngredientForm({
             <button
               type="button"
               onClick={() => setRows((rs) => [...rs, emptyRow()])}
-              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              className="flex items-center gap-1 font-medium text-primary text-sm hover:underline"
             >
               <PlusIcon className="size-4" /> Add nutrient
             </button>
@@ -287,7 +287,7 @@ export function IngredientForm({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={nutrition} />
         </div>

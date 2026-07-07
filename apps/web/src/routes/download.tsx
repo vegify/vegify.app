@@ -61,7 +61,7 @@ function DownloadPage() {
   const href = data.dmgUrl ?? RELEASES_PAGE;
   return (
     <div className="mx-auto max-w-2xl p-8 text-center">
-      <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
+      <h1 className="mb-2 font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
         Vegify for desktop
       </h1>
       <p className="mb-8 text-muted-foreground">
@@ -73,14 +73,14 @@ function DownloadPage() {
       <a href={href} className={buttonClasses({ size: "lg" })} download>
         Download for macOS
       </a>
-      <p className="mt-4 text-sm text-muted-foreground">
+      <p className="mt-4 text-muted-foreground text-sm">
         Universal build (Apple Silicon + Intel).{" "}
         <a href={RELEASES_PAGE} className="underline hover:text-foreground">
           All releases
         </a>
         .
       </p>
-      <p className="mt-10 text-sm text-muted-foreground">
+      <p className="mt-10 text-muted-foreground text-sm">
         Prefer the browser?{" "}
         <LinkAdapter href="/recipes" className="text-primary underline">
           Keep browsing on the web

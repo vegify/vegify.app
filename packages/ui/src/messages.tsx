@@ -66,7 +66,7 @@ export function MessagesView({
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8">
-        <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+        <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
           Inbox
         </h1>
         <p className="text-gray-500">
@@ -88,15 +88,15 @@ export function MessagesView({
               className="block"
             >
               <div className="flex items-center gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition hover:ring-primary/40">
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-xl font-bold uppercase text-primary-dark">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold font-serif text-primary-dark text-xl uppercase">
                   {c.with.name.trim().charAt(0) || "?"}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="truncate font-serif text-xl font-semibold">
+                    <h3 className="truncate font-semibold font-serif text-xl">
                       {c.with.name}
                     </h3>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground text-xs">
                       {shortWhen(c.lastAt)}
                     </span>
                   </div>
@@ -113,7 +113,7 @@ export function MessagesView({
                   </p>
                 </div>
                 {c.unread > 0 ? (
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-orange text-xs font-bold text-white">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-orange font-bold text-white text-xs">
                     {c.unread > 99 ? "99+" : c.unread}
                   </span>
                 ) : null}
@@ -159,7 +159,7 @@ export function ThreadView({
       <header className="mb-6 flex items-center gap-4">
         <LinkComponent
           href="/messages"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground text-sm hover:text-foreground"
         >
           ← Inbox
         </LinkComponent>
@@ -167,14 +167,14 @@ export function ThreadView({
           href={`/${thread.with.username}`}
           className="flex min-w-0 items-center gap-3"
         >
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-lg font-bold uppercase text-primary-dark">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold font-serif text-lg text-primary-dark uppercase">
             {thread.with.name.trim().charAt(0) || "?"}
           </div>
           <div className="min-w-0">
-            <h1 className="truncate font-serif text-2xl font-bold text-primary-dark">
+            <h1 className="truncate font-bold font-serif text-2xl text-primary-dark">
               {thread.with.name}
             </h1>
-            <p className="truncate text-sm text-muted-foreground">
+            <p className="truncate text-muted-foreground text-sm">
               @{thread.with.username}
             </p>
           </div>
@@ -240,7 +240,7 @@ export function ThreadView({
           rows={2}
           placeholder={`Message ${thread.with.name}…`}
           aria-label="Message"
-          className="min-h-[2.75rem] flex-1 resize-none rounded-xl border border-input bg-card px-4 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+          className="min-h-[2.75rem] flex-1 resize-none rounded-xl border border-input bg-card px-4 py-2.5 text-foreground text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
         />
         <button
           type="submit"

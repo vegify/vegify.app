@@ -53,7 +53,7 @@ export function DetailHero({
       {onUploadPhoto ? (
         <label
           aria-label="Upload photo"
-          className="absolute left-4 -bottom-5 flex size-11 cursor-pointer items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10 transition-colors hover:text-foreground"
+          className="absolute -bottom-5 left-4 flex size-11 cursor-pointer items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10 transition-colors hover:text-foreground"
         >
           <ImageIcon className="size-5" />
           <input

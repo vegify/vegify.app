@@ -405,7 +405,7 @@ export function InlineNumber({
           inputMode="decimal"
           aria-label={ariaLabel}
           size={Math.max(fmt(display).length, 3)}
-          className="w-[5ch] border-none bg-transparent p-0 text-right outline-none focus:ring-0 tabular-nums"
+          className="w-[5ch] border-none bg-transparent p-0 text-right tabular-nums outline-none focus:ring-0"
           onInput={(e) => {
             // LIVE: every keystroke feeds the preview (the nutrition panel updates as you type).
             const n = parse(e.currentTarget.value);
@@ -536,7 +536,7 @@ function ScrubButton({
       style={{ cursor: "ew-resize", touchAction: "none" }}
       className={cn(
         className,
-        "select-none rounded-sm px-0.5 -mx-0.5 tabular-nums transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
+        "-mx-0.5 select-none rounded-sm px-0.5 tabular-nums transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
         scrubbing && "bg-primary/15",
       )}
       onPointerDown={(e) => {
@@ -616,7 +616,7 @@ export function InlinePillSelect<T extends string>({
   return (
     <span
       className={cn(
-        "relative inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:text-primary-dark dark:hover:text-primary-light",
+        "relative inline-flex items-center rounded-full border border-border px-2.5 py-0.5 font-semibold text-muted-foreground text-xs transition hover:border-primary hover:text-primary-dark dark:hover:text-primary-light",
         error && ERROR_FLASH,
         className,
       )}

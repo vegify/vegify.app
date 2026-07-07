@@ -50,7 +50,7 @@ function LabeledInput({
 }: { id: string; label: string } & ComponentProps<typeof Input>) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
+      <label htmlFor={id} className="font-medium text-sm">
         {label}
       </label>
       <Input id={id} name={id} className="h-11" {...props} />
@@ -96,13 +96,13 @@ export function LoginView({
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Welcome back
         </h1>
         {error ? (
           <p
             role="alert"
-            className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
           >
             {error}
           </p>
@@ -132,7 +132,7 @@ export function LoginView({
         >
           {pending ? "Signing in…" : "Sign in"}
         </button>
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-muted-foreground text-sm">
           <LinkComponent
             href="/forgot"
             className="font-semibold text-primary hover:underline"
@@ -141,7 +141,7 @@ export function LoginView({
           </LinkComponent>
         </p>
         {SIGNUPS_ENABLED ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-muted-foreground text-sm">
             Don&apos;t have an account?{" "}
             <LinkComponent
               href="/signup"
@@ -196,13 +196,13 @@ export function SignupView({
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Create your account
         </h1>
         {error ? (
           <p
             role="alert"
-            className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
           >
             {error}
           </p>
@@ -242,7 +242,7 @@ export function SignupView({
         >
           {pending ? "Creating account…" : "Sign up"}
         </button>
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-muted-foreground text-sm">
           Already have an account?{" "}
           <LinkComponent
             href="/login"
@@ -291,12 +291,12 @@ export function ForgotPasswordView({
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Reset password
         </h1>
         {sent ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               If an account exists for{" "}
               <span className="font-medium text-foreground">{email}</span>,
               we&apos;ve sent a link to reset your password. Check your inbox.
@@ -316,14 +316,14 @@ export function ForgotPasswordView({
             }}
             className="space-y-4"
           >
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               Enter your email and we&apos;ll send you a link to reset your
               password.
             </p>
             {error ? (
               <p
                 role="alert"
-                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
               >
                 {error}
               </p>
@@ -344,7 +344,7 @@ export function ForgotPasswordView({
             >
               {pending ? "Sending…" : "Send reset link"}
             </button>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               <LinkComponent
                 href="/login"
                 className="font-semibold text-primary hover:underline"
@@ -408,11 +408,11 @@ export function ResetPasswordView({
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Choose a new password
         </h1>
         {!token ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-muted-foreground text-sm">
             This reset link is missing its token. Request a new one from{" "}
             <LinkComponent
               href="/forgot"
@@ -424,7 +424,7 @@ export function ResetPasswordView({
           </p>
         ) : done ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               Your password has been reset. You can now sign in with your new
               password.
             </p>
@@ -446,7 +446,7 @@ export function ResetPasswordView({
             {error ? (
               <p
                 role="alert"
-                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
               >
                 {error}
               </p>
@@ -530,16 +530,16 @@ export function VerifyEmailView({
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           {status === "done" ? "Email confirmed" : "Confirm your email"}
         </h1>
         {status === "verifying" ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-muted-foreground text-sm">
             Confirming your email address…
           </p>
         ) : status === "done" ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               Your email address is verified — you&apos;re all set.
             </p>
             <LinkComponent
@@ -553,11 +553,11 @@ export function VerifyEmailView({
           <>
             <p
               role="alert"
-              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
             >
               {error}
             </p>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               The link may have expired or already been used. Sign in and we can
               send you a fresh one.
             </p>
@@ -599,7 +599,7 @@ export function EmailVerificationBanner({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-primary/20 bg-primary/5 px-4 py-2 text-center text-sm text-foreground">
+    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-primary/20 border-b bg-primary/5 px-4 py-2 text-center text-foreground text-sm">
       {state === "sent" ? (
         <span>
           Verification link sent to <span className="font-medium">{email}</span>

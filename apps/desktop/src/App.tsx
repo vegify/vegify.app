@@ -473,7 +473,7 @@ function SignInRequired({ action }: { action: string }) {
       <p className="mb-4 text-muted-foreground">Sign in to {action}.</p>
       <Link
         to="/login"
-        className="inline-flex items-center rounded-lg bg-green-dark px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+        className="inline-flex items-center rounded-lg bg-green-dark px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90"
       >
         Sign in
       </Link>

@@ -84,7 +84,7 @@ export function NotificationsView({
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8">
-        <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
+        <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
           Notifications
         </h1>
         <p className="text-gray-500">
@@ -132,12 +132,12 @@ export function NotificationsView({
                     >
                       {d.title}
                     </p>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground text-xs">
                       {shortWhen(n.createdAt)}
                     </span>
                   </div>
                   {d.detail ? (
-                    <p className="truncate text-sm text-muted-foreground">
+                    <p className="truncate text-muted-foreground text-sm">
                       {d.detail}
                     </p>
                   ) : null}
