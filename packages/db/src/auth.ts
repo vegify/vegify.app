@@ -52,14 +52,24 @@ const getDummyHash = () =>
 // Derive a unique handle for a new user: slug the name (else the email local-part), then append
 // -1, -2, … until free. Mirrors vegify-server's auth::derive_unique_username (the live path); this
 // TS port stays in parity for the seed/tests that still use it.
+// Loop-based dash trim: even a lone anchored /-+$/ backtracks quadratically
+// in JS on adversarial dash runs (code scanning flags it); index walks are
+// linear by construction.
+const trimDashes = (s: string) => {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s[start] === "-") start++;
+  while (end > start && s[end - 1] === "-") end--;
+  return s.slice(start, end);
+};
+
 const slugifyHandle = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "")
-    .slice(0, 24);
+  trimDashes(
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-"),
+  ).slice(0, 24);
 
 async function deriveUniqueUsername(
   name: string,
