@@ -23,7 +23,7 @@ const EMAIL_VERIFY_TTL_MS: i64 = 1000 * 60 * 60 * 24; // 24 hours — verificati
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before 1970")
         .as_millis() as i64
 }
 
@@ -528,6 +528,7 @@ pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod reset_tests {
     use super::*;
 

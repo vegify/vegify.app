@@ -22,7 +22,7 @@ const LIST_LIMIT: i64 = 50;
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before 1970")
         .as_millis() as i64
 }
 
@@ -156,6 +156,7 @@ pub fn mark_all_read(conn: &Connection, me_id: &str) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
     use serde_json::json;

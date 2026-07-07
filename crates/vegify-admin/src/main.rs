@@ -15,30 +15,45 @@ use serde::Deserialize;
 mod completefoods;
 
 #[derive(Deserialize)]
+/// A signed-in admin API session.
 pub struct ApiSession {
+    /// Bearer token for subsequent calls.
     pub token: String,
+    /// Who the token belongs to.
     pub user: WhoAmI,
 }
 
 #[derive(Deserialize)]
+/// The `/api/auth/me` identity.
 pub struct WhoAmI {
+    /// User id.
     pub id: String,
+    /// Public handle.
     pub username: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// One row of the pull payload (recipe or ingredient), fields this
+/// tool inspects only.
 pub struct PullRow {
+    /// Row id.
     pub id: String,
+    /// Display name.
     pub name: String,
+    /// Owner id; None = seed/catalog content.
     pub user_id: Option<String>,
     #[serde(default)]
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
 }
 
 #[derive(Deserialize)]
+/// The `/api/sync/pull` payload, thinned to what this tool reads.
 pub struct PullPayload {
+    /// Visible recipes.
     pub recipes: Vec<PullRow>,
+    /// Visible ingredients.
     pub ingredients: Vec<PullRow>,
 }
 
@@ -96,6 +111,7 @@ fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), String> {
     }
 }
 
+/// Prompt for credentials and sign in, returning the session.
 pub fn login() -> Result<ApiSession, String> {
     let email = std::env::var("VEGIFY_EMAIL").map_err(|_| "set VEGIFY_EMAIL".to_string())?;
     let password =
@@ -107,6 +123,7 @@ pub fn login() -> Result<ApiSession, String> {
     read(resp)
 }
 
+/// Fetch the full pull payload with `token`.
 pub fn pull(token: &str) -> Result<PullPayload, String> {
     let resp = client()
         .get(format!("{}/api/content/pull", base_url()))
@@ -291,7 +308,7 @@ fn generate_password() -> String {
     const CH: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
     let mut seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before 1970")
         .as_nanos();
     seed ^= std::process::id() as u128;
     let mut out = String::new();

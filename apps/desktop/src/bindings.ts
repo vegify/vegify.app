@@ -10,9 +10,13 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   recipe(id: string): Promise<{
+	/**  Recipe id. */
 	id: string,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle under the title. */
 	subtitle: string | null,
+	/**  Free-text directions (markdown-ish plain text); None = none written. */
 	directions: string | null,
 	/**  The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`. */
 	creator: string | null,
@@ -23,9 +27,16 @@ export const vegifyData = {
 	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
 	 */
 	canEdit: boolean,
+	/**  Serving size, when declared (drives per-serving nutrition). */
 	serving: Amount | null,
+	/**
+	 *  Total batch mass in grams, when declared — the denominator that
+	 *  turns summed item nutrition into per-100 g.
+	 */
 	batchGrams: number | null,
+	/**  The recipe's lines, in order. */
 	items: RecipeItem[],
+	/**  Nutrition rolled up from the items, per 100 g. */
 	nutrition: AggregatedNutrition,
 	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
 	photoKey: string | null,
@@ -35,8 +46,11 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   getProfile(username: string): Promise<{
+	/**  The profile's handle (URL segment). */
 	username: string,
+	/**  Display name. */
 	name: string,
+	/**  The user's recipes visible to the viewer, as cards. */
 	recipes: RecipeCard[],
 	/**
 	 *  The user's LEAF ingredients (created or imported by them), visible to the viewer and not
@@ -51,6 +65,7 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   resolveRecipeBySlug(username: string, slug: string): Promise<{
+	/**  The recipe the slug resolves to. */
 	recipeId: string,
 	/**
 	 *  The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
@@ -63,7 +78,12 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   resolveIngredientBySlug(slug: string): Promise<{
+	/**  The ingredient the slug resolves to. */
 	ingredientId: string,
+	/**
+	 *  The ingredient's CURRENT slug — differs when the hit came from slug
+	 *  history, in which case the caller 301s here.
+	 */
 	canonicalSlug: string,
 	/**
 	 *  Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to
@@ -76,12 +96,19 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   recipeForEdit(id: string): Promise<{
+	/**  Recipe id. */
 	id: string,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle. */
 	subtitle: string | null,
+	/**  Free-text directions; None = none written. */
 	directions: string | null,
+	/**  Declared servings per batch, when set. */
 	servings: number | null,
+	/**  Current visibility. */
 	visibility: Visibility,
+	/**  The recipe's lines in edit form. */
 	items: RecipeEditItem[],
 } | null> {
     return invoke("recipe_for_edit", { id });
@@ -94,13 +121,21 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   ingredient(id: string): Promise<{
+	/**  Ingredient id. */
 	id: string,
+	/**  Ingredient name. */
 	name: string,
+	/**  Optional description shown on the detail page. */
 	description: string | null,
+	/**  Price in cents, when tracked. */
 	price: number | null,
+	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
+	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
+	/**  Current visibility. */
 	visibility: Visibility,
 	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
 	slug: string | null,
@@ -117,6 +152,7 @@ export const vegifyData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient", { id });
@@ -124,13 +160,21 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   ingredientForEdit(id: string): Promise<{
+	/**  Ingredient id. */
 	id: string,
+	/**  Ingredient name. */
 	name: string,
+	/**  Optional description shown on the detail page. */
 	description: string | null,
+	/**  Price in cents, when tracked. */
 	price: number | null,
+	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
+	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
+	/**  Current visibility. */
 	visibility: Visibility,
 	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
 	slug: string | null,
@@ -147,6 +191,7 @@ export const vegifyData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 } | null> {
     return invoke("ingredient_for_edit", { id });
@@ -189,10 +234,13 @@ export const vegifyData = {
 
   /** @throws {DataError} */
   currentUser(): Promise<{
+	/**  User id. */
 	id: string,
+	/**  Display name. */
 	name: string,
 	/**  Public handle backing `/<username>`. */
 	username: string,
+	/**  Login/notification address (the account's own view). */
 	email: string,
 	/**
 	 *  Whether the account's email is verified (serialized `emailVerified`; the auth response's
@@ -291,23 +339,36 @@ export const vegifyData = {
 
 export type DataError = { type: "db"; message: string } | { type: "auth"; message: string };
 
+/**  A recipe's nutrition rolled up from its items, per 100 g. */
 export type AggregatedNutrition = {
+	/**  Calories per 100 g; None when no item carries calorie data. */
 	caloriesPer100g: number | null,
+	/**  Per-100 g readings summed across items, keyed by nutrient name. */
 	readings: Reading[],
 };
 
+/**
+ *  A quantity as entered plus its canonical mass: `grams` is the ground
+ *  truth all math runs on; `amount`/`unit` preserve how the user wrote it.
+ */
 export type Amount = {
+	/**  Quantity in `unit`, as entered; None when only the mass is known. */
 	amount: number | null,
+	/**  Display unit (cup, tbsp, g); None when only the mass is known. */
 	unit: string | null,
+	/**  Canonical mass in grams. */
 	grams: number | null,
 };
 
 /**  The signed-in user, as the auth routes return it. */
 export type AuthUser = {
+	/**  User id. */
 	id: string,
+	/**  Display name. */
 	name: string,
 	/**  Public handle backing `/<username>`. */
 	username: string,
+	/**  Login/notification address (the account's own view). */
 	email: string,
 	/**
 	 *  Whether the account's email is verified (serialized `emailVerified`; the auth response's
@@ -316,19 +377,31 @@ export type AuthUser = {
 	emailVerified: boolean,
 };
 
+/**  One conversation row of the DM list. */
 export type DmConversation = {
+	/**  Conversation id. */
 	id: string,
+	/**  The other party. */
 	with: DmParty,
+	/**  Body of the newest message (the preview line). */
 	lastBody: string,
+	/**  Newest message timestamp, ms epoch (f64 on this wire). */
 	lastAt: number | null,
+	/**  True when the newest message is the viewer's own. */
 	lastIsMine: boolean,
+	/**  Count of unread messages (f64 on this wire). */
 	unread: number | null,
 };
 
+/**  One DM as the thread renders it. */
 export type DmMessage = {
+	/**  Message id. */
 	id: string,
+	/**  Message body (plain text). */
 	body: string,
+	/**  Send timestamp, ms epoch (f64 on this wire). */
 	createdAt: number | null,
+	/**  True when the viewer sent it. */
 	mine: boolean,
 };
 
@@ -337,28 +410,43 @@ export type DmMessage = {
  *  type on this line) — consumers parse it themselves.
  */
 export type DmNotification = {
+	/**  Notification id. */
 	id: string,
+	/**  Kind tag (e.g. "ingredient-updated"); selects the payload shape. */
 	kind: string,
+	/**  Raw per-kind JSON payload; the desktop parses it by `kind`. */
 	payload: string,
+	/**  Creation timestamp, ms epoch (f64 on this wire). */
 	createdAt: number | null,
+	/**  Whether the viewer has opened it. */
 	read: boolean,
 };
 
+/**  The other party of a DM, as lists and headers show them. */
 export type DmParty = {
+	/**  User id. */
 	id: string,
+	/**  Display name. */
 	name: string,
+	/**  Public handle (`/<username>`). */
 	username: string,
 };
 
+/**  A DM thread: the other party plus the messages, oldest first. */
 export type DmThread = {
+	/**  The other party (resolved even for an empty thread). */
 	with: DmParty,
+	/**  The messages, oldest first. */
 	messages: DmMessage[],
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
 export type IngredientCard = {
+	/**  Ingredient id. */
 	id: string,
+	/**  Ingredient name. */
 	name: string,
+	/**  Calories per 100 g, when known (list-card badge). */
 	caloriesPer100g: number | null,
 	/**  Slug for the canonical link; fall back to `/ingredients/<id>`. */
 	slug: string | null,
@@ -371,13 +459,21 @@ export type IngredientCard = {
 
 /**  IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving). */
 export type IngredientEditData = {
+	/**  Ingredient id. */
 	id: string,
+	/**  Ingredient name. */
 	name: string,
+	/**  Optional description shown on the detail page. */
 	description: string | null,
+	/**  Price in cents, when tracked. */
 	price: number | null,
+	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
+	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
+	/**  Current visibility. */
 	visibility: Visibility,
 	/**  Canonical URL segment `/ingredients/<slug>`. None only pre-backfill. */
 	slug: string | null,
@@ -394,25 +490,45 @@ export type IngredientEditData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 };
 
+/**  One nutrient row of a SaveIngredientInput, normalized per 100 g. */
 export type IngredientNutrientInput = {
+	/**  Nutrient name (e.g. "Iron"). */
 	name: string,
+	/**  Quantity per 100 g. */
 	amountPer100g: number | null,
+	/**  Unit for the quantity (g, mg, µg). */
 	unit: string,
 };
 
+/**  One ingredient hit in the recipe composer's search box. */
 export type IngredientSearchResult = {
+	/**  Ingredient id. */
 	id: string,
+	/**  Ingredient name. */
 	name: string,
+	/**
+	 *  Serving size in grams, when the ingredient declares one (the composer's
+	 *  default line quantity).
+	 */
 	servingGrams: number | null,
+	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
+	/**  Per-100 g nutrient readings, for the composer's live nutrition preview. */
 	readings: Reading[],
 };
 
+/**  Resolution of an ingredient slug (current or historical) to its row. */
 export type IngredientSlugHit = {
+	/**  The ingredient the slug resolves to. */
 	ingredientId: string,
+	/**
+	 *  The ingredient's CURRENT slug — differs when the hit came from slug
+	 *  history, in which case the caller 301s here.
+	 */
 	canonicalSlug: string,
 	/**
 	 *  Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to
@@ -426,9 +542,13 @@ export type IngredientSlugHit = {
  *  name sorts), and a page size. `Default` = newest-first, no cursor, no limit (the whole list).
  */
 export type Page = {
+	/**  Sort order for the page. */
 	sort?: Sort,
+	/**  Keyset cursor: the last card's id from the previous page. */
 	cursor?: string | null,
+	/**  The last card's name, required by the name sorts' keyset. */
 	cursorName?: string | null,
+	/**  Page size; None = unbounded. */
 	limit?: number | null,
 };
 
@@ -437,8 +557,11 @@ export type Page = {
  *  server's `/api/content/profile` endpoint and the desktop DAL so both render the identical screen.
  */
 export type Profile = {
+	/**  The profile's handle (URL segment). */
 	username: string,
+	/**  Display name. */
 	name: string,
+	/**  The user's recipes visible to the viewer, as cards. */
 	recipes: RecipeCard[],
 	/**
 	 *  The user's LEAF ingredients (created or imported by them), visible to the viewer and not
@@ -449,21 +572,30 @@ export type Profile = {
 	avatarKey: string | null,
 };
 
+/**  One nutrient measurement, normalized per 100 g. */
 export type Reading = {
+	/**  Nutrient name (e.g. "Iron"). */
 	name: string,
+	/**  Quantity per 100 g of the food. */
 	amountPer100g: number | null,
+	/**  Display unit for the quantity (g, mg, µg). */
 	unit: string,
 };
 
+/**  Recipe list/browse card — the light projection for grids. */
 export type RecipeCard = {
+	/**  Recipe id. */
 	id: string,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle, shown under the title on cards. */
 	subtitle: string | null,
 	/**
 	 *  Owner handle + slug for the canonical `/<username>/<slug>` link. Optional (pre-backfill /
 	 *  ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.
 	 */
 	username: string | null,
+	/**  The recipe's slug half of the canonical link (see `username`). */
 	slug: string | null,
 	/**
 	 *  Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the
@@ -472,28 +604,45 @@ export type RecipeCard = {
 	photoKey: string | null,
 };
 
+/**  RecipeForm edit-mode source data (per-100 g; the frontend scales). */
 export type RecipeEditData = {
+	/**  Recipe id. */
 	id: string,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle. */
 	subtitle: string | null,
+	/**  Free-text directions; None = none written. */
 	directions: string | null,
+	/**  Declared servings per batch, when set. */
 	servings: number | null,
+	/**  Current visibility. */
 	visibility: Visibility,
+	/**  The recipe's lines in edit form. */
 	items: RecipeEditItem[],
 };
 
 /**  RecipeForm edit-mode defaults: per-item nutrition included so each row shows live nutrition. */
 export type RecipeEditItem = {
+	/**  The referenced ingredient's id. */
 	ingredientId: string,
+	/**  Ingredient display name. */
 	name: string,
+	/**  Line quantity in grams (canonical). */
 	grams: number | null,
+	/**  Calories per 100 g, when known — the edit screen's live math. */
 	caloriesPer100g: number | null,
+	/**  Per-100 g readings for the edit screen's live nutrition roll-up. */
 	readings: Reading[],
 };
 
+/**  One recipe line as read: the ingredient, its display name, its amount. */
 export type RecipeItem = {
+	/**  The underlying ingredient's id. */
 	id: string,
+	/**  Ingredient display name at read time. */
 	name: string,
+	/**  The line's quantity (display form + canonical grams). */
 	amount: Amount,
 	/**
 	 *  Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),
@@ -509,13 +658,19 @@ export type RecipeItem = {
 	deleted: boolean,
 };
 
+/**  One line of a SaveRecipeInput: which ingredient, how many grams. */
 export type RecipeItemInput = {
+	/**  The ingredient this line references. */
 	ingredientId: string,
+	/**  Line quantity in grams (canonical). */
 	grams: number | null,
+	/**  Display unit the user picked; None = grams. */
 	unit: string | null,
 };
 
+/**  Resolution of a recipe slug (current or historical) to its row. */
 export type RecipeSlugHit = {
+	/**  The recipe the slug resolves to. */
 	recipeId: string,
 	/**
 	 *  The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to
@@ -524,10 +679,15 @@ export type RecipeSlugHit = {
 	canonicalSlug: string,
 };
 
+/**  Full recipe detail as rendered by the recipe page. */
 export type RecipeView = {
+	/**  Recipe id. */
 	id: string,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle under the title. */
 	subtitle: string | null,
+	/**  Free-text directions (markdown-ish plain text); None = none written. */
 	directions: string | null,
 	/**  The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`. */
 	creator: string | null,
@@ -538,27 +698,52 @@ export type RecipeView = {
 	 *  guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.
 	 */
 	canEdit: boolean,
+	/**  Serving size, when declared (drives per-serving nutrition). */
 	serving: Amount | null,
+	/**
+	 *  Total batch mass in grams, when declared — the denominator that
+	 *  turns summed item nutrition into per-100 g.
+	 */
 	batchGrams: number | null,
+	/**  The recipe's lines, in order. */
 	items: RecipeItem[],
+	/**  Nutrition rolled up from the items, per 100 g. */
 	nutrition: AggregatedNutrition,
 	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
 	photoKey: string | null,
 };
 
+/**  Password-reset request payload. */
 export type ResetRequestInput = {
+	/**  The account email to send the reset link to. */
 	email: string,
 };
 
+/**
+ *  Create-or-update payload for an ingredient. `id: Some` updates that row
+ *  (owner-guarded); `None` creates, minting the id.
+ */
 export type SaveIngredientInput = {
+	/**
+	 *  Existing row to update, or None to create. Client-supplied ids are
+	 *  honored so sync replays are idempotent cross-replica.
+	 */
 	id: string | null,
+	/**  Visibility to set; None keeps the default (public). */
 	visibility: Visibility | null,
+	/**  Ingredient name. */
 	name: string,
+	/**  Optional description. */
 	description: string | null,
+	/**  Price in cents, when tracked. */
 	price: number | null,
+	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
+	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**  Package mass in grams, when declared. */
 	packageGrams: number | null,
+	/**  Per-100 g nutrient rows (replaces the stored set). */
 	nutrients: IngredientNutrientInput[],
 	/**
 	 *  SEO slug. `None` on a user create/edit ⇒ the DAL generates a unique one (and logs a rename to
@@ -568,7 +753,12 @@ export type SaveIngredientInput = {
 	slug?: string | null,
 };
 
+/**
+ *  Create-or-update payload for a recipe; ids are honored when supplied so
+ *  sync replays are idempotent cross-replica.
+ */
 export type SaveRecipeInput = {
+	/**  Existing recipe to update, or None to create (id minted). */
 	id: string | null,
 	/**
 	 *  The recipe's as-ingredient id. Threaded so a nested recipe (a Biga consumed by a Dough as an
@@ -576,12 +766,19 @@ export type SaveRecipeInput = {
 	 *  `None` on a fresh local create (minted); set by the sync pull when mirroring server rows.
 	 */
 	asIngredientId: string | null,
+	/**  Visibility to set; None keeps the default (public). */
 	visibility: Visibility | null,
+	/**  Recipe title. */
 	name: string,
+	/**  Optional subtitle. */
 	subtitle: string | null,
+	/**  Free-text directions. */
 	directions: string | null,
+	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**  Total batch mass in grams, when declared. */
 	batchGrams: number | null,
+	/**  The recipe's lines (replaces the stored set, in order). */
 	items: RecipeItemInput[],
 	/**
 	 *  See SaveIngredientInput::slug. `None` ⇒ generate (unique per owner); `Some` ⇒ pull carries the
@@ -590,19 +787,29 @@ export type SaveRecipeInput = {
 	slug?: string | null,
 };
 
+/**  Send-DM payload. */
 export type SendMessageInput = {
+	/**  Recipient username. */
 	to: string,
+	/**  Message body (plain text). */
 	body: string,
 };
 
+/**  Sign-in form payload. */
 export type SignInInput = {
+	/**  Login email. */
 	email: string,
+	/**  Plaintext password (sent to the server, never stored). */
 	password: string,
 };
 
+/**  Sign-up form payload. */
 export type SignUpInput = {
+	/**  Display name. */
 	name: string,
+	/**  Login email. */
 	email: string,
+	/**  Plaintext password (sent to the server, never stored). */
 	password: string,
 };
 
@@ -616,7 +823,15 @@ export type SignUpInput = {
  *  creation order); name sorts use a composite (name, id) keyset since names are not unique. Default
  *  = Newest (the catalog's first impression).
  */
-export type Sort = "newest" | "oldest" | "name_asc" | "name_desc";
+export type Sort = 
+/**  Newest first (creation order). */
+"newest" | 
+/**  Oldest first. */
+"oldest" | 
+/**  Name A→Z. */
+"name_asc" | 
+/**  Name Z→A. */
+"name_desc";
 
 /**
  *  The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by
@@ -624,4 +839,10 @@ export type Sort = "newest" | "oldest" | "name_asc" | "name_desc";
  *  ingredient (`as_ingredient_id`), so this one field covers both. Ownership (`user_id`) gates
  *  EDITING, not reading.
  */
-export type Visibility = "public" | "private" | "unlisted";
+export type Visibility = 
+/**  Listed and readable by everyone. */
+"public" | 
+/**  Readable only by the owner. */
+"private" | 
+/**  Readable via direct link; never listed or searched. */
+"unlisted";

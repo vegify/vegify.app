@@ -123,16 +123,21 @@ impl RateLimiter {
         self.over_at(limit, key, Instant::now())
     }
 
-    /// Forget `key`'s bucket — a successful login clears its failure count.
-    pub fn clear(&self, limit: Limit, key: &str) {
+    /// The bucket map, recovering from a poisoned lock (plain counters;
+    /// last-written state is valid).
+    fn entries(&self) -> std::sync::MutexGuard<'_, HashMap<(&'static str, String), Entry>> {
         self.entries
             .lock()
-            .unwrap()
-            .remove(&(limit.name, key.to_string()));
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Forget `key`'s bucket — a successful login clears its failure count.
+    pub fn clear(&self, limit: Limit, key: &str) {
+        self.entries().remove(&(limit.name, key.to_string()));
     }
 
     fn hit_at(&self, limit: Limit, key: &str, now: Instant) -> Result<(), u64> {
-        let mut map = self.entries.lock().unwrap();
+        let mut map = self.entries();
         if map.len() >= SWEEP_THRESHOLD {
             map.retain(|_, e| now.duration_since(e.window_start) < e.window);
         }
@@ -153,7 +158,7 @@ impl RateLimiter {
     }
 
     fn over_at(&self, limit: Limit, key: &str, now: Instant) -> Option<u64> {
-        let map = self.entries.lock().unwrap();
+        let map = self.entries();
         let entry = map.get(&(limit.name, key.to_string()))?;
         if now.duration_since(entry.window_start) >= limit.window || entry.count < limit.max {
             return None;
@@ -194,6 +199,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

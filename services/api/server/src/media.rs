@@ -128,6 +128,7 @@ pub fn attach_avatar(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

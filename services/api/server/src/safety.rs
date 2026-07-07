@@ -144,6 +144,7 @@ pub fn blocked_ids(conn: &Connection, me_id: &str) -> Result<Vec<String>, AppErr
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

@@ -193,7 +193,14 @@ pub fn run(execute: bool) {
         .collect();
     files.sort();
     for path in files {
-        let rec: CfRecipe = match serde_json::from_str(&std::fs::read_to_string(&path).unwrap()) {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("skip {}: {e}", path.display());
+                continue;
+            }
+        };
+        let rec: CfRecipe = match serde_json::from_str(&text) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("SKIPPED unparseable {}: {e}", path.display());

@@ -18,8 +18,11 @@ use serde::{Deserialize, Serialize};
 /// (already formatted "Network error: …" — consumers surface these strings as-is).
 #[derive(Debug)]
 pub enum Error {
+    /// Authentication failure (bad credentials, expired session).
     Auth(String),
+    /// Server-reported error (a 4xx/5xx `{error}` body), stringified.
     Api(String),
+    /// Transport failure before any server answer.
     Network(String),
 }
 
@@ -87,10 +90,13 @@ fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), Error> {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct AuthUser {
+    /// User id.
     pub id: String,
+    /// Display name.
     pub name: String,
     /// Public handle backing `/<username>`.
     pub username: String,
+    /// Login/notification address (the account's own view).
     pub email: String,
     /// Whether the account's email is verified (serialized `emailVerified`; the auth response's
     /// snake_case `email_verified` is mapped in [`VegifyClient::sign_in`]/[`sign_up`]).
@@ -101,44 +107,65 @@ pub struct AuthUser {
 /// token + the user profile (cached so `current_user` works offline).
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Session {
+    /// Bearer token for subsequent calls.
     pub token: String,
+    /// The signed-in user.
     pub user: AuthUser,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+/// The other party of a DM, as lists and headers show them.
 pub struct DmParty {
+    /// User id.
     pub id: String,
+    /// Display name.
     pub name: String,
+    /// Public handle (`/<username>`).
     pub username: String,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
+/// One conversation row of the DM list.
 pub struct DmConversation {
+    /// Conversation id.
     pub id: String,
+    /// The other party.
     pub with: DmParty,
+    /// Body of the newest message (the preview line).
     pub last_body: String,
+    /// Newest message timestamp, ms epoch (f64 on this wire).
     pub last_at: f64,
+    /// True when the newest message is the viewer's own.
     pub last_is_mine: bool,
+    /// Count of unread messages (f64 on this wire).
     pub unread: f64,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
+/// One DM as the thread renders it.
 pub struct DmMessage {
+    /// Message id.
     pub id: String,
+    /// Message body (plain text).
     pub body: String,
+    /// Send timestamp, ms epoch (f64 on this wire).
     pub created_at: f64,
+    /// True when the viewer sent it.
     pub mine: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+/// A DM thread: the other party plus the messages, oldest first.
 pub struct DmThread {
+    /// The other party (resolved even for an empty thread).
     pub with: DmParty,
+    /// The messages, oldest first.
     pub messages: Vec<DmMessage>,
 }
 
@@ -148,61 +175,97 @@ pub struct DmThread {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct DmNotification {
+    /// Notification id.
     pub id: String,
+    /// Kind tag (e.g. "ingredient-updated"); selects the payload shape.
     pub kind: String,
+    /// Raw per-kind JSON payload; the desktop parses it by `kind`.
     pub payload: String,
+    /// Creation timestamp, ms epoch (f64 on this wire).
     pub created_at: f64,
+    /// Whether the viewer has opened it.
     pub read: bool,
 }
 
 // The /api/content/pull payload, in mutation shape + each row's owner. The desktop's sync engine
 // maps these onto vegify-core's Save*Input for the local re-apply.
 #[derive(Deserialize)]
+/// One full sync pull — every server row visible to this device's user.
 pub struct PullPayload {
+    /// All visible recipes, with their lines.
     pub recipes: Vec<PullRecipe>,
+    /// All visible ingredients, with their nutrient rows.
     pub ingredients: Vec<PullIngredient>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// One recipe row as pulled (mirrored verbatim into the local DB).
 pub struct PullRecipe {
+    /// Recipe id (stable cross-replica).
     pub id: String,
+    /// The recipe's as-ingredient pair id; must survive the mirror so
+    /// consuming items' FKs stay intact.
     pub as_ingredient_id: String,
+    /// Owner id; None = ownerless seed content.
     pub user_id: Option<String>,
+    /// Visibility as stored.
     pub visibility: vegify_core::Visibility,
+    /// Recipe title.
     pub name: String,
+    /// Optional subtitle.
     pub subtitle: Option<String>,
+    /// Free-text directions.
     pub directions: Option<String>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Total batch mass in grams, when declared.
     pub batch_grams: Option<f64>,
+    /// The recipe's lines, in order.
     pub items: Vec<PullItem>,
     #[serde(default)]
+    /// Current slug, mirrored verbatim so local links match the server.
     pub slug: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// One recipe line as pulled.
 pub struct PullItem {
+    /// The ingredient the line references.
     pub ingredient_id: String,
+    /// Line quantity in grams (canonical).
     pub grams: f64,
+    /// Display unit the author picked; None = grams.
     pub unit: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// One ingredient row as pulled (mirrored verbatim into the local DB).
 pub struct PullIngredient {
+    /// Ingredient id (stable cross-replica).
     pub id: String,
+    /// Owner id; None = the communal catalog.
     pub user_id: Option<String>,
+    /// Visibility as stored.
     pub visibility: vegify_core::Visibility,
+    /// Ingredient name.
     pub name: String,
+    /// Optional description.
     pub description: Option<String>,
     /// Cents (USD) — i32 end-to-end (the write path's width; see vegify-api-types).
     pub price: Option<i32>,
+    /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
+    /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// Package mass in grams, when declared.
     pub package_grams: Option<f64>,
+    /// Per-100 g nutrient rows.
     pub nutrients: Vec<PullReading>,
     #[serde(default)]
+    /// Current slug, mirrored verbatim so local links match the server.
     pub slug: Option<String>,
     /// Soft-delete tombstone (ms) — mirrored verbatim so local filtering matches the server.
     #[serde(default)]
@@ -211,9 +274,13 @@ pub struct PullIngredient {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// One nutrient reading as pulled, per 100 g.
 pub struct PullReading {
+    /// Nutrient name.
     pub name: String,
+    /// Quantity per 100 g.
     pub amount_per_100g: f64,
+    /// Unit for the quantity (g, mg, µg).
     pub unit: String,
 }
 
@@ -262,6 +329,8 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
+    /// A store addressing one keychain entry (`service` + `account` are the
+    /// consumer's identity — the app owns its naming).
     pub fn new(service: impl Into<String>, account: impl Into<String>) -> Self {
         Self {
             service: service.into(),
@@ -280,11 +349,13 @@ impl SessionStore {
         Ok(self.entry.get().expect("just set"))
     }
 
+    /// The stored session, if one round-trips from the keychain and parses.
     pub fn load(&self) -> Option<Session> {
         let json = self.entry().ok()?.get_password().ok()?;
         serde_json::from_str(&json).ok()
     }
 
+    /// Persist `s` as the keychain entry's value (JSON).
     pub fn store(&self, s: &Session) -> Result<(), Error> {
         let json = serde_json::to_string(s).map_err(|e| Error::Auth(e.to_string()))?;
         self.entry()?
@@ -292,6 +363,7 @@ impl SessionStore {
             .map_err(|e| Error::Auth(e.to_string()))
     }
 
+    /// Delete the stored session; missing entries are fine.
     pub fn clear(&self) {
         if let Ok(e) = self.entry() {
             let _ = e.delete_credential();
@@ -310,6 +382,7 @@ pub struct VegifyClient {
 }
 
 impl VegifyClient {
+    /// Client for the vegify API at `base_url` (trailing slash tolerated).
     pub fn new(base_url: impl Into<String>) -> Self {
         let base = base_url.into().trim_end_matches('/').to_string();
         // http_status_as_error(false): the server returns JSON `{error}` bodies on 4xx/5xx that the
@@ -391,6 +464,7 @@ impl VegifyClient {
         }
     }
 
+    /// Sign in with email + password, returning the new session.
     pub fn sign_in(&self, email: &str, password: &str) -> Result<Session, Error> {
         self.post_auth(
             "login",
@@ -398,6 +472,7 @@ impl VegifyClient {
         )
     }
 
+    /// Create an account and sign in, returning the new session.
     pub fn sign_up(&self, name: &str, email: &str, password: &str) -> Result<Session, Error> {
         self.post_auth(
             "signup",
@@ -508,6 +583,7 @@ impl VegifyClient {
         format!("{}/api/messages/{path}", self.base)
     }
 
+    /// The viewer's conversation list, newest-message first.
     pub fn conversations(&self, token: &str) -> Result<Vec<DmConversation>, Error> {
         read_json(
             Self::bearer(self.agent.get(self.messages_url("conversations")), token)
@@ -516,6 +592,7 @@ impl VegifyClient {
         )
     }
 
+    /// The thread with `with` (a username), oldest message first.
     pub fn thread(&self, token: &str, with: &str) -> Result<DmThread, Error> {
         read_json(
             Self::bearer(
@@ -529,6 +606,7 @@ impl VegifyClient {
         )
     }
 
+    /// Send `body` to `to` (a username); returns the created message.
     pub fn send_message(&self, token: &str, to: &str, body: &str) -> Result<DmMessage, Error> {
         read_json(
             Self::bearer(self.agent.post(self.messages_url("send")), token)
@@ -537,6 +615,7 @@ impl VegifyClient {
         )
     }
 
+    /// Count of unread DMs (f64 mirrors the wire).
     pub fn messages_unread(&self, token: &str) -> Result<f64, Error> {
         #[derive(Deserialize)]
         struct Count {
@@ -585,6 +664,7 @@ impl VegifyClient {
             .collect())
     }
 
+    /// Count of unread notifications (f64 mirrors the wire).
     pub fn notifications_unread(&self, token: &str) -> Result<f64, Error> {
         #[derive(Deserialize)]
         struct Count {
@@ -598,6 +678,7 @@ impl VegifyClient {
         Ok(c.count)
     }
 
+    /// Mark every notification read.
     pub fn notifications_mark_all_read(&self, token: &str) -> Result<(), Error> {
         expect_ok(
             Self::bearer(self.agent.post(self.notifications_url("/read")), token)
@@ -627,6 +708,7 @@ impl VegifyClient {
         )
     }
 
+    /// Block `username`: hides their content and stops their DMs.
     pub fn block_user(&self, token: &str, username: &str) -> Result<(), Error> {
         expect_ok(
             Self::bearer(
@@ -638,6 +720,7 @@ impl VegifyClient {
         )
     }
 
+    /// Unblock `username`.
     pub fn unblock_user(&self, token: &str, username: &str) -> Result<(), Error> {
         expect_ok(
             Self::bearer(
@@ -664,6 +747,7 @@ impl VegifyClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

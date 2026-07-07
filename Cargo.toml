@@ -30,7 +30,11 @@ glib = { git = "https://github.com/johncarmack1984/gtk-rs-core", branch = "lux/g
 # full clippy `all` group surfaces as warnings. Members opt in via
 # [lints] workspace = true.
 [workspace.lints.rust]
+missing_docs = "warn"
 unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+panic = "warn"
+todo = "warn"
