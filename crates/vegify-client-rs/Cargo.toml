@@ -17,7 +17,7 @@ serde_json = "1"
 # sequential, simple calls (no async runtime in the transport).
 ureq = { version = "3", features = ["json", "gzip"] }
 # OS keychain session storage; in-memory mock under test/debug builds (see SessionStore).
-keyring = { version = "3", features = ["apple-native"] }
+keyring-core = "1"
 tracing = "0.1"
 # Shared enums referenced by the wire mirrors (Visibility). A lib dep — apps are leaves, libs stack.
 vegify-core = { path = "../vegify-core" }
@@ -30,3 +30,11 @@ specta = ["dep:specta"]
 
 [lints]
 workspace = true
+
+# The real stores are per-OS (keyring-core has no default store; init_keychain_store
+# installs the right one). Linux CI compiles without either — tests use the mock.
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
