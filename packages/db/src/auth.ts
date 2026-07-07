@@ -56,7 +56,8 @@ const slugifyHandle = (s: string) =>
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-+|-+$)/g, "")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
     .slice(0, 24);
 
 async function deriveUniqueUsername(
