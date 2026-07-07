@@ -1,5 +1,6 @@
-import { marked } from "marked";
 import type { ReactNode } from "react";
+import { marked } from "marked";
+
 import { NutrientByGroupChart, NutrientRangeChart } from "./blog-charts";
 import type { NavLink } from "./screens";
 import { VegifyLogo } from "./vegify-logo";

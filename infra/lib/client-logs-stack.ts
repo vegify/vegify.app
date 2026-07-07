@@ -12,6 +12,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type { Construct } from "constructs";
+
 import { importAlarmTopic, notify } from "./monitoring.js";
 
 const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");

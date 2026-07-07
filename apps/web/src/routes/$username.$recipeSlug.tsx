@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+
 import { RecipeDetailPage, recipeQuery } from "../recipe-detail";
 
 // The canonical public recipe URL: /<username>/<recipe-slug> (docs/usernames.md — "the real SEO/GEO

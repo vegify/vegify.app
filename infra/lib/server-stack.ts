@@ -22,6 +22,7 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import type { Construct } from "constructs";
+
 import {
   cloudFrontMetric,
   createAlarmTopic,

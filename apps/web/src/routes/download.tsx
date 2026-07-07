@@ -2,6 +2,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { buttonClasses } from "@vegify/ui/button";
+
 import { LinkAdapter } from "../link";
 
 // The public GitHub repo (same value the deploy config resolves); the releases API is unauthenticated

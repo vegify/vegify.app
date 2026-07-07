@@ -1,4 +1,11 @@
 import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import {
   infiniteQueryOptions,
   QueryClient,
   QueryClientProvider,
@@ -83,13 +90,7 @@ import {
 } from "@vegify/ui/screens";
 import { useChromeSearch } from "@vegify/ui/use-chrome-search";
 import { useEditHistory } from "@vegify/ui/use-edit-history";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+
 import {
   type AuthUser,
   type IngredientEditData,

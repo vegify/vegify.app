@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { VerifyEmailView } from "@vegify/ui/auth-form";
+
 import { confirmEmailVerificationFn } from "../auth";
 import { LinkAdapter } from "../link";
 

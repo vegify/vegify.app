@@ -5,8 +5,9 @@
  * never require a lockstep client release.
  */
 
-import { Bell, Salad } from "lucide-react";
 import type { ComponentType } from "react";
+import { Bell, Salad } from "lucide-react";
+
 import type { AppShellLinkProps } from "./app-shell";
 import { cn } from "./cn";
 

@@ -1,4 +1,3 @@
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import {
   type ComponentType,
   useEffect,
@@ -6,6 +5,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+
 import type { AppShellLinkProps } from "./app-shell";
 import {
   Breadcrumb,

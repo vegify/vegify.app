@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { LoginView } from "@vegify/ui/auth-form";
+
 import { loginFn } from "../auth";
 import { LinkAdapter } from "../link";
 

@@ -9,6 +9,7 @@ import {
   type IngredientListItem,
   IngredientListView,
 } from "@vegify/ui/screens";
+
 import { LinkAdapter } from "../link";
 
 type Cursor = { id: string; name: string };

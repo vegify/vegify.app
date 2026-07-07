@@ -2,6 +2,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { type ConversationSummary, MessagesView } from "@vegify/ui/messages";
+
 import { LinkAdapter } from "../link";
 
 // The inbox: the viewer's conversations. A static top-level route file, so the auth gate derives

@@ -10,6 +10,7 @@ import {
   type ProfileVM,
   type ReportReason,
 } from "@vegify/ui/screens";
+
 import { LinkAdapter } from "../link";
 
 // Root-level dynamic handle: /<username>. Static routes (/recipes, /settings, …) outrank this, and

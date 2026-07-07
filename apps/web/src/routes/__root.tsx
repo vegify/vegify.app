@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   type QueryClient,
@@ -18,7 +19,7 @@ import { AppShell } from "@vegify/ui/app-shell";
 import { EmailVerificationBanner } from "@vegify/ui/auth-form";
 import { useChromeSearch } from "@vegify/ui/use-chrome-search";
 import { themeScript } from "@vegify/ui/use-theme";
-import { useEffect } from "react";
+
 import { fetchUser, logoutFn, requestEmailVerificationFn } from "../auth";
 import { BOUNCE_WHEN_AUTHED, isBarePath, isPublicPath } from "../auth-gate";
 import { initClientLogging } from "../client-log";

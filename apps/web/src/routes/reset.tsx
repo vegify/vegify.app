@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ResetPasswordView } from "@vegify/ui/auth-form";
+
 import { confirmPasswordResetFn } from "../auth";
 import { LinkAdapter } from "../link";
 

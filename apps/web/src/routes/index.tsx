@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LandingView } from "@vegify/ui/landing";
 import { HomeView } from "@vegify/ui/screens";
+
 import { LinkAdapter } from "../link";
 
 // "/" is dual-purpose: the public marketing landing for logged-out visitors (the app's only

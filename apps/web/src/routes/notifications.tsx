@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   queryOptions,
   useQueryClient,
@@ -9,7 +10,7 @@ import {
   NotificationsView,
   type NotificationVM,
 } from "@vegify/ui/notifications";
-import { useEffect } from "react";
+
 import { LinkAdapter } from "../link";
 
 // The bell. A static top-level route file, so the auth gate derives "gated" automatically. The list

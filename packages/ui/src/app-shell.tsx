@@ -1,3 +1,4 @@
+import type { ComponentType, ReactNode } from "react";
 import {
   Bell,
   Carrot,
@@ -9,7 +10,7 @@ import {
   Settings,
   User,
 } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+
 import { cn } from "./cn";
 import { VegifyLogo } from "./vegify-logo";
 

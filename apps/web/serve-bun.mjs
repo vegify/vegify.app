@@ -10,6 +10,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiUrl, listenPort, publicUrl } from "@vegify/config";
+
 import { SITEMAP_PATH, sitemapResponse } from "./aws/sitemap.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));

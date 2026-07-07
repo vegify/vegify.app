@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   queryOptions,
   useQueryClient,
@@ -10,7 +11,7 @@ import {
   ThreadView,
   type ThreadVM,
 } from "@vegify/ui/messages";
-import { useEffect, useState } from "react";
+
 import { LinkAdapter } from "../link";
 
 // One thread, addressed by the other party's handle (a profile's "Message" button lands here — the

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { deployConfig } from "@vegify/config/deploy";
 import { App } from "aws-cdk-lib";
+
 import { CiStack } from "../lib/ci-stack.js";
 import { ClientLogsStack } from "../lib/client-logs-stack.js";
 import { DnsStack } from "../lib/dns-stack.js";

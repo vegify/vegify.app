@@ -1,5 +1,5 @@
-import { takeoverConsole } from "@fltsci/tauri-plugin-tracing";
 import React from "react";
+import { takeoverConsole } from "@fltsci/tauri-plugin-tracing";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { App } from "./App";

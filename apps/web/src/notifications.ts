@@ -1,6 +1,7 @@
 // Typed view of the backend's /api/notifications (the bell) — sibling of messages.ts. Server-only.
 
 import type { NotificationVM } from "@vegify/ui/notifications";
+
 import { api } from "./api";
 
 /** The viewer's recent notifications, newest first. */

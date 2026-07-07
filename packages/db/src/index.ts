@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { databaseAuthToken, databaseUrl } from "@vegify/config";
 import { drizzle } from "drizzle-orm/libsql";
+
 import * as schema from "./schema";
 
 // Local dev: a SQLite file at the repo root (works from apps/* and packages/db cwds).

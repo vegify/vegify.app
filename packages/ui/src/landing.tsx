@@ -1,5 +1,6 @@
-import { ArrowRight, Laptop, Layers, Search } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import { ArrowRight, Laptop, Layers, Search } from "lucide-react";
+
 import { SIGNUPS_ENABLED } from "./auth-form";
 import { buttonClasses } from "./button";
 import type { NavLink } from "./screens";

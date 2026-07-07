@@ -1,5 +1,6 @@
-import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react";
 import type { ComponentType } from "react";
+import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react";
+
 import type { AppShellLinkProps } from "./app-shell";
 import { cn } from "./cn";
 

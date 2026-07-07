@@ -1,4 +1,5 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+
 import { RecipeDetailPage, recipeQuery } from "../recipe-detail";
 
 // Legacy id URL. The canonical recipe URL is /<username>/<slug> (docs/usernames.md); this 301s there

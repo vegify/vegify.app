@@ -1,7 +1,8 @@
 "use client";
 
-import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { ImageIcon, PlusIcon, SaveIcon, Trash2Icon, XIcon } from "lucide-react";
+
 import { Input } from "./input";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
 import { type Visibility, VisibilityField } from "./visibility-field";

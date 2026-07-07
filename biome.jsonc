@@ -51,6 +51,35 @@
       "trailingCommas": "all"
     }
   },
+  // Import order encodes shadcn's prettier importOrder taxonomy (react,
+  // third-party, blank, the @/ groups in shadcn's sequence, blank, relative).
+  // ":BLANK_LINE:" is the separator token.
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ["react", "react/**"],
+              [":BUN:", ":NODE:", ":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:"],
+              ":BLANK_LINE:",
+              "@/types/**",
+              "@/config/**",
+              "@/lib/**",
+              "@/hooks/**",
+              "@/components/ui/**",
+              "@/components/**",
+              "@/styles/**",
+              "@/app/**",
+              ":BLANK_LINE:",
+              ":PATH:"
+            ]
+          }
+        }
+      }
+    }
+  },
   "overrides": [
     {
       // The inline-edit affordance (docs/design inline-edit contract): the

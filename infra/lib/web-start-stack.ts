@@ -18,6 +18,7 @@ import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
+
 import { cloudFrontMetric, importAlarmTopic, notify } from "./monitoring.js";
 import { resolveZone } from "./zone.js";
 

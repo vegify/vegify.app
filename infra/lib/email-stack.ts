@@ -6,6 +6,7 @@ import {
 } from "aws-cdk-lib";
 import * as ses from "aws-cdk-lib/aws-ses";
 import type { Construct } from "constructs";
+
 import { resolveZone } from "./zone.js";
 
 // VegifyEmail — the transactional-email sending identity for the app's domain: an SES domain identity with

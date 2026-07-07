@@ -1,6 +1,7 @@
 "use client";
 
 import { FileTextIcon } from "lucide-react";
+
 import { cn } from "./cn";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./dialog";
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";

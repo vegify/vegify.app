@@ -2,6 +2,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { BlogIndexView } from "@vegify/ui/blog";
+
 import { LinkAdapter } from "../link";
 
 // Public blog index — part of the SEO/GEO surface alongside the landing. Posts are DB-backed now

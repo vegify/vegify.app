@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   CarrotIcon,
   ImageIcon,
@@ -8,7 +9,7 @@ import {
   SearchIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+
 import { Input } from "./input";
 import {
   NutritionFacts,

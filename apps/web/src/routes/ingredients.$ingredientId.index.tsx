@@ -1,4 +1,5 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+
 import {
   IngredientDetailPage,
   ingredientQuery,

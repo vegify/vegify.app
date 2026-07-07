@@ -2,6 +2,7 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { BlogPostView } from "@vegify/ui/blog";
+
 import { LinkAdapter } from "../link";
 
 // A single public blog post, fetched from the DB-backed blog API. The loader loads the post (404 on a

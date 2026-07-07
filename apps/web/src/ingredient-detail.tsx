@@ -19,6 +19,7 @@ import {
   type Visibility,
 } from "@vegify/ui/screens";
 import { useEditHistory } from "@vegify/ui/use-edit-history";
+
 import type { IngredientEditData, IngredientSlugHit } from "./content";
 import { LinkAdapter } from "./link";
 

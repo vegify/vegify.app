@@ -6,6 +6,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { PAGE_SIZE, parseSort, type Sort } from "@vegify/ui/catalog";
 import { type RecipeListItem, RecipeListView } from "@vegify/ui/screens";
+
 import { LinkAdapter } from "../link";
 
 type Cursor = { id: string; name: string };

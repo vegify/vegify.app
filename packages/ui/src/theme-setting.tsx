@@ -1,5 +1,6 @@
-import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
+
 import { cn } from "./cn";
 import { type Theme, useTheme } from "./use-theme";
 

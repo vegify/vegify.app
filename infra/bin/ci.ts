@@ -10,6 +10,7 @@ import { deployConfig } from "@vegify/config/deploy";
 // by deploy-ci.yml and by a local `VEGIFY_CI_ONLY`-style bootstrap; the app's
 // routine cascade still owns VegifyCi through bin/vegify.ts for whole-app synths.
 import { App } from "aws-cdk-lib";
+
 import { CiStack } from "../lib/ci-stack.js";
 
 const app = new App();

@@ -9,6 +9,7 @@
  * /messages/<username>, which renders an empty composer even before a conversation exists.
  */
 import { type ComponentType, useEffect, useRef, useState } from "react";
+
 import type { AppShellLinkProps } from "./app-shell";
 import { buttonClasses } from "./button";
 import { cn } from "./cn";
