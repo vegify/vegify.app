@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import type { AppShellLinkProps } from '@vegify/ui/app-shell'
+import { Link } from "@tanstack/react-router"
+import type { AppShellLinkProps } from "@vegify/ui/app-shell"
 
 /**
  * web's navigation port. The shared shell + screens (@vegify/ui) navigate through an

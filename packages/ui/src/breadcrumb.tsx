@@ -1,9 +1,9 @@
 "use client"
 
-import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
-import * as React from "react"
+import type * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
+import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
 
 import { cn } from "./cn"
 
@@ -23,7 +23,7 @@ function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
     <ol
       data-slot="breadcrumb-list"
       className={cn(
-        "flex flex-wrap items-center gap-1.5 text-sm wrap-break-word text-muted-foreground",
+        "wrap-break-word flex flex-wrap items-center gap-1.5 text-muted-foreground text-sm",
         className
       )}
       {...props}
@@ -50,14 +50,14 @@ function BreadcrumbLink({
     defaultTagName: "a",
     props: mergeProps<"a">(
       {
-        className: cn("transition-colors hover:text-foreground", className),
+        className: cn("transition-colors hover:text-foreground", className)
       },
       props
     ),
     render,
     state: {
-      slot: "breadcrumb-link",
-    },
+      slot: "breadcrumb-link"
+    }
   })
 }
 
@@ -65,8 +65,6 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="breadcrumb-page"
-      role="link"
-      aria-disabled="true"
       aria-current="page"
       className={cn("font-normal text-foreground", className)}
       {...props}
@@ -87,9 +85,7 @@ function BreadcrumbSeparator({
       className={cn("[&>svg]:size-3.5", className)}
       {...props}
     >
-      {children ?? (
-        <ChevronRightIcon className="cn-rtl-flip" />
-      )}
+      {children ?? <ChevronRightIcon className="cn-rtl-flip" />}
     </li>
   )
 }
@@ -117,10 +113,10 @@ function BreadcrumbEllipsis({
 
 export {
   Breadcrumb,
-  BreadcrumbList,
+  BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
+  BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbSeparator,
-  BreadcrumbEllipsis,
+  BreadcrumbSeparator
 }

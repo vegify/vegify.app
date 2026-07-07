@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react"
 import {
   Bar,
   BarChart,
@@ -6,8 +6,8 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   XAxis,
-  YAxis,
-} from "recharts";
+  YAxis
+} from "recharts"
 
 /**
  * Blog charts (Recharts). These illustrate the DRI explainer and are the first of the shadcn-style
@@ -19,22 +19,31 @@ import {
  * render (no hydration mismatch), then swaps in the chart after mount. The post prose + each figure's
  * caption state every number, so a crawler / no-JS reader loses none of the content.
  */
-function ChartFrame({ height, children }: { height: number; children: ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <div style={{ height }} aria-hidden />;
+function ChartFrame({
+  height,
+  children
+}: {
+  height: number
+  children: ReactNode
+}) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return <div style={{ height }} aria-hidden />
   return (
     <ResponsiveContainer width="100%" height={height}>
       {children as React.ReactElement}
     </ResponsiveContainer>
-  );
+  )
 }
 
-const GREEN = "var(--color-green-dark, #2f5233)";
-const GREEN_SOFT = "var(--color-green, #4a7c3f)";
-const MUTED = "var(--color-muted-foreground, #6b7280)";
-const ORANGE = "var(--color-orange, #e07a3f)";
-const axisTick = { fontSize: 12, fill: "var(--color-muted-foreground, #6b7280)" };
+const GREEN = "var(--color-green-dark, #2f5233)"
+const GREEN_SOFT = "var(--color-green, #4a7c3f)"
+const MUTED = "var(--color-muted-foreground, #6b7280)"
+const ORANGE = "var(--color-orange, #e07a3f)"
+const axisTick = {
+  fontSize: 12,
+  fill: "var(--color-muted-foreground, #6b7280)"
+}
 
 /**
  * The three-band model on one nutrient: a horizontal bar split into "up to the target" (muted) and
@@ -46,17 +55,21 @@ export function NutrientRangeChart({
   name,
   target,
   ceiling,
-  unit,
+  unit
 }: {
-  name: string;
-  target: number;
-  ceiling: number;
-  unit: string;
+  name: string
+  target: number
+  ceiling: number
+  unit: string
 }) {
-  const data = [{ name, target, headroom: Math.max(ceiling - target, 0) }];
+  const data = [{ name, target, headroom: Math.max(ceiling - target, 0) }]
   return (
     <ChartFrame height={92}>
-      <BarChart layout="vertical" data={data} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+      <BarChart
+        layout="vertical"
+        data={data}
+        margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+      >
         <XAxis
           type="number"
           domain={[0, ceiling]}
@@ -65,7 +78,13 @@ export function NutrientRangeChart({
           unit={` ${unit}`}
         />
         <YAxis type="category" dataKey="name" hide />
-        <Bar dataKey="target" stackId="a" fill={MUTED} radius={[4, 0, 0, 4]} isAnimationActive={false}>
+        <Bar
+          dataKey="target"
+          stackId="a"
+          fill={MUTED}
+          radius={[4, 0, 0, 4]}
+          isAnimationActive={false}
+        >
           <LabelList
             dataKey="target"
             position="insideRight"
@@ -74,18 +93,26 @@ export function NutrientRangeChart({
             formatter={(v) => `aim ${v}`}
           />
         </Bar>
-        <Bar dataKey="headroom" stackId="a" fill={GREEN} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+        <Bar
+          dataKey="headroom"
+          stackId="a"
+          fill={GREEN}
+          radius={[0, 4, 4, 0]}
+          isAnimationActive={false}
+        >
           <LabelList
             dataKey="headroom"
             position="insideRight"
             fill="#fff"
             fontSize={12}
-            formatter={() => `safe range → ceiling ${ceiling.toLocaleString()} ${unit}`}
+            formatter={() =>
+              `safe range → ceiling ${ceiling.toLocaleString()} ${unit}`
+            }
           />
         </Bar>
       </BarChart>
     </ChartFrame>
-  );
+  )
 }
 
 /** A bar per group for one nutrient. With `ceiling` set, the shared UL is drawn as a reference line
@@ -94,14 +121,14 @@ export function NutrientRangeChart({
 export function NutrientByGroupChart({
   unit,
   ceiling,
-  groups,
+  groups
 }: {
-  unit: string;
-  ceiling?: number;
-  groups: { label: string; value: number }[];
+  unit: string
+  ceiling?: number
+  groups: { label: string; value: number }[]
 }) {
-  const maxValue = Math.max(...groups.map((g) => g.value), ceiling ?? 0);
-  const domainMax = Math.ceil((ceiling ? maxValue * 1.05 : maxValue * 1.18));
+  const maxValue = Math.max(...groups.map((g) => g.value), ceiling ?? 0)
+  const domainMax = Math.ceil(ceiling ? maxValue * 1.05 : maxValue * 1.18)
   return (
     <ChartFrame height={groups.length * 44 + 40}>
       <BarChart
@@ -109,17 +136,32 @@ export function NutrientByGroupChart({
         data={groups}
         margin={{ top: 4, right: 56, bottom: 4, left: 8 }}
       >
-        <XAxis type="number" domain={[0, domainMax]} tick={axisTick} unit={` ${unit}`} />
+        <XAxis
+          type="number"
+          domain={[0, domainMax]}
+          tick={axisTick}
+          unit={` ${unit}`}
+        />
         <YAxis type="category" dataKey="label" tick={axisTick} width={104} />
         {ceiling != null && (
           <ReferenceLine
             x={ceiling}
             stroke={ORANGE}
             strokeDasharray="4 3"
-            label={{ value: `ceiling ${ceiling} ${unit}`, position: "top", fill: ORANGE, fontSize: 11 }}
+            label={{
+              value: `ceiling ${ceiling} ${unit}`,
+              position: "top",
+              fill: ORANGE,
+              fontSize: 11
+            }}
           />
         )}
-        <Bar dataKey="value" fill={GREEN_SOFT} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+        <Bar
+          dataKey="value"
+          fill={GREEN_SOFT}
+          radius={[0, 4, 4, 0]}
+          isAnimationActive={false}
+        >
           <LabelList
             dataKey="value"
             position="right"
@@ -130,5 +172,5 @@ export function NutrientByGroupChart({
         </Bar>
       </BarChart>
     </ChartFrame>
-  );
+  )
 }

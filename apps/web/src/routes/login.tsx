@@ -1,11 +1,12 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { LoginView } from '@vegify/ui/auth-form'
-import { LinkAdapter } from '../link'
-import { loginFn } from '../auth'
+import { useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, useRouter } from "@tanstack/react-router"
+import { LoginView } from "@vegify/ui/auth-form"
 
-export const Route = createFileRoute('/login')({
-  component: LoginPage,
+import { loginFn } from "../auth"
+import { LinkAdapter } from "../link"
+
+export const Route = createFileRoute("/login")({
+  component: LoginPage
 })
 
 function LoginPage() {
@@ -19,7 +20,7 @@ function LoginPage() {
         if (!res.ok) return { error: res.error }
         queryClient.clear() // start the new session with an empty content cache
         await router.invalidate()
-        await router.navigate({ to: '/' })
+        await router.navigate({ to: "/" })
       }}
     />
   )

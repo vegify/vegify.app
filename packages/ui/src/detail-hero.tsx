@@ -1,7 +1,8 @@
-import type { ComponentType } from "react";
-import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react";
-import type { AppShellLinkProps } from "./app-shell";
-import { cn } from "./cn";
+import type { ComponentType } from "react"
+import { ImageIcon, PencilIcon, SaveIcon } from "lucide-react"
+
+import type { AppShellLinkProps } from "./app-shell"
+import { cn } from "./cn"
 
 /**
  * The detail-page hero: a placeholder image box. When the viewer can edit — i.e. an editHref or onEdit
@@ -16,27 +17,31 @@ export function DetailHero({
   editHref,
   onEdit,
   LinkComponent,
-  className,
+  className
 }: {
-  label: string;
+  label: string
   /** The hero photo; absent = the labeled placeholder. */
-  photoUrl?: string | null;
+  photoUrl?: string | null
   /** Owner affordance: pick a file → the shell uploads + attaches it (camera FAB appears). */
-  onUploadPhoto?: (file: File) => void | Promise<void>;
+  onUploadPhoto?: (file: File) => void | Promise<void>
   /** When set, the edit FAB links to this route. */
-  editHref?: string;
+  editHref?: string
   /** With editHref, routes the edit FAB through the shell's nav port (preferred — works on Tauri too). */
-  LinkComponent?: ComponentType<AppShellLinkProps>;
+  LinkComponent?: ComponentType<AppShellLinkProps>
   /** When set (and no LinkComponent), the edit FAB becomes a button calling this. Wins over a plain editHref. */
-  onEdit?: () => void;
-  className?: string;
+  onEdit?: () => void
+  className?: string
 }) {
   const editFabClass =
-    "flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground";
+    "flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground"
   return (
     <div className={cn("relative", className)}>
       {photoUrl ? (
-        <img src={photoUrl} alt={label} className="aspect-video w-full rounded-xl object-cover" />
+        <img
+          src={photoUrl}
+          alt={label}
+          className="aspect-video w-full rounded-xl object-cover"
+        />
       ) : (
         <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-muted">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -48,7 +53,7 @@ export function DetailHero({
       {onUploadPhoto ? (
         <label
           aria-label="Upload photo"
-          className="absolute left-4 -bottom-5 flex size-11 cursor-pointer items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10 transition-colors hover:text-foreground"
+          className="absolute -bottom-5 left-4 flex size-11 cursor-pointer items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-foreground/10 transition-colors hover:text-foreground"
         >
           <ImageIcon className="size-5" />
           <input
@@ -56,9 +61,9 @@ export function DetailHero({
             accept="image/jpeg,image/png,image/webp"
             className="sr-only"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onUploadPhoto(f);
-              e.target.value = ""; // allow re-picking the same file
+              const f = e.target.files?.[0]
+              if (f) void onUploadPhoto(f)
+              e.target.value = "" // allow re-picking the same file
             }}
           />
         </label>
@@ -73,11 +78,20 @@ export function DetailHero({
             <SaveIcon className="size-5" />
           </button>
           {LinkComponent && editHref ? (
-            <LinkComponent href={editHref} aria-label="Edit" className={editFabClass}>
+            <LinkComponent
+              href={editHref}
+              aria-label="Edit"
+              className={editFabClass}
+            >
               <PencilIcon className="size-5" />
             </LinkComponent>
           ) : onEdit ? (
-            <button type="button" onClick={onEdit} aria-label="Edit" className={editFabClass}>
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label="Edit"
+              className={editFabClass}
+            >
               <PencilIcon className="size-5" />
             </button>
           ) : (
@@ -88,5 +102,5 @@ export function DetailHero({
         </div>
       ) : null}
     </div>
-  );
+  )
 }

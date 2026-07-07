@@ -1,21 +1,22 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { VerifyEmailView } from '@vegify/ui/auth-form'
-import { LinkAdapter } from '../link'
-import { confirmEmailVerificationFn } from '../auth'
+import { createFileRoute } from "@tanstack/react-router"
+import { VerifyEmailView } from "@vegify/ui/auth-form"
 
-export const Route = createFileRoute('/verify')({
+import { confirmEmailVerificationFn } from "../auth"
+import { LinkAdapter } from "../link"
+
+export const Route = createFileRoute("/verify")({
   // The verification link carries the opaque token as `?token=…`.
   validateSearch: (search: Record<string, unknown>): { token?: string } => ({
-    token: typeof search.token === 'string' ? search.token : undefined,
+    token: typeof search.token === "string" ? search.token : undefined
   }),
-  component: VerifyPage,
+  component: VerifyPage
 })
 
 function VerifyPage() {
   const { token } = Route.useSearch()
   return (
     <VerifyEmailView
-      token={token ?? ''}
+      token={token ?? ""}
       LinkComponent={LinkAdapter}
       onSubmit={async ({ token }) => {
         const res = await confirmEmailVerificationFn({ data: { token } })

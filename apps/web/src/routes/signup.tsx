@@ -1,15 +1,16 @@
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { SignupView, SIGNUPS_ENABLED } from '@vegify/ui/auth-form'
-import { LinkAdapter } from '../link'
-import { signupFn } from '../auth'
+import { useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router"
+import { SIGNUPS_ENABLED, SignupView } from "@vegify/ui/auth-form"
 
-export const Route = createFileRoute('/signup')({
+import { signupFn } from "../auth"
+import { LinkAdapter } from "../link"
+
+export const Route = createFileRoute("/signup")({
   // Signups are disabled (invite-only) — bounce direct URL nav to login so no one lands on a dead form.
   beforeLoad: () => {
-    if (!SIGNUPS_ENABLED) throw redirect({ to: '/login' })
+    if (!SIGNUPS_ENABLED) throw redirect({ to: "/login" })
   },
-  component: SignupPage,
+  component: SignupPage
 })
 
 function SignupPage() {
@@ -23,7 +24,7 @@ function SignupPage() {
         if (!res.ok) return { error: res.error }
         queryClient.clear() // start the new session with an empty content cache
         await router.invalidate()
-        await router.navigate({ to: '/' })
+        await router.navigate({ to: "/" })
       }}
     />
   )

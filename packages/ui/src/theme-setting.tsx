@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
-import { cn } from "./cn";
-import { useTheme, type Theme } from "./use-theme";
+import { useEffect, useState } from "react"
+import { Monitor, Moon, Sun } from "lucide-react"
+
+import { cn } from "./cn"
+import { type Theme, useTheme } from "./use-theme"
 
 /**
  * Theme setting — the System / Light / Dark control shown on the Settings screen. A segmented
@@ -14,45 +15,43 @@ import { useTheme, type Theme } from "./use-theme";
 const OPTIONS: { value: Theme; icon: typeof Monitor; label: string }[] = [
   { value: "system", icon: Monitor, label: "System" },
   { value: "light", icon: Sun, label: "Light" },
-  { value: "dark", icon: Moon, label: "Dark" },
-];
+  { value: "dark", icon: Moon, label: "Dark" }
+]
 
 export function ThemeSetting({ className }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const current: Theme = mounted ? theme : "system";
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const current: Theme = mounted ? theme : "system"
 
   return (
-    <div
-      role="radiogroup"
+    <fieldset
       aria-label="Theme"
       className={cn(
         "inline-flex items-center gap-1 rounded-xl bg-muted p-1 ring-1 ring-foreground/10",
-        className,
+        className
       )}
     >
       {OPTIONS.map(({ value, icon: Icon, label }) => {
-        const active = current === value;
+        const active = current === value
         return (
           <button
             key={value}
             type="button"
-            role="radio"
-            aria-checked={active}
+            aria-pressed={active}
             onClick={() => setTheme(value)}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium text-sm transition",
               active
                 ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/10"
-                : "text-muted-foreground hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <Icon className="size-4" />
             {label}
           </button>
-        );
+        )
       })}
-    </div>
-  );
+    </fieldset>
+  )
 }

@@ -12,7 +12,7 @@
 /** The standing Axum backend's base URL. Dev default: a local `cargo run -p vegify-server`.
  *  Deployed: set by the CDK on the Lambda env / by CI on client builds. */
 export function apiUrl(): string {
-  return process.env.VEGIFY_API_URL ?? 'http://localhost:8787'
+  return process.env.VEGIFY_API_URL ?? "http://localhost:8787"
 }
 
 /** Canonical public site origin for generated absolute URLs (the sitemap). Unset → undefined, and
@@ -25,7 +25,7 @@ export function publicUrl(): string | undefined {
 /** libSQL database URL. Dev default: the repo-root SQLite file (the ../../ works from both apps/*
  *  and packages/* cwds). Remote (Turso/sqld): set DATABASE_URL (+ DATABASE_AUTH_TOKEN). */
 export function databaseUrl(): string {
-  return process.env.DATABASE_URL ?? 'file:../../.data/vegify.db'
+  return process.env.DATABASE_URL ?? "file:../../.data/vegify.db"
 }
 
 /** Auth token for a remote DATABASE_URL; undefined for local files. */

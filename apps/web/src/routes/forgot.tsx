@@ -1,10 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { ForgotPasswordView } from '@vegify/ui/auth-form'
-import { LinkAdapter } from '../link'
-import { requestPasswordResetFn } from '../auth'
+import { createFileRoute } from "@tanstack/react-router"
+import { ForgotPasswordView } from "@vegify/ui/auth-form"
 
-export const Route = createFileRoute('/forgot')({
-  component: ForgotPage,
+import { requestPasswordResetFn } from "../auth"
+import { LinkAdapter } from "../link"
+
+export const Route = createFileRoute("/forgot")({
+  component: ForgotPage
 })
 
 function ForgotPage() {

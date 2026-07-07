@@ -1,9 +1,10 @@
-"use client";
+"use client"
 
-import { FileTextIcon } from "lucide-react";
-import { cn } from "./cn";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./dialog";
-import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
+import { FileTextIcon } from "lucide-react"
+
+import { cn } from "./cn"
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./dialog"
+import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
 
 /**
  * Mobile-only: an orange FAB that opens the Nutrition Facts panel in a modal
@@ -11,10 +12,10 @@ import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
  */
 export function NutritionFactsFab({
   data,
-  className,
+  className
 }: {
-  data: NutritionFactsData;
-  className?: string;
+  data: NutritionFactsData
+  className?: string
 }) {
   return (
     <Dialog>
@@ -22,7 +23,7 @@ export function NutritionFactsFab({
         aria-label="Nutrition facts"
         className={cn(
           "fixed right-4 bottom-20 z-30 flex size-14 items-center justify-center rounded-full bg-orange text-white shadow-lg transition hover:brightness-95 lg:hidden",
-          className,
+          className
         )}
       >
         <FileTextIcon className="size-6" />
@@ -32,5 +33,5 @@ export function NutritionFactsFab({
         <NutritionFacts data={data} />
       </DialogContent>
     </Dialog>
-  );
+  )
 }

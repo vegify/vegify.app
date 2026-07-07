@@ -1,37 +1,42 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"
 import {
   CarrotIcon,
   ImageIcon,
   PlusIcon,
   SaveIcon,
   SearchIcon,
-  Trash2Icon,
-} from "lucide-react";
-import { Input } from "./input";
-import { NutritionFacts, type NutritionFactsData, type NutritionReading } from "./nutrition-facts";
-import { VisibilityField, type Visibility } from "./visibility-field";
+  Trash2Icon
+} from "lucide-react"
+
+import { Input } from "./input"
+import {
+  NutritionFacts,
+  type NutritionFactsData,
+  type NutritionReading
+} from "./nutrition-facts"
+import { type Visibility, VisibilityField } from "./visibility-field"
 
 export type IngredientSearchItem = {
-  id: string;
-  name: string;
-  servingGrams: number | null;
-  caloriesPer100g: number | null;
-  readings: NutritionReading[];
-};
+  id: string
+  name: string
+  servingGrams: number | null
+  caloriesPer100g: number | null
+  readings: NutritionReading[]
+}
 
 /** Storage shape passed to onSave. */
 export type RecipeFormInput = {
-  id?: string;
-  visibility: Visibility;
-  name: string;
-  subtitle: string | null;
-  directions: string | null;
-  servingGrams: number | null;
-  batchGrams: number | null;
-  items: { ingredientId: string; grams: number }[];
-};
+  id?: string
+  visibility: Visibility
+  name: string
+  subtitle: string | null
+  directions: string | null
+  servingGrams: number | null
+  batchGrams: number | null
+  items: { ingredientId: string; grams: number }[]
+}
 
 /**
  * The full editable state of a recipe — the source both the form and the inline editor patch, then
@@ -39,19 +44,19 @@ export type RecipeFormInput = {
  * place so the form and the inline path can never drift.
  */
 export type RecipeEditState = {
-  id: string;
-  visibility: Visibility;
-  name: string;
-  subtitle: string | null;
-  directions: string | null;
-  servings: number | null;
-  items: { ingredientId: string; grams: number }[];
-};
+  id: string
+  visibility: Visibility
+  name: string
+  subtitle: string | null
+  directions: string | null
+  servings: number | null
+  items: { ingredientId: string; grams: number }[]
+}
 
 /** Derive the `saveRecipe` input from an edit state — the same math the form applies on save. */
 export function composeRecipeInput(state: RecipeEditState): RecipeFormInput {
-  const totalGrams = state.items.reduce((sum, i) => sum + (i.grams || 0), 0);
-  const servingsN = Math.max(1, state.servings ?? 1);
+  const totalGrams = state.items.reduce((sum, i) => sum + (i.grams || 0), 0)
+  const servingsN = Math.max(1, state.servings ?? 1)
   return {
     id: state.id,
     visibility: state.visibility,
@@ -60,110 +65,115 @@ export function composeRecipeInput(state: RecipeEditState): RecipeFormInput {
     directions: state.directions,
     servingGrams: totalGrams > 0 ? totalGrams / servingsN : null,
     batchGrams: totalGrams > 0 ? totalGrams : null,
-    items: state.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams })),
-  };
+    items: state.items.map((i) => ({
+      ingredientId: i.ingredientId,
+      grams: i.grams
+    }))
+  }
 }
 
 export type RecipeFormDefaults = {
-  id?: string;
-  visibility?: Visibility;
-  name?: string;
-  subtitle?: string | null;
-  directions?: string | null;
-  servings?: number | null;
+  id?: string
+  visibility?: Visibility
+  name?: string
+  subtitle?: string | null
+  directions?: string | null
+  servings?: number | null
   items?: Array<{
-    ingredientId: string;
-    name: string;
-    grams: number;
-    caloriesPer100g: number | null;
-    readings: NutritionReading[];
-  }>;
-};
+    ingredientId: string
+    name: string
+    grams: number
+    caloriesPer100g: number | null
+    readings: NutritionReading[]
+  }>
+}
 
 type Row = {
-  ingredientId: string;
-  name: string;
-  grams: string;
-  caloriesPer100g: number | null;
-  readings: NutritionReading[];
-};
+  ingredientId: string
+  name: string
+  grams: string
+  caloriesPer100g: number | null
+  readings: NutritionReading[]
+}
 
-const clean = (n: number) => String(Math.round(n * 1e6) / 1e6);
+const clean = (n: number) => String(Math.round(n * 1e6) / 1e6)
 
 export function RecipeForm({
   defaults,
   onSearch,
   onSave,
   onDelete,
-  createIngredientHref = "/ingredients/new",
+  createIngredientHref = "/ingredients/new"
 }: {
-  defaults?: RecipeFormDefaults;
-  onSearch: (query: string) => Promise<IngredientSearchItem[]>;
-  onSave: (input: RecipeFormInput) => Promise<void>;
-  onDelete?: () => Promise<void>;
-  createIngredientHref?: string;
+  defaults?: RecipeFormDefaults
+  onSearch: (query: string) => Promise<IngredientSearchItem[]>
+  onSave: (input: RecipeFormInput) => Promise<void>
+  onDelete?: () => Promise<void>
+  createIngredientHref?: string
 }) {
-  const [name, setName] = useState(defaults?.name ?? "");
-  const [subtitle, setSubtitle] = useState(defaults?.subtitle ?? "");
-  const [directions, setDirections] = useState(defaults?.directions ?? "");
-  const [visibility, setVisibility] = useState<Visibility>(defaults?.visibility ?? "public");
+  const [name, setName] = useState(defaults?.name ?? "")
+  const [subtitle, setSubtitle] = useState(defaults?.subtitle ?? "")
+  const [directions, setDirections] = useState(defaults?.directions ?? "")
+  const [visibility, setVisibility] = useState<Visibility>(
+    defaults?.visibility ?? "public"
+  )
   const [servings, setServings] = useState(
-    defaults?.servings != null ? clean(defaults.servings) : "1",
-  );
+    defaults?.servings != null ? clean(defaults.servings) : "1"
+  )
   const [rows, setRows] = useState<Row[]>(
     defaults?.items?.map((i) => ({
       ingredientId: i.ingredientId,
       name: i.name,
       grams: clean(i.grams),
       caloriesPer100g: i.caloriesPer100g,
-      readings: i.readings,
-    })) ?? [],
-  );
-  const [saving, setSaving] = useState(false);
+      readings: i.readings
+    })) ?? []
+  )
+  const [saving, setSaving] = useState(false)
 
   // ingredient search
-  const [picking, setPicking] = useState(false);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<IngredientSearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [picking, setPicking] = useState(false)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<IngredientSearchItem[]>([])
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => {
-    if (!picking) return;
-    let alive = true;
-    setSearching(true);
+    if (!picking) return
+    let alive = true
+    setSearching(true)
     const t = setTimeout(async () => {
       try {
-        const r = await onSearch(query);
-        if (alive) setResults(r);
+        const r = await onSearch(query)
+        if (alive) setResults(r)
       } finally {
-        if (alive) setSearching(false);
+        if (alive) setSearching(false)
       }
-    }, 250);
+    }, 250)
     return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [query, picking, onSearch]);
+      alive = false
+      clearTimeout(t)
+    }
+  }, [query, picking, onSearch])
 
-  const totalGrams = rows.reduce((s, r) => s + (Number(r.grams) || 0), 0);
-  const servingsN = Math.max(1, Number(servings) || 1);
-  const servingGrams = totalGrams > 0 ? totalGrams / servingsN : 0;
+  const totalGrams = rows.reduce((s, r) => s + (Number(r.grams) || 0), 0)
+  const servingsN = Math.max(1, Number(servings) || 1)
+  const servingGrams = totalGrams > 0 ? totalGrams / servingsN : 0
 
   // live aggregate (grams-weighted) → recipe per-100g, same shape as getRecipeNutrition
   const calTotal = rows.reduce(
-    (s, r) => s + (r.caloriesPer100g ?? 0) * (Number(r.grams) || 0) / 100,
-    0,
-  );
-  const calKnown = rows.some((r) => r.caloriesPer100g != null);
-  const nutMap = new Map<string, { amt: number; unit: string }>();
+    (s, r) => s + ((r.caloriesPer100g ?? 0) * (Number(r.grams) || 0)) / 100,
+    0
+  )
+  const calKnown = rows.some((r) => r.caloriesPer100g != null)
+  const nutMap = new Map<string, { amt: number; unit: string }>()
   for (const r of rows) {
-    const grams = Number(r.grams) || 0;
+    const grams = Number(r.grams) || 0
     for (const reading of r.readings) {
-      const prev = nutMap.get(reading.name) ?? { amt: 0, unit: reading.unit };
+      const prev = nutMap.get(reading.name) ?? { amt: 0, unit: reading.unit }
       nutMap.set(reading.name, {
         amt: prev.amt + (reading.amountPer100g * grams) / 100,
-        unit: prev.unit,
-      });
+        unit: prev.unit
+      })
     }
   }
   const nutrition: NutritionFactsData = {
@@ -175,9 +185,9 @@ export function RecipeForm({
     readings: [...nutMap].map(([n, { amt, unit }]) => ({
       name: n,
       amountPer100g: totalGrams ? (amt / totalGrams) * 100 : 0,
-      unit,
-    })),
-  };
+      unit
+    }))
+  }
 
   function addIngredient(item: IngredientSearchItem) {
     setRows((rs) => [
@@ -187,12 +197,12 @@ export function RecipeForm({
         name: item.name,
         grams: clean(item.servingGrams ?? 100),
         caloriesPer100g: item.caloriesPer100g,
-        readings: item.readings,
-      },
-    ]);
-    setQuery("");
-    setResults([]);
-    setPicking(false);
+        readings: item.readings
+      }
+    ])
+    setQuery("")
+    setResults([])
+    setPicking(false)
   }
 
   function buildInput(): RecipeFormInput {
@@ -206,27 +216,27 @@ export function RecipeForm({
       batchGrams: totalGrams > 0 ? totalGrams : null,
       items: rows
         .filter((r) => r.ingredientId && Number(r.grams) > 0)
-        .map((r) => ({ ingredientId: r.ingredientId, grams: Number(r.grams) })),
-    };
+        .map((r) => ({ ingredientId: r.ingredientId, grams: Number(r.grams) }))
+    }
   }
 
   async function handleSave() {
-    if (!name.trim() || saving) return;
-    setSaving(true);
+    if (!name.trim() || saving) return
+    setSaving(true)
     try {
-      await onSave(buildInput());
+      await onSave(buildInput())
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   async function handleDelete() {
-    if (!onDelete || saving) return;
-    setSaving(true);
+    if (!onDelete || saving) return
+    setSaving(true)
     try {
-      await onDelete();
+      await onDelete()
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
@@ -251,7 +261,7 @@ export function RecipeForm({
           </div>
 
           <div className="mt-10 flex items-center justify-center gap-3">
-            <h1 className="text-center text-3xl font-bold text-primary-dark">
+            <h1 className="text-center font-bold text-3xl text-primary-dark">
               Create / Edit Recipe
             </h1>
             {onDelete && (
@@ -281,9 +291,13 @@ export function RecipeForm({
               onChange={(e) => setSubtitle(e.target.value)}
               className="h-11"
             />
-            <label className="flex items-center gap-3 text-sm text-muted-foreground">
+            <label
+              htmlFor="servings-per-batch"
+              className="flex items-center gap-3 text-muted-foreground text-sm"
+            >
               <span className="shrink-0">Servings per batch</span>
               <Input
+                id="servings-per-batch"
                 aria-label="Servings per batch"
                 type="number"
                 value={servings}
@@ -297,20 +311,26 @@ export function RecipeForm({
             <VisibilityField value={visibility} onChange={setVisibility} />
           </div>
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">Ingredients</h2>
+          <h2 className="mt-8 mb-3 text-center font-bold text-xl">
+            Ingredients
+          </h2>
           <div className="space-y-2">
             {rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={r.ingredientId} className="flex items-center gap-2">
                 <Input
                   aria-label={`Amount for ${r.name}`}
                   type="number"
                   value={r.grams}
                   onChange={(e) =>
-                    setRows((rs) => rs.map((x, j) => (j === i ? { ...x, grams: e.target.value } : x)))
+                    setRows((rs) =>
+                      rs.map((x, j) =>
+                        j === i ? { ...x, grams: e.target.value } : x
+                      )
+                    )
                   }
                   className="h-11 w-20"
                 />
-                <span className="text-sm text-muted-foreground">g</span>
+                <span className="text-muted-foreground text-sm">g</span>
                 <span className="flex-1 truncate font-medium">{r.name}</span>
                 <button
                   type="button"
@@ -323,7 +343,9 @@ export function RecipeForm({
               </div>
             ))}
             {rows.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">No ingredients yet.</p>
+              <p className="text-center text-muted-foreground text-sm">
+                No ingredients yet.
+              </p>
             )}
           </div>
 
@@ -341,7 +363,11 @@ export function RecipeForm({
                 />
               </div>
               <ul className="mt-2 max-h-56 overflow-y-auto">
-                {searching && <li className="px-2 py-1.5 text-sm text-muted-foreground">Searching…</li>}
+                {searching && (
+                  <li className="px-2 py-1.5 text-muted-foreground text-sm">
+                    Searching…
+                  </li>
+                )}
                 {!searching &&
                   results.map((item) => (
                     <li key={item.id}>
@@ -352,15 +378,20 @@ export function RecipeForm({
                       >
                         <span className="font-medium">{item.name}</span>
                         <span className="text-muted-foreground">
-                          {item.caloriesPer100g != null ? `${Math.round(item.caloriesPer100g)} cal/100g` : ""}
+                          {item.caloriesPer100g != null
+                            ? `${Math.round(item.caloriesPer100g)} cal/100g`
+                            : ""}
                         </span>
                       </button>
                     </li>
                   ))}
                 {!searching && results.length === 0 && (
-                  <li className="px-2 py-1.5 text-sm text-muted-foreground">
+                  <li className="px-2 py-1.5 text-muted-foreground text-sm">
                     No matches.{" "}
-                    <a href={createIngredientHref} className="text-primary hover:underline">
+                    <a
+                      href={createIngredientHref}
+                      className="text-primary hover:underline"
+                    >
                       Create a new ingredient
                     </a>
                   </li>
@@ -371,13 +402,15 @@ export function RecipeForm({
             <button
               type="button"
               onClick={() => setPicking(true)}
-              className="mt-4 flex items-center gap-2 rounded-lg bg-green-dark px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+              className="mt-4 flex items-center gap-2 rounded-lg bg-green-dark px-4 py-2.5 font-semibold text-sm text-white transition hover:brightness-110"
             >
               <CarrotIcon className="size-4" /> Add Ingredient
             </button>
           )}
 
-          <h2 className="mt-8 mb-3 text-center text-xl font-bold">Directions</h2>
+          <h2 className="mt-8 mb-3 text-center font-bold text-xl">
+            Directions
+          </h2>
           <textarea
             aria-label="Directions"
             placeholder="Directions…"
@@ -388,7 +421,7 @@ export function RecipeForm({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={nutrition} />
         </div>
@@ -404,5 +437,5 @@ export function RecipeForm({
         <SaveIcon className="size-6" />
       </button>
     </div>
-  );
+  )
 }

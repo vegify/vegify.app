@@ -1,17 +1,28 @@
-import * as path from "node:path";
-import { CfnOutput, CustomResource, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
-import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
-import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as logs from "aws-cdk-lib/aws-logs";
-import type { Construct } from "constructs";
-import { importAlarmTopic, notify } from "./monitoring.js";
+import * as path from "node:path"
+import {
+  CfnOutput,
+  CustomResource,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps
+} from "aws-cdk-lib"
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch"
+import * as iam from "aws-cdk-lib/aws-iam"
+import * as lambda from "aws-cdk-lib/aws-lambda"
+import * as logs from "aws-cdk-lib/aws-logs"
+import type { Construct } from "constructs"
 
-const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs");
-const secretLambdaDir = path.join(import.meta.dirname, "../lambda/origin-secret");
+import { importAlarmTopic, notify } from "./monitoring.js"
+
+const lambdaDir = path.join(import.meta.dirname, "../lambda/client-logs")
+const secretLambdaDir = path.join(
+  import.meta.dirname,
+  "../lambda/origin-secret"
+)
 
 /** Parameter Store home of the origin-verify secret (SSM SecureString, generated on first deploy). */
-const ORIGIN_SECRET_PARAM = "/vegify/origin-verify";
+const ORIGIN_SECRET_PARAM = "/vegify/origin-verify"
 
 /**
  * VegifyClientLogs — a dedicated, scale-to-zero ingestion endpoint for BROWSER (client-side) logs.
@@ -32,19 +43,19 @@ export interface ClientLogsStackProps extends StackProps {
   /** Bumping this re-invokes the origin-secret custom resource so a manually rotated parameter
    *  (aws ssm put-parameter --overwrite) re-syncs into the CloudFront header + Lambda envs on the
    *  next deploy. Comes from $ORIGIN_VERIFY_ROTATE via deployConfig; default "0". */
-  originSecretRotationNonce: string;
+  originSecretRotationNonce: string
 }
 
 export class ClientLogsStack extends Stack {
-  readonly ingestUrl: string;
+  readonly ingestUrl: string
   /** The origin-verify secret, resolved AT DEPLOY TIME from the in-account generated SSM SecureString.
    *  This stack is its home because the web stack already depends on this one (ingestUrl) — hosting it
    *  in web-start would create a dependency cycle. Consumed here (IngestFn env) and by WebStartStack
    *  (CloudFront custom header + SSR Lambda env). No human ever knows or transports the value. */
-  readonly originSecret: string;
+  readonly originSecret: string
 
   constructor(scope: Construct, id: string, props: ClientLogsStackProps) {
-    super(scope, id, props);
+    super(scope, id, props)
 
     // Get-or-create the secret parameter and hand its value to the template (see the handler file).
     const secretFn = new lambda.Function(this, "OriginSecretFn", {
@@ -58,30 +69,32 @@ export class ClientLogsStack extends Stack {
       // custom-resource Lambda runs only on deploys.
       logGroup: new logs.LogGroup(this, "OriginSecretFnLogs", {
         retention: logs.RetentionDays.ONE_WEEK,
-        removalPolicy: RemovalPolicy.DESTROY,
-      }),
-    });
+        removalPolicy: RemovalPolicy.DESTROY
+      })
+    })
     secretFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ssm:GetParameter", "ssm:PutParameter"],
-        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${ORIGIN_SECRET_PARAM}`],
-      }),
-    );
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter${ORIGIN_SECRET_PARAM}`
+        ]
+      })
+    )
     const secret = new CustomResource(this, "OriginSecret", {
       resourceType: "Custom::OriginVerifySecret",
       serviceToken: secretFn.functionArn,
       properties: {
         ParameterName: ORIGIN_SECRET_PARAM,
-        RotationNonce: props.originSecretRotationNonce,
-      },
-    });
-    this.originSecret = secret.getAttString("Value");
+        RotationNonce: props.originSecretRotationNonce
+      }
+    })
+    this.originSecret = secret.getAttString("Value")
 
     const logGroup = new logs.LogGroup(this, "WebClientLogs", {
       logGroupName: "/vegify/web-client",
       retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
+      removalPolicy: RemovalPolicy.DESTROY
+    })
 
     // 128 MB / ARM is plenty — the handler just shapes a batch and calls PutLogEvents. The runtime
     // provides the AWS SDK, so the asset is the single index.mjs (no bundling, no Docker).
@@ -92,14 +105,17 @@ export class ClientLogsStack extends Stack {
       code: lambda.Code.fromAsset(lambdaDir),
       memorySize: 128,
       timeout: Duration.seconds(10),
-      environment: { LOG_GROUP_NAME: logGroup.logGroupName, ORIGIN_SECRET: this.originSecret },
+      environment: {
+        LOG_GROUP_NAME: logGroup.logGroupName,
+        ORIGIN_SECRET: this.originSecret
+      },
       // The function's OWN execution logs (distinct from the browser-log group it writes into).
       logGroup: new logs.LogGroup(this, "IngestFnLogs", {
         retention: logs.RetentionDays.ONE_MONTH,
-        removalPolicy: RemovalPolicy.DESTROY,
-      }),
-    });
-    logGroup.grantWrite(fn); // logs:CreateLogStream + logs:PutLogEvents, scoped to this group only
+        removalPolicy: RemovalPolicy.DESTROY
+      })
+    })
+    logGroup.grantWrite(fn) // logs:CreateLogStream + logs:PutLogEvents, scoped to this group only
 
     const url = fn.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
@@ -107,30 +123,33 @@ export class ClientLogsStack extends Stack {
         allowedOrigins: ["*"],
         allowedMethods: [lambda.HttpMethod.POST],
         allowedHeaders: ["content-type"],
-        maxAge: Duration.days(1),
-      },
-    });
-    this.ingestUrl = url.url;
+        maxAge: Duration.days(1)
+      }
+    })
+    this.ingestUrl = url.url
 
     new CfnOutput(this, "IngestUrl", {
       value: url.url,
-      description: "Browser log ingestion endpoint — set as VITE_CLIENT_LOG_URL in the web build",
-    });
-    new CfnOutput(this, "LogGroupName", { value: logGroup.logGroupName });
+      description:
+        "Browser log ingestion endpoint — set as VITE_CLIENT_LOG_URL in the web build"
+    })
+    new CfnOutput(this, "LogGroupName", { value: logGroup.logGroupName })
 
     // Alarm on ingest failures — a low-severity signal (dropped browser logs), but a spike usually
     // means the origin-secret check is rejecting everything or the handler is misconfigured. The
     // shared alarm topic is discovered by ARN from SSM (ServerStack owns it; bin/ orders us after it).
     notify(
       new cloudwatch.Alarm(this, "IngestErrorsAlarm", {
-        alarmDescription: "Client-log ingest Lambda erroring — browser logs are being dropped.",
+        alarmDescription:
+          "Client-log ingest Lambda erroring — browser logs are being dropped.",
         metric: fn.metricErrors({ period: Duration.minutes(5) }),
         threshold: 10,
         evaluationPeriods: 3,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
       }),
-      importAlarmTopic(this, "AlarmTopic"),
-    );
+      importAlarmTopic(this, "AlarmTopic")
+    )
   }
 }

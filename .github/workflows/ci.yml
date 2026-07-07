@@ -53,6 +53,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Each step is a `just` recipe — the SAME commands `just check` runs locally, so dev and CI
       # share one source (the justfile) and can't drift (the failure that motivated this).
+      - name: Lint (biome)
+        run: just lint
       - name: Build design tokens (theme.css is gitignored)
         run: just tokens
       - name: Typecheck

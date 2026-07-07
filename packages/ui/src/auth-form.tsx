@@ -1,11 +1,18 @@
-"use client";
+"use client"
 
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { buttonClasses } from "./button";
-import { cn } from "./cn";
-import { Input } from "./input";
-import type { NavLink } from "./screens";
-import { VegifyLogo } from "./vegify-logo";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState
+} from "react"
+
+import { buttonClasses } from "./button"
+import { cn } from "./cn"
+import { Input } from "./input"
+import type { NavLink } from "./screens"
+import { VegifyLogo } from "./vegify-logo"
 
 /**
  * Shared auth screens — rendered by BOTH shells. Purely presentational: they own only ephemeral
@@ -13,7 +20,7 @@ import { VegifyLogo } from "./vegify-logo";
  * → IPC over HTTPS in A2), and navigation to the `LinkComponent` port. Sibling to recipe-form /
  * ingredient-form (the interactive-form pattern), keeping screens.tsx stateless.
  */
-export type AuthSubmitResult = { error?: string } | void;
+export type AuthSubmitResult = { error?: string } | undefined
 
 /**
  * Signups are disabled (invite-only). The server is the authority (`POST /api/auth/signup` → 403);
@@ -21,7 +28,7 @@ export type AuthSubmitResult = { error?: string } | void;
  * `true` AND set `VEGIFY_SIGNUPS_OPEN=1` on the server. Typed `boolean` (not the `false` literal) so
  * the always-false guards below don't read as constant-condition dead code.
  */
-export const SIGNUPS_ENABLED: boolean = false;
+export const SIGNUPS_ENABLED: boolean = false
 
 function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -33,7 +40,7 @@ function AuthLayout({ children }: { children: ReactNode }) {
         {children}
       </div>
     </div>
-  );
+  )
 }
 
 function LabeledInput({
@@ -43,37 +50,40 @@ function LabeledInput({
 }: { id: string; label: string } & ComponentProps<typeof Input>) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
+      <label htmlFor={id} className="font-medium text-sm">
         {label}
       </label>
       <Input id={id} name={id} className="h-11" {...props} />
     </div>
-  );
+  )
 }
 
 export function LoginView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  onSubmit: (values: { email: string; password: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  onSubmit: (values: {
+    email: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ email, password });
-      if (res?.error) setError(res.error);
+      const res = await onSubmit({ email, password })
+      if (res?.error) setError(res.error)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -81,14 +91,19 @@ export function LoginView({
     <AuthLayout>
       <form
         onSubmit={(e) => {
-          e.preventDefault();
-          void handleSubmit();
+          e.preventDefault()
+          void handleSubmit()
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">Welcome back</h1>
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
+          Welcome back
+        </h1>
         {error ? (
-          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
+          >
             {error}
           </p>
         ) : null}
@@ -117,48 +132,58 @@ export function LoginView({
         >
           {pending ? "Signing in…" : "Sign in"}
         </button>
-        <p className="text-center text-sm text-muted-foreground">
-          <LinkComponent href="/forgot" className="font-semibold text-primary hover:underline">
+        <p className="text-center text-muted-foreground text-sm">
+          <LinkComponent
+            href="/forgot"
+            className="font-semibold text-primary hover:underline"
+          >
             Forgot your password?
           </LinkComponent>
         </p>
         {SIGNUPS_ENABLED ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-muted-foreground text-sm">
             Don&apos;t have an account?{" "}
-            <LinkComponent href="/signup" className="font-semibold text-primary hover:underline">
+            <LinkComponent
+              href="/signup"
+              className="font-semibold text-primary hover:underline"
+            >
               Sign up
             </LinkComponent>
           </p>
         ) : null}
       </form>
     </AuthLayout>
-  );
+  )
 }
 
 export function SignupView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  onSubmit: (values: { name: string; email: string; password: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  onSubmit: (values: {
+    name: string
+    email: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ name, email, password });
-      if (res?.error) setError(res.error);
+      const res = await onSubmit({ name, email, password })
+      if (res?.error) setError(res.error)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
@@ -166,16 +191,19 @@ export function SignupView({
     <AuthLayout>
       <form
         onSubmit={(e) => {
-          e.preventDefault();
-          void handleSubmit();
+          e.preventDefault()
+          void handleSubmit()
         }}
         className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10"
       >
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Create your account
         </h1>
         {error ? (
-          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
+          >
             {error}
           </p>
         ) : null}
@@ -214,15 +242,18 @@ export function SignupView({
         >
           {pending ? "Creating account…" : "Sign up"}
         </button>
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-muted-foreground text-sm">
           Already have an account?{" "}
-          <LinkComponent href="/login" className="font-semibold text-primary hover:underline">
+          <LinkComponent
+            href="/login"
+            className="font-semibold text-primary hover:underline"
+          >
             Sign in
           </LinkComponent>
         </p>
       </form>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -232,59 +263,68 @@ export function SignupView({
  */
 export function ForgotPasswordView({
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  onSubmit: (values: { email: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  onSubmit: (values: { email: string }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("")
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
+    if (pending) return
+    setPending(true)
+    setError(null)
     try {
-      const res = await onSubmit({ email });
-      if (res?.error) setError(res.error);
-      else setSent(true);
+      const res = await onSubmit({ email })
+      if (res?.error) setError(res.error)
+      else setSent(true)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">Reset password</h1>
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
+          Reset password
+        </h1>
         {sent ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               If an account exists for{" "}
-              <span className="font-medium text-foreground">{email}</span>, we&apos;ve sent a link to
-              reset your password. Check your inbox.
+              <span className="font-medium text-foreground">{email}</span>,
+              we&apos;ve sent a link to reset your password. Check your inbox.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Back to sign in
             </LinkComponent>
           </>
         ) : (
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              void handleSubmit();
+              e.preventDefault()
+              void handleSubmit()
             }}
             className="space-y-4"
           >
-            <p className="text-center text-sm text-muted-foreground">
-              Enter your email and we&apos;ll send you a link to reset your password.
+            <p className="text-center text-muted-foreground text-sm">
+              Enter your email and we&apos;ll send you a link to reset your
+              password.
             </p>
             {error ? (
-              <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
+              >
                 {error}
               </p>
             ) : null}
@@ -304,8 +344,11 @@ export function ForgotPasswordView({
             >
               {pending ? "Sending…" : "Send reset link"}
             </button>
-            <p className="text-center text-sm text-muted-foreground">
-              <LinkComponent href="/login" className="font-semibold text-primary hover:underline">
+            <p className="text-center text-muted-foreground text-sm">
+              <LinkComponent
+                href="/login"
+                className="font-semibold text-primary hover:underline"
+              >
                 Back to sign in
               </LinkComponent>
             </p>
@@ -313,7 +356,7 @@ export function ForgotPasswordView({
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -324,74 +367,87 @@ export function ForgotPasswordView({
 export function ResetPasswordView({
   token,
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  token: string;
-  onSubmit: (values: { token: string; password: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  token: string
+  onSubmit: (values: {
+    token: string
+    password: string
+  }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   async function handleSubmit() {
-    if (pending) return;
-    setError(null);
+    if (pending) return
+    setError(null)
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
+      setError("Password must be at least 8 characters.")
+      return
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
-      return;
+      setError("Passwords don't match.")
+      return
     }
-    setPending(true);
+    setPending(true)
     try {
-      const res = await onSubmit({ token, password });
-      if (res?.error) setError(res.error);
-      else setDone(true);
+      const res = await onSubmit({ token, password })
+      if (res?.error) setError(res.error)
+      else setDone(true)
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Something went wrong. Please try again.")
     } finally {
-      setPending(false);
+      setPending(false)
     }
   }
 
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           Choose a new password
         </h1>
         {!token ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-muted-foreground text-sm">
             This reset link is missing its token. Request a new one from{" "}
-            <LinkComponent href="/forgot" className="font-semibold text-primary hover:underline">
+            <LinkComponent
+              href="/forgot"
+              className="font-semibold text-primary hover:underline"
+            >
               Reset password
             </LinkComponent>
             .
           </p>
         ) : done ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
-              Your password has been reset. You can now sign in with your new password.
+            <p className="text-center text-muted-foreground text-sm">
+              Your password has been reset. You can now sign in with your new
+              password.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Sign in
             </LinkComponent>
           </>
         ) : (
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              void handleSubmit();
+              e.preventDefault()
+              void handleSubmit()
             }}
             className="space-y-4"
           >
             {error ? (
-              <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
+              >
                 {error}
               </p>
             ) : null}
@@ -426,7 +482,7 @@ export function ResetPasswordView({
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -438,70 +494,84 @@ export function ResetPasswordView({
 export function VerifyEmailView({
   token,
   onSubmit,
-  LinkComponent,
+  LinkComponent
 }: {
-  token: string;
-  onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>;
-  LinkComponent: NavLink;
+  token: string
+  onSubmit: (values: { token: string }) => Promise<AuthSubmitResult>
+  LinkComponent: NavLink
 }) {
-  const [status, setStatus] = useState<"verifying" | "done" | "error">(token ? "verifying" : "error");
+  const [status, setStatus] = useState<"verifying" | "done" | "error">(
+    token ? "verifying" : "error"
+  )
   const [error, setError] = useState<string | null>(
-    token ? null : "This verification link is missing its token.",
-  );
-  const ran = useRef(false);
+    token ? null : "This verification link is missing its token."
+  )
+  const ran = useRef(false)
 
   useEffect(() => {
-    if (!token || ran.current) return;
-    ran.current = true; // the link is single-use — submit exactly once
+    if (!token || ran.current) return
+    ran.current = true // the link is single-use — submit exactly once
     void (async () => {
       try {
-        const res = await onSubmit({ token });
+        const res = await onSubmit({ token })
         if (res?.error) {
-          setError(res.error);
-          setStatus("error");
+          setError(res.error)
+          setStatus("error")
         } else {
-          setStatus("done");
+          setStatus("done")
         }
       } catch {
-        setError("Something went wrong. Please try again.");
-        setStatus("error");
+        setError("Something went wrong. Please try again.")
+        setStatus("error")
       }
-    })();
-  }, [token, onSubmit]);
+    })()
+  }, [token, onSubmit])
 
   return (
     <AuthLayout>
       <div className="w-full space-y-4 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
-        <h1 className="text-center font-serif text-3xl font-bold text-primary-dark">
+        <h1 className="text-center font-bold font-serif text-3xl text-primary-dark">
           {status === "done" ? "Email confirmed" : "Confirm your email"}
         </h1>
         {status === "verifying" ? (
-          <p className="text-center text-sm text-muted-foreground">Confirming your email address…</p>
+          <p className="text-center text-muted-foreground text-sm">
+            Confirming your email address…
+          </p>
         ) : status === "done" ? (
           <>
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-muted-foreground text-sm">
               Your email address is verified — you&apos;re all set.
             </p>
-            <LinkComponent href="/" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Continue to Vegify
             </LinkComponent>
           </>
         ) : (
           <>
-            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-sm"
+            >
               {error}
             </p>
-            <p className="text-center text-sm text-muted-foreground">
-              The link may have expired or already been used. Sign in and we can send you a fresh one.
+            <p className="text-center text-muted-foreground text-sm">
+              The link may have expired or already been used. Sign in and we can
+              send you a fresh one.
             </p>
-            <LinkComponent href="/login" className={cn(buttonClasses({ size: "lg" }), "w-full")}>
+            <LinkComponent
+              href="/login"
+              className={cn(buttonClasses({ size: "lg" }), "w-full")}
+            >
               Go to sign in
             </LinkComponent>
           </>
         )}
       </div>
     </AuthLayout>
-  );
+  )
 }
 
 /**
@@ -511,33 +581,36 @@ export function VerifyEmailView({
  */
 export function EmailVerificationBanner({
   email,
-  onResend,
+  onResend
 }: {
-  email: string;
-  onResend: () => Promise<AuthSubmitResult>;
+  email: string
+  onResend: () => Promise<AuthSubmitResult>
 }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle")
 
   async function handleResend() {
-    if (state === "sending") return;
-    setState("sending");
+    if (state === "sending") return
+    setState("sending")
     try {
-      await onResend();
+      await onResend()
     } finally {
-      setState("sent");
+      setState("sent")
     }
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-primary/20 bg-primary/5 px-4 py-2 text-center text-sm text-foreground">
+    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-primary/20 border-b bg-primary/5 px-4 py-2 text-center text-foreground text-sm">
       {state === "sent" ? (
         <span>
-          Verification link sent to <span className="font-medium">{email}</span>. Check your inbox.
+          Verification link sent to <span className="font-medium">{email}</span>
+          . Check your inbox.
         </span>
       ) : (
         <>
           <span>
-            Please verify your email <span className="font-medium">({email})</span> to secure your account.
+            Please verify your email{" "}
+            <span className="font-medium">({email})</span> to secure your
+            account.
           </span>
           <button
             type="button"
@@ -550,5 +623,5 @@ export function EmailVerificationBanner({
         </>
       )}
     </div>
-  );
+  )
 }

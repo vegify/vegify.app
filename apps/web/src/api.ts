@@ -7,9 +7,9 @@
 // Server-only: `getCookie` is server-only, so importing this module pins it to the server bundle —
 // never import a VALUE from here into a client component (types are fine; they erase).
 
-import { apiUrl } from '@vegify/config'
+import { apiUrl } from "@vegify/config"
 
-export const SESSION_COOKIE = 'vegify_session'
+export const SESSION_COOKIE = "vegify_session"
 
 /** The standing backend's base URL (VEGIFY_API_URL; dev default = a local vegify-server). */
 export { apiUrl }
@@ -18,7 +18,7 @@ export { apiUrl }
  *  dynamic import keeps @tanstack/react-start/server out of the client module graph (api.ts is reachable
  *  from the client via auth.ts), matching how the route handlers gate their server-only imports. */
 async function sessionToken(): Promise<string | null> {
-  const { getCookie } = await import('@tanstack/react-start/server')
+  const { getCookie } = await import("@tanstack/react-start/server")
   return getCookie(SESSION_COOKIE) ?? null
 }
 
@@ -26,14 +26,14 @@ async function sessionToken(): Promise<string | null> {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    message: string,
+    message: string
   ) {
     super(message)
-    this.name = 'ApiError'
+    this.name = "ApiError"
   }
 }
 
-type ApiInit = Omit<RequestInit, 'body'> & { body?: unknown; auth?: boolean }
+type ApiInit = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean }
 
 /** Call the Axum backend. Attaches the session Bearer (unless `auth: false`), JSON-encodes an object
  *  body, and on a non-2xx surfaces the server's `{error}` message as an ApiError(status). A 2xx with a
@@ -42,12 +42,13 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (init.auth !== false) {
     const token = await sessionToken()
-    if (token) headers.set('authorization', `Bearer ${token}`)
+    if (token) headers.set("authorization", `Bearer ${token}`)
   }
   let body: BodyInit | undefined
   if (init.body !== undefined) {
-    body = typeof init.body === 'string' ? init.body : JSON.stringify(init.body)
-    if (!headers.has('content-type')) headers.set('content-type', 'application/json')
+    body = typeof init.body === "string" ? init.body : JSON.stringify(init.body)
+    if (!headers.has("content-type"))
+      headers.set("content-type", "application/json")
   }
   const res = await fetch(`${apiUrl()}${path}`, { ...init, headers, body })
   if (!res.ok) {
@@ -62,7 +63,9 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
     // 401 is the auth gate (logged-out), 404 a missing/forbidden detail row — so those stay quiet to
     // keep the logs signal-rich. The browser's own errors ship separately (client-log.ts).
     if (res.status >= 500) {
-      console.error(`[api] ${init.method ?? 'GET'} ${path} -> ${res.status}: ${message}`)
+      console.error(
+        `[api] ${init.method ?? "GET"} ${path} -> ${res.status}: ${message}`
+      )
     }
     throw new ApiError(res.status, message)
   }

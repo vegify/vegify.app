@@ -12,13 +12,13 @@
 // CDK app itself (backend origin, ingest URL, hosted zone, certificate, origin-verify secret) is
 // wired cross-stack / looked up / created in infra.
 
-import { GetParametersByPathCommand, SSMClient } from '@aws-sdk/client-ssm'
+import { GetParametersByPathCommand, SSMClient } from "@aws-sdk/client-ssm"
 
 /** Parameter Store home of the deploy decisions (`just init` / `just config-set` write here). */
-export const DEPLOY_PARAM_PATH = '/vegify/deploy/'
+export const DEPLOY_PARAM_PATH = "/vegify/deploy/"
 
 /** Zone id used on the unconfigured placeholder path (fresh-clone synth never touches AWS). */
-export const PLACEHOLDER_ZONE_ID = 'ZEXAMPLE00000000'
+export const PLACEHOLDER_ZONE_ID = "ZEXAMPLE00000000"
 
 async function ssmDecisions(region: string): Promise<Record<string, string>> {
   try {
@@ -27,10 +27,15 @@ async function ssmDecisions(region: string): Promise<Record<string, string>> {
     let token: string | undefined
     do {
       const page = await ssm.send(
-        new GetParametersByPathCommand({ Path: DEPLOY_PARAM_PATH, WithDecryption: true, NextToken: token }),
+        new GetParametersByPathCommand({
+          Path: DEPLOY_PARAM_PATH,
+          WithDecryption: true,
+          NextToken: token
+        })
       )
       for (const p of page.Parameters ?? []) {
-        if (p.Name && p.Value !== undefined) out[p.Name.slice(DEPLOY_PARAM_PATH.length)] = p.Value
+        if (p.Name && p.Value !== undefined)
+          out[p.Name.slice(DEPLOY_PARAM_PATH.length)] = p.Value
       }
       token = page.NextToken
     } while (token)
@@ -41,7 +46,7 @@ async function ssmDecisions(region: string): Promise<Record<string, string>> {
     // exactly this way). Fail the synth loudly instead.
     if (process.env.GITHUB_ACTIONS) {
       throw new Error(
-        `cannot read the ${DEPLOY_PARAM_PATH} decisions in region ${region} — fix the deploy role's ssm:GetParametersByPath grant or the parameter region; refusing to synth with placeholders in CI (${e})`,
+        `cannot read the ${DEPLOY_PARAM_PATH} decisions in region ${region} — fix the deploy role's ssm:GetParametersByPath grant or the parameter region; refusing to synth with placeholders in CI (${e})`
       )
     }
     // Locally: no credentials / no parameters is the legitimate fresh-clone, zero-config path.
@@ -110,39 +115,55 @@ export interface DeployConfigOptions {
   ssm?: boolean
 }
 
-export async function deployConfig(opts: DeployConfigOptions = {}): Promise<DeployConfig> {
-  const region = process.env.CDK_DEFAULT_REGION ?? 'us-east-1'
+export async function deployConfig(
+  opts: DeployConfigOptions = {}
+): Promise<DeployConfig> {
+  const region = process.env.CDK_DEFAULT_REGION ?? "us-east-1"
   const ssm = opts.ssm === false ? {} : await ssmDecisions(region)
   /** env override → SSM decision → undefined. Empty strings count as unset. */
   const pick = (envKey: string, ssmKey: string): string | undefined =>
     process.env[envKey] || ssm[ssmKey] || undefined
 
-  const rawDomains = (pick('VEGIFY_DOMAIN_NAMES', 'domain-names') ?? '')
-    .split(',')
+  const rawDomains = (pick("VEGIFY_DOMAIN_NAMES", "domain-names") ?? "")
+    .split(",")
     .map((d) => d.trim())
     .filter(Boolean)
   const domainsConfigured = rawDomains.length > 0
-  const domainNames = domainsConfigured ? rawDomains : ['example.com', 'www.example.com']
-  const emailDomain = pick('VEGIFY_EMAIL_DOMAIN', 'email-domain') ?? domainNames[0]
+  const domainNames = domainsConfigured
+    ? rawDomains
+    : ["example.com", "www.example.com"]
+  const primaryDomain = domainNames[0]
+  if (!primaryDomain) throw new Error("domain-names decision is empty")
+  const emailDomain =
+    pick("VEGIFY_EMAIL_DOMAIN", "email-domain") ?? primaryDomain
+
   return {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region,
-    githubRepo: process.env.GITHUB_REPOSITORY ?? 'vegify/vegify.app',
-    originSecretRotationNonce: process.env.ORIGIN_VERIFY_ROTATE ?? '0',
+    githubRepo: process.env.GITHUB_REPOSITORY ?? "vegify/vegify.app",
+    originSecretRotationNonce: process.env.ORIGIN_VERIFY_ROTATE ?? "0",
     apiUrlOverride: process.env.VEGIFY_API_URL || undefined,
     domainNames,
     domainsConfigured,
     hostedZoneIdOverride: process.env.VEGIFY_HOSTED_ZONE_ID || undefined,
-    certificateArnOverride: pick('VEGIFY_CERT_ARN', 'cert-arn'),
-    publicUrl: `https://${domainNames[0]}`,
-    signupsOpen: (pick('VEGIFY_SIGNUPS_OPEN', 'signups-open') ?? '0') === '1',
-    adminEmails: pick('VEGIFY_ADMIN_EMAILS', 'admin-emails') ?? '',
+    certificateArnOverride: pick("VEGIFY_CERT_ARN", "cert-arn"),
+    publicUrl: `https://${primaryDomain}`,
+    signupsOpen: (pick("VEGIFY_SIGNUPS_OPEN", "signups-open") ?? "0") === "1",
+    adminEmails: pick("VEGIFY_ADMIN_EMAILS", "admin-emails") ?? "",
     emailDomain,
-    emailConfigured: Boolean(pick('VEGIFY_EMAIL_DOMAIN', 'email-domain')) || domainsConfigured,
-    emailFrom: pick('VEGIFY_EMAIL_FROM', 'email-from') ?? `Vegify <hello@${emailDomain}>`,
-    mailFromDomain: pick('VEGIFY_MAIL_FROM_DOMAIN', 'mail-from-domain') ?? `mail.${emailDomain}`,
-    manageEmailDns: (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? '1') !== '0',
-    appleSecretId: pick('APPLE_SIGNING_SECRET_ID', 'apple-secret-id') ?? 'your-org/apple-signing',
-    alarmEmail: pick('VEGIFY_ALARM_EMAIL', 'alarm-email') ?? `hello@${emailDomain}`,
+    emailConfigured:
+      Boolean(pick("VEGIFY_EMAIL_DOMAIN", "email-domain")) || domainsConfigured,
+    emailFrom:
+      pick("VEGIFY_EMAIL_FROM", "email-from") ??
+      `Vegify <hello@${emailDomain}>`,
+    mailFromDomain:
+      pick("VEGIFY_MAIL_FROM_DOMAIN", "mail-from-domain") ??
+      `mail.${emailDomain}`,
+    manageEmailDns: (process.env.VEGIFY_EMAIL_MANAGE_DNS ?? "1") !== "0",
+    appleSecretId:
+      pick("APPLE_SIGNING_SECRET_ID", "apple-secret-id") ??
+      "your-org/apple-signing",
+    alarmEmail:
+      pick("VEGIFY_ALARM_EMAIL", "alarm-email") ?? `hello@${emailDomain}`
   }
 }

@@ -1,7 +1,13 @@
-import { CfnDeletionPolicy, CfnOutput, Stack, type StackProps } from "aws-cdk-lib";
-import * as ses from "aws-cdk-lib/aws-ses";
-import type { Construct } from "constructs";
-import { resolveZone } from "./zone.js";
+import {
+  CfnDeletionPolicy,
+  CfnOutput,
+  Stack,
+  type StackProps
+} from "aws-cdk-lib"
+import * as ses from "aws-cdk-lib/aws-ses"
+import type { Construct } from "constructs"
+
+import { resolveZone } from "./zone.js"
 
 // VegifyEmail — the transactional-email sending identity for the app's domain: an SES domain identity with
 // Easy DKIM and a custom MAIL FROM, all DNS-published through the app's Route53 hosted zone. The server
@@ -22,21 +28,21 @@ import { resolveZone } from "./zone.js";
 
 export interface EmailStackProps extends StackProps {
   /** Domain for the SES identity (VEGIFY_EMAIL_DOMAIN, defaulting to the first web domain). */
-  domain: string;
+  domain: string
   /** Whether the domain came from real configuration (gates the zone lookup — see resolveZone). */
-  domainConfigured: boolean;
+  domainConfigured: boolean
   /** Explicit zone id override; default = lookup by the domain name (managed-DNS mode only). */
-  hostedZoneIdOverride?: string;
+  hostedZoneIdOverride?: string
   /** Custom MAIL FROM subdomain (default mail.<domain>). */
-  mailFromDomain: string;
+  mailFromDomain: string
   /** false = identity-only (DNS managed elsewhere — vegify's records live in VegifyDns). */
-  manageDns: boolean;
+  manageDns: boolean
 }
 
 export class EmailStack extends Stack {
   constructor(scope: Construct, id: string, props: EmailStackProps) {
-    super(scope, id, props);
-    const { domain, mailFromDomain, manageDns } = props;
+    super(scope, id, props)
+    const { domain, mailFromDomain, manageDns } = props
 
     // Managed-DNS publishes the DKIM CNAMEs + MAIL FROM records through the zone (self-host turnkey).
     // Identity-only just declares the SES identity and leaves DNS to its existing owner (vegify: VegifyDns).
@@ -45,26 +51,29 @@ export class EmailStack extends Stack {
           resolveZone(this, "Zone", {
             zoneName: domain,
             configured: props.domainConfigured,
-            overrideZoneId: props.hostedZoneIdOverride,
-          }),
+            overrideZoneId: props.hostedZoneIdOverride
+          })
         )
-      : ses.Identity.domain(domain);
+      : ses.Identity.domain(domain)
 
     // Easy DKIM is on by default; pin the MAIL FROM MX-failure behavior to SES's default so an adopted
     // (cdk import) identity matches live exactly and the post-import diff is empty.
     const identity = new ses.EmailIdentity(this, "Identity", {
       identity: identitySource,
       mailFromDomain,
-      mailFromBehaviorOnMxFailure: ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE,
-    });
+      mailFromBehaviorOnMxFailure:
+        ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE
+    })
 
     // Protect the identity: an accidental stack delete must NOT destroy it (that would rotate Easy DKIM and
     // break sending). RETAIN also matches what `cdk import` sets when adopting an existing live identity.
-    const cfnIdentity = identity.node.defaultChild as ses.CfnEmailIdentity;
-    cfnIdentity.cfnOptions.deletionPolicy = CfnDeletionPolicy.RETAIN;
-    cfnIdentity.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN;
+    const cfnIdentity = identity.node.defaultChild as ses.CfnEmailIdentity
+    cfnIdentity.cfnOptions.deletionPolicy = CfnDeletionPolicy.RETAIN
+    cfnIdentity.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN
 
-    new CfnOutput(this, "EmailIdentityName", { value: identity.emailIdentityName });
-    new CfnOutput(this, "EmailDomain", { value: domain });
+    new CfnOutput(this, "EmailIdentityName", {
+      value: identity.emailIdentityName
+    })
+    new CfnOutput(this, "EmailDomain", { value: domain })
   }
 }

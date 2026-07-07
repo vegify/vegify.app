@@ -1,0 +1,126 @@
+{
+  // One lint/format layer for the workspace, single config at the root.
+  // Formatter options match the incumbent style (prettier defaults) so the
+  // adoption diff is lint value, not a reformat.
+  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    // Generated artifacts are linted at their source, not as output: the
+    // desktop IPC bindings and @vegify/api-types come from `just bindings`.
+    "includes": [
+      "**",
+      "!apps/desktop/src/bindings.ts",
+      "!packages/api-types/src",
+      // TanStack Router output (tsr generate); linted at its route sources.
+      "!**/*.gen.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "nursery": {
+        // = prettier-plugin-tailwindcss: one canonical utility order in class
+        // attributes and the cn/cva/clsx call sites.
+        "useSortedClasses": {
+          "level": "error",
+          "options": { "functions": ["cn", "cva", "clsx", "tw"] }
+        }
+      },
+      "correctness": {
+        // Missing deps are bugs and stay errors; EXTRA deps are the
+        // intentional reset-on-change idiom (chrome search clears per route,
+        // the thread page drops the unread badge per opened thread).
+        "useExhaustiveDependencies": {
+          "level": "error",
+          "options": { "reportUnnecessaryDependencies": false }
+        }
+      },
+      "suspicious": {
+        "noConsole": { "level": "off", "options": { "allow": ["log"] } }
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "none"
+    }
+  },
+  // Import order encodes shadcn's prettier importOrder taxonomy (react,
+  // third-party, blank, the @/ groups in shadcn's sequence, blank, relative).
+  // ":BLANK_LINE:" is the separator token.
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ["react", "react/**"],
+              [":BUN:", ":NODE:", ":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:"],
+              ":BLANK_LINE:",
+              "@/types/**",
+              "@/config/**",
+              "@/lib/**",
+              "@/hooks/**",
+              "@/components/ui/**",
+              "@/components/**",
+              "@/styles/**",
+              "@/app/**",
+              ":BLANK_LINE:",
+              ":PATH:"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      // The inline-edit affordance (docs/design inline-edit contract): the
+      // editable paragraph deliberately carries role="button" + tabIndex +
+      // keyboard handling; button box semantics would break the text layout.
+      "includes": ["packages/ui/src/inline.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noNoninteractiveElementToInteractiveRole": "off",
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      // The generic Label wrapper: control association arrives via htmlFor at
+      // each usage site, which this rule cannot see through the wrapper (the
+      // shared-config exception for exactly this component, owner-approved
+      // with the seed config, 2026-07-02).
+      "includes": ["packages/ui/src/label.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": "off"
+          }
+        }
+      }
+    }
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

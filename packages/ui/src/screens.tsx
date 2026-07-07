@@ -1,17 +1,19 @@
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
-import type { AppShellLinkProps } from "./app-shell";
-import { buttonClasses } from "./button";
-import { cn } from "./cn";
-import { SORT_OPTIONS, type Sort } from "./catalog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react"
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
+
+import type { AppShellLinkProps } from "./app-shell"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./dropdown-menu";
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator
+} from "./breadcrumb"
+import { buttonClasses } from "./button"
+import { SORT_OPTIONS, type Sort } from "./catalog"
+import { cn } from "./cn"
+import { DetailHero } from "./detail-hero"
 import {
   Dialog,
   DialogClose,
@@ -19,23 +21,37 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
-} from "./dialog";
-import { InlineNumber, InlinePillSelect, InlineText, InlineTextarea } from "./inline";
-import { DETAIL_SHORTCUTS, INGREDIENT_SHORTCUTS, useDetailShortcuts } from "./use-detail-shortcuts";
-import type { IngredientSearchItem } from "./recipe-form";
+  DialogTitle
+} from "./dialog"
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "./breadcrumb";
-import { DetailHero } from "./detail-hero";
-import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts";
-import { NutritionFactsFab } from "./nutrition-facts-fab";
-import { ThemeSetting } from "./theme-setting";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "./dropdown-menu"
+import {
+  InlineNumber,
+  InlinePillSelect,
+  InlineText,
+  InlineTextarea
+} from "./inline"
+import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
+import { NutritionFactsFab } from "./nutrition-facts-fab"
+import type { IngredientSearchItem } from "./recipe-form"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "./select"
+import { ThemeSetting } from "./theme-setting"
+import {
+  DETAIL_SHORTCUTS,
+  INGREDIENT_SHORTCUTS,
+  useDetailShortcuts
+} from "./use-detail-shortcuts"
 
 /**
  * SHARED SCREENS — the actual pages (recipe list, detail, ingredient list/detail, search, home),
@@ -49,81 +65,102 @@ import { ThemeSetting } from "./theme-setting";
  *     href to its in-process view state. Every navigable element here renders through it, so a new
  *     screen is written once and never drifts between the two apps.
  */
-export type NavLink = ComponentType<AppShellLinkProps>;
+export type NavLink = ComponentType<AppShellLinkProps>
 
 export type RecipeListItem = {
-  id: string;
-  name: string;
-  subtitle?: string | null;
+  id: string
+  name: string
+  subtitle?: string | null
   /** Owner handle + slug for the canonical `/<username>/<slug>` link; fall back to `/recipes/<id>`. */
-  username?: string | null;
-  slug?: string | null;
+  username?: string | null
+  slug?: string | null
   /** Absolute URL of the hero photo; absent = the placeholder tile. */
-  photoUrl?: string | null;
-};
+  photoUrl?: string | null
+}
 
 /** A card's photo tile: the hero when present, the muted placeholder when not. */
-function CardTile({ photoUrl, name, size }: { photoUrl?: string | null; name: string; size: string }) {
+function CardTile({
+  photoUrl,
+  name,
+  size
+}: {
+  photoUrl?: string | null
+  name: string
+  size: string
+}) {
   return photoUrl ? (
-    <img src={photoUrl} alt={name} loading="lazy" className={`${size} shrink-0 rounded-lg object-cover`} />
+    <img
+      src={photoUrl}
+      alt={name}
+      loading="lazy"
+      className={`${size} shrink-0 rounded-lg object-cover`}
+    />
   ) : (
     <div className={`${size} shrink-0 rounded-lg bg-muted`} />
-  );
+  )
 }
 
 /** Canonical link for a recipe card: `/<username>/<slug>` when both are known, else `/recipes/<id>`
  * (which 301s to canonical). One helper so every card + search result links the same way. */
-export function recipeHref(r: { id: string; username?: string | null; slug?: string | null }): string {
-  return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`;
+export function recipeHref(r: {
+  id: string
+  username?: string | null
+  slug?: string | null
+}): string {
+  return r.username && r.slug ? `/${r.username}/${r.slug}` : `/recipes/${r.id}`
 }
 export type IngredientListItem = {
-  id: string;
-  name: string;
-  caloriesPer100g?: number | null;
+  id: string
+  name: string
+  caloriesPer100g?: number | null
   /** Slug for the canonical link; fall back to `/ingredients/<id>`. */
-  slug?: string | null;
+  slug?: string | null
   /** Owner handle: owned ingredients are canonical at `/<username>/ingredients/<slug>`; absent =
    * the communal catalog (`/ingredients/<slug>`). */
-  username?: string | null;
-};
+  username?: string | null
+}
 
 /** Canonical link for an ingredient: owned → `/<username>/ingredients/<slug>` (browsable under its
  * creator); catalog → `/ingredients/<slug>`; no slug yet → `/ingredients/<id>` (which 301s). */
-export function ingredientHref(i: { id: string; slug?: string | null; username?: string | null }): string {
-  if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`;
-  return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`;
+export function ingredientHref(i: {
+  id: string
+  slug?: string | null
+  username?: string | null
+}): string {
+  if (i.slug && i.username) return `/${i.username}/ingredients/${i.slug}`
+  return i.slug ? `/ingredients/${i.slug}` : `/ingredients/${i.id}`
 }
 /** One ingredient line in a recipe — `href` points at its ingredient page (or recipe page if it's a sub-recipe). */
 export type RecipeDetailItem = {
-  key: string;
-  label: string;
-  href: string;
+  key: string
+  label: string
+  href: string
   /** The ingredient id — the restore target when this row is a tombstone. */
-  ingredientId?: string;
+  ingredientId?: string
   /** Soft-deleted by its owner AND this is the owner's own recipe: grey the row and (when the
    *  viewer can edit) offer "restore?" on hover. Other users' recipes never set this. */
-  deleted?: boolean;
-};
+  deleted?: boolean
+}
 export type RecipeDetailVM = {
-  id: string;
-  name: string;
-  subtitle?: string | null;
-  creator?: string | null;
+  id: string
+  name: string
+  subtitle?: string | null
+  creator?: string | null
   /** Whether the viewer owns this recipe — shows the edit affordance. Omitted/false ⇒ read-only. */
-  canEdit?: boolean;
-  directions?: string | null;
-  items: RecipeDetailItem[];
-  nutrition: NutritionFactsData;
+  canEdit?: boolean
+  directions?: string | null
+  items: RecipeDetailItem[]
+  nutrition: NutritionFactsData
   /** Absolute URL of the hero photo; absent = placeholder. */
-  photoUrl?: string | null;
-};
+  photoUrl?: string | null
+}
 
-export type Visibility = "public" | "unlisted" | "private";
+export type Visibility = "public" | "unlisted" | "private"
 const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string }[] = [
   { value: "public", label: "Public" },
   { value: "unlisted", label: "Unlisted" },
-  { value: "private", label: "Private" },
-];
+  { value: "private", label: "Private" }
+]
 
 /**
  * One editable ingredient row. Amounts edit in GRAMS — the app's internal model and exactly what the
@@ -131,42 +168,53 @@ const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string }[] = [
  * top). So owner edit mode shows grams; a reader still sees the composed labels.
  */
 export type RecipeEditRow = {
-  ingredientId: string;
-  name: string;
-  href: string;
-  grams: number;
+  ingredientId: string
+  name: string
+  href: string
+  grams: number
   /** Per-100g readings of THIS item — the source for the LIVE nutrition recompute while an amount is
    *  scrubbed/typed (the aggregate is client-computable from these). Optional: absent ⇒ the panel
    *  updates on commit (the server recomputes), as before. */
-  caloriesPer100g?: number | null;
-  readings?: { name: string; amountPer100g: number; unit: string }[];
-};
+  caloriesPer100g?: number | null
+  readings?: { name: string; amountPer100g: number; unit: string }[]
+}
 
 /** Recompute a recipe's per-100g nutrition from its items (each item's per-100g × its grams, summed,
  *  ÷ total grams) — the same math the server's CTE does, run client-side so the nutrition panel
  *  tracks a scrub/type LIVE. Returns null if any item lacks readings (→ keep the committed panel). */
 function aggregateItems(
-  rows: { grams: number; caloriesPer100g?: number | null; readings?: { name: string; amountPer100g: number; unit: string }[] }[],
-): { caloriesPer100g: number; readings: { name: string; amountPer100g: number; unit: string }[] } | null {
-  if (rows.some((r) => r.readings == null)) return null;
-  const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0);
-  if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] };
-  let cal = 0;
-  const units = new Map<string, string>();
-  const totals = new Map<string, number>();
+  rows: {
+    grams: number
+    caloriesPer100g?: number | null
+    readings?: { name: string; amountPer100g: number; unit: string }[]
+  }[]
+): {
+  caloriesPer100g: number
+  readings: { name: string; amountPer100g: number; unit: string }[]
+} | null {
+  if (rows.some((r) => r.readings == null)) return null
+  const totalGrams = rows.reduce((s, r) => s + (r.grams || 0), 0)
+  if (totalGrams <= 0) return { caloriesPer100g: 0, readings: [] }
+  let cal = 0
+  const units = new Map<string, string>()
+  const totals = new Map<string, number>()
   for (const r of rows) {
-    const f = (r.grams || 0) / 100;
-    cal += (r.caloriesPer100g ?? 0) * f;
+    const f = (r.grams || 0) / 100
+    cal += (r.caloriesPer100g ?? 0) * f
     for (const n of r.readings ?? []) {
-      totals.set(n.name, (totals.get(n.name) ?? 0) + n.amountPer100g * f);
-      units.set(n.name, n.unit);
+      totals.set(n.name, (totals.get(n.name) ?? 0) + n.amountPer100g * f)
+      units.set(n.name, n.unit)
     }
   }
-  const per100 = 100 / totalGrams;
+  const per100 = 100 / totalGrams
   return {
     caloriesPer100g: cal * per100,
-    readings: [...totals].map(([name, abs]) => ({ name, amountPer100g: abs * per100, unit: units.get(name)! })),
-  };
+    readings: [...totals].map(([name, abs]) => {
+      const unit = units.get(name)
+      if (!unit) throw new Error(`unit missing for nutrient ${name}`)
+      return { name, amountPer100g: abs * per100, unit }
+    })
+  }
 }
 
 /**
@@ -176,40 +224,40 @@ function aggregateItems(
  * logged-out or non-owner view is byte-identical to before inline editing existed.
  */
 export type RecipeEditAdapter = {
-  visibility: Visibility;
+  visibility: Visibility
   /** Structured items, parallel to recipe.items — the source for the inline amount chips. */
-  items: RecipeEditRow[];
-  rename: (next: string) => Promise<void>;
-  setSubtitle: (next: string) => Promise<void>;
-  setDirections: (next: string) => Promise<void>;
-  setVisibility: (next: Visibility) => Promise<void>;
-  setItemAmount: (ingredientId: string, amount: number) => Promise<void>;
-  addItem: (ingredient: IngredientSearchItem) => Promise<void>;
-  removeItem: (ingredientId: string) => Promise<void>;
-  remove: () => Promise<void>;
-  search: (q: string) => Promise<IngredientSearchItem[]>;
+  items: RecipeEditRow[]
+  rename: (next: string) => Promise<void>
+  setSubtitle: (next: string) => Promise<void>
+  setDirections: (next: string) => Promise<void>
+  setVisibility: (next: Visibility) => Promise<void>
+  setItemAmount: (ingredientId: string, amount: number) => Promise<void>
+  addItem: (ingredient: IngredientSearchItem) => Promise<void>
+  removeItem: (ingredientId: string) => Promise<void>
+  remove: () => Promise<void>
+  search: (q: string) => Promise<IngredientSearchItem[]>
   /** Create-blank draft: the name auto-opens and, while still untitled + empty, a Discard is offered. */
-  isDraft?: boolean;
-  discard?: () => Promise<void>;
+  isDraft?: boolean
+  discard?: () => Promise<void>
   /** Per-page undo/redo of committed edits (useEditHistory). Optional — absent ⇒ no undo UI. */
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-};
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+}
 export type IngredientDetailVM = {
-  id: string;
-  name: string;
-  description?: string | null;
+  id: string
+  name: string
+  description?: string | null
   /** Whether the viewer owns this ingredient — shows the edit affordance. Omitted/false ⇒ read-only. */
-  canEdit?: boolean;
+  canEdit?: boolean
   /** Soft-deleted by its owner: delisted from browse/search, preserved for the recipes that use it.
    *  Renders a "Deleted" badge so a direct link tells the truth. */
-  deleted?: boolean;
+  deleted?: boolean
   /** Owner handle (absent = the communal catalog) — the breadcrumb links to the profile. */
-  creator?: string | null;
-  nutrition: NutritionFactsData;
-};
+  creator?: string | null
+  nutrition: NutritionFactsData
+}
 
 /**
  * Inline-edit adapter for the ingredient detail page (docs/design/inline-edit.md P2). Same shape/contract
@@ -220,70 +268,98 @@ export type IngredientDetailVM = {
  * so it must preserve the nutrient rows a name edit doesn't touch.
  */
 export type IngredientEditAdapter = {
-  visibility: Visibility;
-  rename: (next: string) => Promise<void>;
-  setDescription: (next: string) => Promise<void>;
-  setVisibility: (next: Visibility) => Promise<void>;
-  remove: () => Promise<void>;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-};
+  visibility: Visibility
+  rename: (next: string) => Promise<void>
+  setDescription: (next: string) => Promise<void>
+  setVisibility: (next: Visibility) => Promise<void>
+  remove: () => Promise<void>
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+}
 /** A public profile: the handle, display name, and the user's visible recipes (shared by both shells). */
 export type ProfileVM = {
-  username: string;
-  name: string;
+  username: string
+  name: string
   /** Avatar photo URL; absent = the monogram tile. */
-  avatarUrl?: string | null;
-  recipes: RecipeListItem[];
+  avatarUrl?: string | null
+  recipes: RecipeListItem[]
   /** The user's leaf ingredients (created or imported by them) — browsable under their handle. */
-  ingredients: IngredientListItem[];
-};
+  ingredients: IngredientListItem[]
+}
 
 const cardClass =
-  "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70";
+  "flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70"
 
 /** Site footer for the detail right-rail — secondary links + copyright, sitting beneath the Nutrition
  * Facts panel (the right column is where these belong, not the nav sidebar). */
 function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
-    <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
-      <LinkComponent href="/blog" className="font-medium transition-colors hover:text-foreground">
+    <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-border border-t pt-4 text-muted-foreground text-xs">
+      <LinkComponent
+        href="/blog"
+        className="font-medium transition-colors hover:text-foreground"
+      >
         Blog
       </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/download" className="font-medium transition-colors hover:text-foreground">
+      <LinkComponent
+        href="/download"
+        className="font-medium transition-colors hover:text-foreground"
+      >
         Get the app
       </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/terms" className="transition-colors hover:text-foreground">Terms</LinkComponent>
+      <LinkComponent
+        href="/terms"
+        className="transition-colors hover:text-foreground"
+      >
+        Terms
+      </LinkComponent>
       <span aria-hidden>·</span>
-      <LinkComponent href="/privacy" className="transition-colors hover:text-foreground">Privacy</LinkComponent>
+      <LinkComponent
+        href="/privacy"
+        className="transition-colors hover:text-foreground"
+      >
+        Privacy
+      </LinkComponent>
       <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
-  );
+  )
 }
 
 export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-3xl flex-col items-center justify-center gap-6 p-8 text-center">
-      <h1 className="font-serif text-5xl font-bold text-primary-dark">Vegify</h1>
-      <p className="w-full max-w-md text-lg text-gray-500">
+      <h1 className="font-bold font-serif text-5xl text-primary-dark">
+        Vegify
+      </h1>
+      <p className="w-full max-w-md text-gray-500 text-lg">
         Micronutrition tracking for plant-based cooking
       </p>
       <LinkComponent href="/recipes" className={buttonClasses({ size: "lg" })}>
         Browse recipes
       </LinkComponent>
     </div>
-  );
+  )
 }
 
 /** Sort dropdown for the catalog lists. The selected value is owned by the shell (URL-backed). */
-function SortControl({ value, onChange }: { value: Sort; onChange: (s: Sort) => void }) {
+function SortControl({
+  value,
+  onChange
+}: {
+  value: Sort
+  onChange: (s: Sort) => void
+}) {
   return (
-    <Select items={SORT_OPTIONS} value={value} onValueChange={(v) => v && onChange(v as Sort)}>
+    <Select
+      items={SORT_OPTIONS}
+      value={value}
+      onValueChange={(v) => v && onChange(v as Sort)}
+    >
       <SelectTrigger size="sm" aria-label="Sort order">
         <SelectValue />
       </SelectTrigger>
@@ -295,7 +371,7 @@ function SortControl({ value, onChange }: { value: Sort; onChange: (s: Sort) => 
         ))}
       </SelectContent>
     </Select>
-  );
+  )
 }
 
 /**
@@ -307,31 +383,37 @@ function SortControl({ value, onChange }: { value: Sort; onChange: (s: Sort) => 
 function InfiniteSentinel({
   hasMore,
   isLoading,
-  onLoadMore,
+  onLoadMore
 }: {
-  hasMore?: boolean;
-  isLoading?: boolean;
-  onLoadMore: () => void;
+  hasMore?: boolean
+  isLoading?: boolean
+  onLoadMore: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [intersecting, setIntersecting] = useState(false);
+  const ref = useRef<HTMLDivElement>(null)
+  const [intersecting, setIntersecting] = useState(false)
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver((entries) => setIntersecting(entries[0]?.isIntersecting ?? false), {
-      rootMargin: "400px",
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      (entries) => setIntersecting(entries[0]?.isIntersecting ?? false),
+      {
+        rootMargin: "400px"
+      }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
   useEffect(() => {
-    if (intersecting && hasMore && !isLoading) onLoadMore();
-  }, [intersecting, hasMore, isLoading, onLoadMore]);
+    if (intersecting && hasMore && !isLoading) onLoadMore()
+  }, [intersecting, hasMore, isLoading, onLoadMore])
   return (
-    <div ref={ref} className="flex justify-center py-6 text-sm text-muted-foreground">
+    <div
+      ref={ref}
+      className="flex justify-center py-6 text-muted-foreground text-sm"
+    >
       {isLoading ? "Loading…" : null}
     </div>
-  );
+  )
 }
 
 export function RecipeListView({
@@ -342,31 +424,38 @@ export function RecipeListView({
   onSortChange,
   onLoadMore,
   hasMore,
-  isLoadingMore,
+  isLoadingMore
 }: {
-  recipes: RecipeListItem[];
+  recipes: RecipeListItem[]
   /** Whether the viewer can add recipes (signed in). Omitted/false hides the "New recipe" action. */
-  canCreate?: boolean;
-  LinkComponent: NavLink;
+  canCreate?: boolean
+  LinkComponent: NavLink
   /** Current sort + change handler. Omitted (e.g. a profile's recipe list) hides the sort control. */
-  sort?: Sort;
-  onSortChange?: (s: Sort) => void;
+  sort?: Sort
+  onSortChange?: (s: Sort) => void
   /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
-  onLoadMore?: () => void;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Recipes</h1>
+          <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+            Recipes
+          </h1>
           <p className="text-gray-500">{recipes.length} recipes</p>
         </div>
         <div className="flex items-center gap-2">
-          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {onSortChange ? (
+            <SortControl value={sort ?? "newest"} onChange={onSortChange} />
+          ) : null}
           {canCreate ? (
-            <LinkComponent href="/recipes/new" className={buttonClasses({ size: "sm" })}>
+            <LinkComponent
+              href="/recipes/new"
+              className={buttonClasses({ size: "sm" })}
+            >
               + New recipe
             </LinkComponent>
           ) : null}
@@ -381,30 +470,38 @@ export function RecipeListView({
               <div className={cardClass}>
                 <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
-                  <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
+                  <h3 className="truncate font-semibold font-serif text-2xl">
+                    {r.name}
+                  </h3>
+                  <p className="truncate text-muted-foreground text-sm">
+                    {r.subtitle ?? "Recipe"}
+                  </p>
                 </div>
               </div>
             </LinkComponent>
           ))}
           {onLoadMore ? (
-            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+            <InfiniteSentinel
+              hasMore={hasMore}
+              isLoading={isLoadingMore}
+              onLoadMore={onLoadMore}
+            />
           ) : null}
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** The report reasons the server accepts (safety.rs REASONS). */
-export type ReportReason = "spam" | "abuse" | "sexual" | "violence" | "other";
+export type ReportReason = "spam" | "abuse" | "sexual" | "violence" | "other"
 const REPORT_REASONS: readonly { value: ReportReason; label: string }[] = [
   { value: "spam", label: "Spam" },
   { value: "abuse", label: "Harassment or abuse" },
   { value: "sexual", label: "Sexual content" },
   { value: "violence", label: "Violence or threats" },
-  { value: "other", label: "Something else" },
-];
+  { value: "other", label: "Something else" }
+]
 
 /** Shared report dialog (App Review 1.2): pick a reason, add an optional note, submit. Used for a
  * user, a recipe, an ingredient, or a message. */
@@ -412,18 +509,18 @@ export function ReportDialog({
   open,
   onOpenChange,
   subject,
-  onSubmit,
+  onSubmit
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  open: boolean
+  onOpenChange: (v: boolean) => void
   /** What's being reported, for the title (e.g. "@bob", "this recipe"). */
-  subject: string;
-  onSubmit: (reason: ReportReason, note: string) => Promise<void>;
+  subject: string
+  onSubmit: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [reason, setReason] = useState<ReportReason>("spam");
-  const [note, setNote] = useState("");
-  const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false);
+  const [reason, setReason] = useState<ReportReason>("spam")
+  const [note, setNote] = useState("")
+  const [sending, setSending] = useState(false)
+  const [done, setDone] = useState(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -437,7 +534,10 @@ export function ReportDialog({
         </DialogHeader>
         {done ? null : (
           <div className="flex flex-col gap-3">
-            <Select value={reason} onValueChange={(v) => setReason(v as ReportReason)}>
+            <Select
+              value={reason}
+              onValueChange={(v) => setReason(v as ReportReason)}
+            >
               <SelectTrigger aria-label="Reason">
                 <SelectValue />
               </SelectTrigger>
@@ -460,23 +560,31 @@ export function ReportDialog({
         )}
         <DialogFooter>
           {done ? (
-            <button type="button" className={buttonClasses({ size: "sm" })} onClick={() => onOpenChange(false)}>
+            <button
+              type="button"
+              className={buttonClasses({ size: "sm" })}
+              onClick={() => onOpenChange(false)}
+            >
               Close
             </button>
           ) : (
             <>
-              <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+              <DialogClose
+                className={buttonClasses({ variant: "ghost", size: "sm" })}
+              >
+                Cancel
+              </DialogClose>
               <button
                 type="button"
                 disabled={sending}
                 className={buttonClasses({ size: "sm" })}
                 onClick={async () => {
-                  setSending(true);
+                  setSending(true)
                   try {
-                    await onSubmit(reason, note.trim());
-                    setDone(true);
+                    await onSubmit(reason, note.trim())
+                    setDone(true)
                   } finally {
-                    setSending(false);
+                    setSending(false)
                   }
                 }}
               >
@@ -487,7 +595,7 @@ export function ReportDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 export function ProfileView({
@@ -497,29 +605,31 @@ export function ProfileView({
   canMessage = false,
   isBlocked = false,
   onReport,
-  onToggleBlock,
+  onToggleBlock
 }: {
   /** The handle from the route — shown when no account claims it. */
-  username: string;
-  profile: ProfileVM | null;
-  LinkComponent: NavLink;
+  username: string
+  profile: ProfileVM | null
+  LinkComponent: NavLink
   /** Whether the viewer can DM this profile (signed in, and not looking at themselves). */
-  canMessage?: boolean;
+  canMessage?: boolean
   /** Whether the viewer has blocked this profile (drives the Block/Unblock label). */
-  isBlocked?: boolean;
+  isBlocked?: boolean
   /** Present ⇒ the viewer can report this user (signed in, not themselves). */
-  onReport?: (reason: ReportReason, note: string) => Promise<void>;
+  onReport?: (reason: ReportReason, note: string) => Promise<void>
   /** Present ⇒ the viewer can block/unblock this user. */
-  onToggleBlock?: () => Promise<void>;
+  onToggleBlock?: () => Promise<void>
 }) {
-  const [reportOpen, setReportOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false)
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center">
-        <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">@{username}</h1>
+        <h1 className="mb-2 font-bold font-serif text-4xl text-primary-dark">
+          @{username}
+        </h1>
         <p className="text-muted-foreground">No one goes by that handle.</p>
       </div>
-    );
+    )
   }
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -531,13 +641,17 @@ export function ProfileView({
             className="size-20 shrink-0 rounded-full object-cover"
           />
         ) : (
-          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold uppercase text-primary-dark">
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold font-serif text-3xl text-primary-dark uppercase">
             {profile.name.trim().charAt(0) || "?"}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">{profile.name}</h1>
-          <p className="truncate text-lg text-muted-foreground">@{profile.username}</p>
+          <h1 className="truncate font-bold font-serif text-4xl text-primary-dark">
+            {profile.name}
+          </h1>
+          <p className="truncate text-lg text-muted-foreground">
+            @{profile.username}
+          </p>
         </div>
         {canMessage ? (
           <LinkComponent
@@ -557,7 +671,9 @@ export function ProfileView({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {onReport ? (
-                <DropdownMenuItem onClick={() => setReportOpen(true)}>Report @{profile.username}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setReportOpen(true)}>
+                  Report @{profile.username}
+                </DropdownMenuItem>
               ) : null}
               {onToggleBlock ? (
                 <DropdownMenuItem onClick={() => void onToggleBlock()}>
@@ -584,8 +700,10 @@ export function ProfileView({
             key={label}
             className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
           >
-            <span className="text-sm font-medium text-muted-foreground">{label}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span className="font-medium text-muted-foreground text-sm">
+              {label}
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 font-semibold text-[0.65rem] text-muted-foreground uppercase tracking-wide">
               soon
             </span>
           </div>
@@ -593,8 +711,11 @@ export function ProfileView({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
-          Recipes <span className="font-normal text-muted-foreground">· {profile.recipes.length}</span>
+        <h2 className="mb-4 font-semibold font-serif text-2xl text-foreground">
+          Recipes{" "}
+          <span className="font-normal text-muted-foreground">
+            · {profile.recipes.length}
+          </span>
         </h2>
         {profile.recipes.length === 0 ? (
           <p className="text-muted-foreground">No public recipes yet.</p>
@@ -603,10 +724,18 @@ export function ProfileView({
             {profile.recipes.map((r) => (
               <LinkComponent key={r.id} href={recipeHref(r)} className="block">
                 <div className={cardClass}>
-                  <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
+                  <CardTile
+                    photoUrl={r.photoUrl}
+                    name={r.name}
+                    size="size-16"
+                  />
                   <div className="min-w-0">
-                    <h3 className="truncate font-serif text-2xl font-semibold">{r.name}</h3>
-                    <p className="truncate text-sm text-muted-foreground">{r.subtitle ?? "Recipe"}</p>
+                    <h3 className="truncate font-semibold font-serif text-2xl">
+                      {r.name}
+                    </h3>
+                    <p className="truncate text-muted-foreground text-sm">
+                      {r.subtitle ?? "Recipe"}
+                    </p>
                   </div>
                 </div>
               </LinkComponent>
@@ -616,23 +745,31 @@ export function ProfileView({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
+        <h2 className="mb-4 font-semibold font-serif text-2xl text-foreground">
           Ingredients{" "}
-          <span className="font-normal text-muted-foreground">· {profile.ingredients.length}</span>
+          <span className="font-normal text-muted-foreground">
+            · {profile.ingredients.length}
+          </span>
         </h2>
         {profile.ingredients.length === 0 ? (
           <p className="text-muted-foreground">No public ingredients yet.</p>
         ) : (
           <div className="flex flex-col gap-3">
             {profile.ingredients.map((i) => (
-              <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
+              <LinkComponent
+                key={i.id}
+                href={ingredientHref(i)}
+                className="block"
+              >
                 <div className={cardClass}>
                   <div className="size-12 shrink-0 rounded-lg bg-muted" />
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-serif text-xl font-semibold">{i.name}</h3>
+                    <h3 className="truncate font-semibold font-serif text-xl">
+                      {i.name}
+                    </h3>
                   </div>
                   {i.caloriesPer100g != null ? (
-                    <span className="shrink-0 text-sm text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground text-sm">
                       {Math.round(i.caloriesPer100g)} kcal/100g
                     </span>
                   ) : null}
@@ -643,7 +780,7 @@ export function ProfileView({
         )}
       </section>
     </div>
-  );
+  )
 }
 
 export function IngredientListView({
@@ -654,31 +791,38 @@ export function IngredientListView({
   onSortChange,
   onLoadMore,
   hasMore,
-  isLoadingMore,
+  isLoadingMore
 }: {
-  ingredients: IngredientListItem[];
+  ingredients: IngredientListItem[]
   /** Whether the viewer can add ingredients (signed in). Omitted/false hides the "New ingredient" action. */
-  canCreate?: boolean;
-  LinkComponent: NavLink;
+  canCreate?: boolean
+  LinkComponent: NavLink
   /** Current sort + change handler. Omitted hides the sort control. */
-  sort?: Sort;
-  onSortChange?: (s: Sort) => void;
+  sort?: Sort
+  onSortChange?: (s: Sort) => void
   /** Infinite scroll: when `onLoadMore` is set, a sentinel requests the next page on scroll. */
-  onLoadMore?: () => void;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Ingredients</h1>
+          <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+            Ingredients
+          </h1>
           <p className="text-gray-500">{ingredients.length} ingredients</p>
         </div>
         <div className="flex items-center gap-2">
-          {onSortChange ? <SortControl value={sort ?? "newest"} onChange={onSortChange} /> : null}
+          {onSortChange ? (
+            <SortControl value={sort ?? "newest"} onChange={onSortChange} />
+          ) : null}
           {canCreate ? (
-            <LinkComponent href="/ingredients/new" className={buttonClasses({ size: "sm" })}>
+            <LinkComponent
+              href="/ingredients/new"
+              className={buttonClasses({ size: "sm" })}
+            >
               + New ingredient
             </LinkComponent>
           ) : null}
@@ -689,13 +833,19 @@ export function IngredientListView({
       ) : (
         <div className="flex flex-col gap-4">
           {ingredients.map((i) => (
-            <LinkComponent key={i.id} href={ingredientHref(i)} className="block">
+            <LinkComponent
+              key={i.id}
+              href={ingredientHref(i)}
+              className="block"
+            >
               <div className={cardClass}>
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-serif text-2xl font-semibold">{i.name}</h3>
+                  <h3 className="truncate font-semibold font-serif text-2xl">
+                    {i.name}
+                  </h3>
                   {i.caloriesPer100g != null ? (
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-muted-foreground text-sm">
                       {Math.round(i.caloriesPer100g)} cal/100g
                     </p>
                   ) : null}
@@ -704,26 +854,36 @@ export function IngredientListView({
             </LinkComponent>
           ))}
           {onLoadMore ? (
-            <InfiniteSentinel hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={onLoadMore} />
+            <InfiniteSentinel
+              hasMore={hasMore}
+              isLoading={isLoadingMore}
+              onLoadMore={onLoadMore}
+            />
           ) : null}
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** A discreet "Report" text button for a non-owner on a detail page. */
-function ReportControl({ subject, onOpen }: { subject: string; onOpen: () => void }) {
+function ReportControl({
+  subject,
+  onOpen
+}: {
+  subject: string
+  onOpen: () => void
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-label={`Report ${subject}`}
-      className="shrink-0 text-sm text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline"
+      className="shrink-0 text-muted-foreground text-sm underline-offset-2 transition hover:text-foreground hover:underline"
     >
       Report
     </button>
-  );
+  )
 }
 
 export function RecipeDetailView({
@@ -732,46 +892,53 @@ export function RecipeDetailView({
   edit,
   onRestoreIngredient,
   onUploadPhoto,
-  onReportContent,
+  onReportContent
 }: {
-  recipe: RecipeDetailVM;
-  LinkComponent: NavLink;
+  recipe: RecipeDetailVM
+  LinkComponent: NavLink
   /** Present ⇒ the page edits in place (owner). Absent ⇒ read-only, unchanged from before. */
-  edit?: RecipeEditAdapter;
+  edit?: RecipeEditAdapter
   /** Un-deletes a tombstoned ingredient (the greyed row's hover affordance). Only meaningful for
    *  the owner — shells pass it alongside `edit`. */
-  onRestoreIngredient?: (ingredientId: string) => void;
+  onRestoreIngredient?: (ingredientId: string) => void
   /** Owner affordance: upload + attach a hero photo (shells wire the media pipeline). */
-  onUploadPhoto?: (file: File) => void | Promise<void>;
+  onUploadPhoto?: (file: File) => void | Promise<void>
   /** Present ⇒ a signed-in non-owner can report this recipe (App Review 1.2). */
-  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   // LIVE nutrition: while an item's amount is scrubbed/typed, hold its in-flight grams here and
   // recompute the panel client-side (aggregateItems). Cleared on commit — the refetch brings truth.
-  const [previewGrams, setPreviewGrams] = useState<{ id: string; grams: number } | null>(null);
+  const [previewGrams, setPreviewGrams] = useState<{
+    id: string
+    grams: number
+  } | null>(null)
 
   // The panel shown: the committed `recipe.nutrition`, OR — mid-scrub, when the item readings are
   // available — a live client-side aggregate with the previewed grams substituted in.
   const liveNutrition = useMemo(() => {
-    if (!previewGrams || !edit) return recipe.nutrition;
+    if (!previewGrams || !edit) return recipe.nutrition
     const rows = edit.items.map((r) =>
-      r.ingredientId === previewGrams.id ? { ...r, grams: previewGrams.grams } : r,
-    );
-    const agg = aggregateItems(rows);
-    if (!agg) return recipe.nutrition;
+      r.ingredientId === previewGrams.id
+        ? { ...r, grams: previewGrams.grams }
+        : r
+    )
+    const agg = aggregateItems(rows)
+    if (!agg) return recipe.nutrition
     // Keep the committed serving basis; only the per-100g readings + calories move live.
-    const serving = recipe.nutrition.serving;
+    const serving = recipe.nutrition.serving
     return {
       ...recipe.nutrition,
       caloriesPerServing:
-        serving?.grams != null ? (agg.caloriesPer100g * serving.grams) / 100 : agg.caloriesPer100g,
-      readings: agg.readings,
-    };
-  }, [previewGrams, edit, recipe.nutrition]);
+        serving?.grams != null
+          ? (agg.caloriesPer100g * serving.grams) / 100
+          : agg.caloriesPer100g,
+      readings: agg.readings
+    }
+  }, [previewGrams, edit, recipe.nutrition])
 
   // Page-level shortcuts (owner only). `e`/`v` drive the inline fields via their DOM markers so the
   // primitives stay the single source of their own edit state; `a`/`?`/⌘⌫ open local UI.
@@ -783,10 +950,10 @@ export function RecipeDetailView({
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
       onUndo: edit?.undo,
-      onRedo: edit?.redo,
+      onRedo: edit?.redo
     },
-    !!edit,
-  );
+    !!edit
+  )
 
   return (
     <div className="flex">
@@ -797,7 +964,10 @@ export function RecipeDetailView({
               <BreadcrumbList>
                 <BreadcrumbItem>
                   {recipe.creator ? (
-                    <LinkComponent href={`/${recipe.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                    <LinkComponent
+                      href={`/${recipe.creator}`}
+                      className="transition-colors hover:text-foreground hover:underline"
+                    >
                       @{recipe.creator}
                     </LinkComponent>
                   ) : (
@@ -806,7 +976,9 @@ export function RecipeDetailView({
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{recipe.name || "Untitled recipe"}</BreadcrumbPage>
+                  <BreadcrumbPage>
+                    {recipe.name || "Untitled recipe"}
+                  </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -830,11 +1002,19 @@ export function RecipeDetailView({
                 />
               </div>
             ) : onReportContent ? (
-              <ReportControl subject="this recipe" onOpen={() => setReportOpen(true)} />
+              <ReportControl
+                subject="this recipe"
+                onOpen={() => setReportOpen(true)}
+              />
             ) : null}
           </div>
           {onReportContent ? (
-            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this recipe" onSubmit={onReportContent} />
+            <ReportDialog
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+              subject="this recipe"
+              onSubmit={onReportContent}
+            />
           ) : null}
 
           <DetailHero
@@ -842,12 +1022,14 @@ export function RecipeDetailView({
             photoUrl={recipe.photoUrl}
             onUploadPhoto={edit ? onUploadPhoto : undefined}
             // Inline mode is the editor now — the hero no longer links to the /edit form.
-            editHref={recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined}
+            editHref={
+              recipe.canEdit && !edit ? `/recipes/${recipe.id}/edit` : undefined
+            }
             LinkComponent={LinkComponent}
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
+          <h1 className="mt-10 text-center font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
             <InlineText
               as="span"
               value={recipe.name}
@@ -877,28 +1059,43 @@ export function RecipeDetailView({
             </p>
           ) : null}
 
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Ingredients</h2>
+          <h2 className="mt-8 text-center font-bold font-serif text-xl">
+            Ingredients
+          </h2>
           <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {edit
               ? edit.items.map((row) => (
-                  <li key={row.ingredientId} className="group flex items-start gap-2">
-                    <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
+                  <li
+                    key={row.ingredientId}
+                    className="group flex items-start gap-2"
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary"
+                    />
                     <span className="min-w-0 flex-1 text-left">
                       <InlineNumber
                         value={row.grams}
                         suffix="g"
                         group="recipe-items"
                         onCommit={(n) => {
-                          setPreviewGrams(null);
-                          return edit.setItemAmount(row.ingredientId, n);
+                          setPreviewGrams(null)
+                          return edit.setItemAmount(row.ingredientId, n)
                         }}
                         onPreview={(n) =>
-                          setPreviewGrams(n == null ? null : { id: row.ingredientId, grams: n })
+                          setPreviewGrams(
+                            n == null
+                              ? null
+                              : { id: row.ingredientId, grams: n }
+                          )
                         }
                         ariaLabel={`grams for ${row.name}`}
                         className="font-medium"
                       />{" "}
-                      <LinkComponent href={row.href} className="hover:text-primary hover:underline">
+                      <LinkComponent
+                        href={row.href}
+                        className="hover:text-primary hover:underline"
+                      >
                         {row.name}
                       </LinkComponent>
                     </span>
@@ -921,13 +1118,21 @@ export function RecipeDetailView({
                       className="group flex items-start gap-2"
                       title="Ingredient was deleted — restore?"
                     >
-                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-                      <span className="text-left text-muted-foreground/60 line-through">{item.label}</span>
+                      <span
+                        aria-hidden
+                        className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                      />
+                      <span className="text-left text-muted-foreground/60 line-through">
+                        {item.label}
+                      </span>
                       {onRestoreIngredient && item.ingredientId ? (
                         <button
                           type="button"
-                          onClick={() => onRestoreIngredient(item.ingredientId!)}
-                          className="rounded px-1.5 py-0.5 text-xs font-medium text-primary opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover:opacity-100"
+                          onClick={() =>
+                            item.ingredientId &&
+                            onRestoreIngredient(item.ingredientId)
+                          }
+                          className="rounded px-1.5 py-0.5 font-medium text-primary text-xs opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover:opacity-100"
                         >
                           Restore
                         </button>
@@ -935,21 +1140,33 @@ export function RecipeDetailView({
                     </li>
                   ) : (
                     <li key={item.key} className="flex items-start gap-2">
-                      <span aria-hidden className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary" />
-                      <LinkComponent href={item.href} className="text-left hover:text-primary hover:underline">
+                      <span
+                        aria-hidden
+                        className="mt-[0.55rem] size-1.5 shrink-0 rounded-full bg-primary"
+                      />
+                      <LinkComponent
+                        href={item.href}
+                        className="text-left hover:text-primary hover:underline"
+                      >
                         {item.label}
                       </LinkComponent>
                     </li>
-                  ),
+                  )
                 )}
             {edit ? (
               <li className="col-span-full">
-                <AddIngredientRow open={addOpen} onOpenChange={setAddOpen} edit={edit} />
+                <AddIngredientRow
+                  open={addOpen}
+                  onOpenChange={setAddOpen}
+                  edit={edit}
+                />
               </li>
             ) : null}
           </ul>
 
-          <h2 className="mt-8 text-center font-serif text-xl font-bold">Directions</h2>
+          <h2 className="mt-8 text-center font-bold font-serif text-xl">
+            Directions
+          </h2>
           <InlineTextarea
             value={recipe.directions ?? ""}
             onCommit={edit?.setDirections}
@@ -960,7 +1177,7 @@ export function RecipeDetailView({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={liveNutrition} />
           <DetailRailFooter LinkComponent={LinkComponent} />
@@ -981,56 +1198,56 @@ export function RecipeDetailView({
         </>
       ) : null}
     </div>
-  );
+  )
 }
 
 function queryClick(selector: string) {
-  document.querySelector<HTMLElement>(selector)?.click();
+  document.querySelector<HTMLElement>(selector)?.click()
 }
 function queryFocus(selector: string) {
-  document.querySelector<HTMLElement>(selector)?.focus();
+  document.querySelector<HTMLElement>(selector)?.focus()
 }
 
 /** The ghost "+ add ingredient" row → inline type-to-search → pick attaches with a default amount. */
 function AddIngredientRow({
   open,
   onOpenChange,
-  edit,
+  edit
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  edit: RecipeEditAdapter;
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  edit: RecipeEditAdapter
 }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<IngredientSearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<IngredientSearchItem[]>([])
+  const [searching, setSearching] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) inputRef.current?.focus()
     else {
-      setQuery("");
-      setResults([]);
+      setQuery("")
+      setResults([])
     }
-  }, [open]);
+  }, [open])
 
   useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    setSearching(true);
+    if (!open) return
+    let alive = true
+    setSearching(true)
     const t = setTimeout(async () => {
       try {
-        const r = await edit.search(query);
-        if (alive) setResults(r);
+        const r = await edit.search(query)
+        if (alive) setResults(r)
       } finally {
-        if (alive) setSearching(false);
+        if (alive) setSearching(false)
       }
-    }, 250);
+    }, 250)
     return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [query, open, edit]);
+      alive = false
+      clearTimeout(t)
+    }
+  }, [query, open, edit])
 
   if (!open) {
     return (
@@ -1042,7 +1259,7 @@ function AddIngredientRow({
         <Plus className="size-4" />
         Add ingredient
       </button>
-    );
+    )
   }
 
   return (
@@ -1055,15 +1272,19 @@ function AddIngredientRow({
         aria-label="Search ingredients to add"
         className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
         onKeyDown={(e) => {
-          if (e.key === "Escape") onOpenChange(false);
+          if (e.key === "Escape") onOpenChange(false)
         }}
       />
       {query ? (
         <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
           {searching ? (
-            <li className="px-2 py-1.5 text-sm text-muted-foreground">Searching…</li>
+            <li className="px-2 py-1.5 text-muted-foreground text-sm">
+              Searching…
+            </li>
           ) : results.length === 0 ? (
-            <li className="px-2 py-1.5 text-sm text-muted-foreground">No matches.</li>
+            <li className="px-2 py-1.5 text-muted-foreground text-sm">
+              No matches.
+            </li>
           ) : (
             results.map((r) => (
               <li key={r.id}>
@@ -1071,9 +1292,9 @@ function AddIngredientRow({
                   type="button"
                   className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
                   onClick={async () => {
-                    await edit.addItem(r);
-                    setQuery("");
-                    inputRef.current?.focus();
+                    await edit.addItem(r)
+                    setQuery("")
+                    inputRef.current?.focus()
                   }}
                 >
                   {r.name}
@@ -1084,7 +1305,7 @@ function AddIngredientRow({
         </ul>
       ) : null}
     </div>
-  );
+  )
 }
 
 /** Page ⋯ menu (owner): undo/redo, delete, discard (drafts only), shortcuts. */
@@ -1096,16 +1317,16 @@ function RecipeOverflowMenu({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  isDraft?: boolean;
-  onDelete: () => void;
-  onDiscard?: () => Promise<void>;
-  onHelp: () => void;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  isDraft?: boolean
+  onDelete: () => void
+  onDiscard?: () => Promise<void>
+  onHelp: () => void
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1116,9 +1337,16 @@ function RecipeOverflowMenu({
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        <UndoRedoItems
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
         {isDraft && onDiscard ? (
-          <DropdownMenuItem onClick={() => void onDiscard()}>Discard draft</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void onDiscard()}>
+            Discard draft
+          </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
         <DropdownMenuItem
@@ -1129,7 +1357,7 @@ function RecipeOverflowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }
 
 /** Shared Undo/Redo menu rows (with their shortcut hints), disabled when nothing to undo/redo. */
@@ -1137,41 +1365,45 @@ function UndoRedoItems({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
-  if (!undo && !redo) return null;
+  if (!undo && !redo) return null
   return (
     <>
       <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
         Undo
-        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘Z</span>
+        <span className="ml-auto pl-6 font-mono text-muted-foreground text-xs">
+          ⌘Z
+        </span>
       </DropdownMenuItem>
       <DropdownMenuItem disabled={!canRedo} onClick={() => redo?.()}>
         Redo
-        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">⌘⇧Z</span>
+        <span className="ml-auto pl-6 font-mono text-muted-foreground text-xs">
+          ⌘⇧Z
+        </span>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
     </>
-  );
+  )
 }
 
 function DeleteRecipeDialog({
   open,
   onOpenChange,
   name,
-  onConfirm,
+  onConfirm
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  name: string;
-  onConfirm: () => Promise<void>;
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  name: string
+  onConfirm: () => Promise<void>
 }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -1180,17 +1412,21 @@ function DeleteRecipeDialog({
           <DialogDescription>This can’t be undone.</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <DialogClose className={buttonClasses({ variant: "outline", size: "sm" })}>Cancel</DialogClose>
+          <DialogClose
+            className={buttonClasses({ variant: "outline", size: "sm" })}
+          >
+            Cancel
+          </DialogClose>
           <button
             type="button"
             disabled={busy}
             className={buttonClasses({ variant: "destructive", size: "sm" })}
             onClick={async () => {
-              setBusy(true);
+              setBusy(true)
               try {
-                await onConfirm();
+                await onConfirm()
               } finally {
-                setBusy(false);
+                setBusy(false)
               }
             }}
           >
@@ -1199,17 +1435,17 @@ function DeleteRecipeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 function ShortcutSheet({
   open,
   onOpenChange,
-  shortcuts = DETAIL_SHORTCUTS,
+  shortcuts = DETAIL_SHORTCUTS
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  shortcuts?: readonly { keys: string; label: string }[];
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  shortcuts?: readonly { keys: string; label: string }[]
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1219,7 +1455,10 @@ function ShortcutSheet({
         </DialogHeader>
         <ul className="divide-y divide-border">
           {shortcuts.map((s) => (
-            <li key={s.keys} className="flex items-center justify-between py-2 text-sm">
+            <li
+              key={s.keys}
+              className="flex items-center justify-between py-2 text-sm"
+            >
               <span className="text-muted-foreground">{s.label}</span>
               <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
                 {s.keys}
@@ -1229,25 +1468,25 @@ function ShortcutSheet({
         </ul>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
 
 export function IngredientDetailView({
   ingredient,
   LinkComponent,
   edit,
-  onReportContent,
+  onReportContent
 }: {
-  ingredient: IngredientDetailVM;
-  LinkComponent: NavLink;
+  ingredient: IngredientDetailVM
+  LinkComponent: NavLink
   /** Present ⇒ inline editor (owner). Absent ⇒ read-only, unchanged from before. */
-  edit?: IngredientEditAdapter;
+  edit?: IngredientEditAdapter
   /** Present ⇒ a signed-in non-owner can report this ingredient (App Review 1.2). */
-  onReportContent?: (reason: ReportReason, note: string) => Promise<void>;
+  onReportContent?: (reason: ReportReason, note: string) => Promise<void>
 }) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
 
   useDetailShortcuts(
     {
@@ -1256,10 +1495,10 @@ export function IngredientDetailView({
       onHelp: () => setHelpOpen((v) => !v),
       onDelete: () => setDeleteOpen(true),
       onUndo: edit?.undo,
-      onRedo: edit?.redo,
+      onRedo: edit?.redo
     },
-    !!edit,
-  );
+    !!edit
+  )
 
   return (
     <div className="flex">
@@ -1270,7 +1509,10 @@ export function IngredientDetailView({
               <BreadcrumbList>
                 <BreadcrumbItem>
                   {ingredient.creator ? (
-                    <LinkComponent href={`/${ingredient.creator}`} className="transition-colors hover:text-foreground hover:underline">
+                    <LinkComponent
+                      href={`/${ingredient.creator}`}
+                      className="transition-colors hover:text-foreground hover:underline"
+                    >
                       @{ingredient.creator}
                     </LinkComponent>
                   ) : (
@@ -1279,14 +1521,16 @@ export function IngredientDetailView({
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{ingredient.name || "Untitled"}</BreadcrumbPage>
+                  <BreadcrumbPage>
+                    {ingredient.name || "Untitled"}
+                  </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
             {ingredient.deleted ? (
               <span
                 title="Deleted by its creator — recipes that already use it keep working."
-                className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 font-medium text-muted-foreground text-xs"
               >
                 Deleted
               </span>
@@ -1309,21 +1553,33 @@ export function IngredientDetailView({
                 />
               </div>
             ) : onReportContent ? (
-              <ReportControl subject="this ingredient" onOpen={() => setReportOpen(true)} />
+              <ReportControl
+                subject="this ingredient"
+                onOpen={() => setReportOpen(true)}
+              />
             ) : null}
           </div>
           {onReportContent ? (
-            <ReportDialog open={reportOpen} onOpenChange={setReportOpen} subject="this ingredient" onSubmit={onReportContent} />
+            <ReportDialog
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+              subject="this ingredient"
+              onSubmit={onReportContent}
+            />
           ) : null}
 
           <DetailHero
             label="Ingredient Image"
-            editHref={ingredient.canEdit && !edit ? `/ingredients/${ingredient.id}/edit` : undefined}
+            editHref={
+              ingredient.canEdit && !edit
+                ? `/ingredients/${ingredient.id}/edit`
+                : undefined
+            }
             LinkComponent={LinkComponent}
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
+          <h1 className="mt-10 text-center font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
             <InlineText
               as="span"
               value={ingredient.name}
@@ -1335,7 +1591,9 @@ export function IngredientDetailView({
               inputClassName="text-center"
             />
           </h1>
-          <h2 className="mt-6 text-center font-serif text-xl font-bold">Information</h2>
+          <h2 className="mt-6 text-center font-bold font-serif text-xl">
+            Information
+          </h2>
           <InlineTextarea
             value={ingredient.description ?? ""}
             onCommit={edit?.setDescription}
@@ -1346,7 +1604,7 @@ export function IngredientDetailView({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={ingredient.nutrition} />
           <DetailRailFooter LinkComponent={LinkComponent} />
@@ -1363,11 +1621,15 @@ export function IngredientDetailView({
             name={ingredient.name || "this ingredient"}
             onConfirm={edit.remove}
           />
-          <ShortcutSheet open={helpOpen} onOpenChange={setHelpOpen} shortcuts={INGREDIENT_SHORTCUTS} />
+          <ShortcutSheet
+            open={helpOpen}
+            onOpenChange={setHelpOpen}
+            shortcuts={INGREDIENT_SHORTCUTS}
+          />
         </>
       ) : null}
     </div>
-  );
+  )
 }
 
 /** Page ⋯ menu for an ingredient (owner): undo/redo, shortcuts, delete. */
@@ -1377,14 +1639,14 @@ function IngredientOverflowMenu({
   undo,
   redo,
   canUndo,
-  canRedo,
+  canRedo
 }: {
-  onDelete: () => void;
-  onHelp: () => void;
-  undo?: () => void;
-  redo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  onDelete: () => void
+  onHelp: () => void
+  undo?: () => void
+  redo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1395,7 +1657,12 @@ function IngredientOverflowMenu({
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <UndoRedoItems undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+        <UndoRedoItems
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
         <DropdownMenuItem onClick={onHelp}>Keyboard shortcuts</DropdownMenuItem>
         <DropdownMenuItem
           onClick={onDelete}
@@ -1405,48 +1672,62 @@ function IngredientOverflowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }
 
-function ResultRow({ name, sub, href, LinkComponent }: { name: string; sub: string; href: string; LinkComponent: NavLink }) {
+function ResultRow({
+  name,
+  sub,
+  href,
+  LinkComponent
+}: {
+  name: string
+  sub: string
+  href: string
+  LinkComponent: NavLink
+}) {
   return (
     <LinkComponent href={href} className="block">
       <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
         <div className="size-12 shrink-0 rounded-lg bg-muted" />
         <div className="min-w-0">
-          <h3 className="truncate font-serif text-xl font-semibold">{name}</h3>
-          <p className="truncate text-sm text-muted-foreground">{sub}</p>
+          <h3 className="truncate font-semibold font-serif text-xl">{name}</h3>
+          <p className="truncate text-muted-foreground text-sm">{sub}</p>
         </div>
       </div>
     </LinkComponent>
-  );
+  )
 }
 
 export function SearchResultsView({
   query,
   recipes,
   ingredients,
-  LinkComponent,
+  LinkComponent
 }: {
-  query: string;
-  recipes: RecipeListItem[];
-  ingredients: IngredientListItem[];
-  LinkComponent: NavLink;
+  query: string
+  recipes: RecipeListItem[]
+  ingredients: IngredientListItem[]
+  LinkComponent: NavLink
 }) {
-  const total = recipes.length + ingredients.length;
+  const total = recipes.length + ingredients.length
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Search</h1>
+      <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+        Search
+      </h1>
       <p className="mb-8 text-gray-500">
         {total} {total === 1 ? "result" : "results"} for “{query}”
       </p>
       {total === 0 ? (
-        <p className="text-muted-foreground">No recipes or ingredients match.</p>
+        <p className="text-muted-foreground">
+          No recipes or ingredients match.
+        </p>
       ) : (
         <div className="space-y-8">
           {recipes.length > 0 && (
             <section>
-              <h2 className="mb-3 font-serif text-xl font-bold">Recipes</h2>
+              <h2 className="mb-3 font-bold font-serif text-xl">Recipes</h2>
               <div className="flex flex-col gap-3">
                 {recipes.map((r) => (
                   <ResultRow
@@ -1462,13 +1743,17 @@ export function SearchResultsView({
           )}
           {ingredients.length > 0 && (
             <section>
-              <h2 className="mb-3 font-serif text-xl font-bold">Ingredients</h2>
+              <h2 className="mb-3 font-bold font-serif text-xl">Ingredients</h2>
               <div className="flex flex-col gap-3">
                 {ingredients.map((i) => (
                   <ResultRow
                     key={i.id}
                     name={i.name}
-                    sub={i.caloriesPer100g != null ? `${Math.round(i.caloriesPer100g)} cal/100g` : "Ingredient"}
+                    sub={
+                      i.caloriesPer100g != null
+                        ? `${Math.round(i.caloriesPer100g)} cal/100g`
+                        : "Ingredient"
+                    }
                     href={ingredientHref(i)}
                     LinkComponent={LinkComponent}
                   />
@@ -1479,25 +1764,31 @@ export function SearchResultsView({
         </div>
       )}
     </div>
-  );
+  )
 }
 
-export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password: string) => Promise<void> }) {
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [password, setPassword] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function SettingsView({
+  onDeleteAccount
+}: {
+  onDeleteAccount?: (password: string) => Promise<void>
+}) {
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [password, setPassword] = useState("")
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">Settings</h1>
+      <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+        Settings
+      </h1>
       <p className="mb-8 text-gray-500">Preferences for this account</p>
 
       <section>
-        <h2 className="mb-3 font-serif text-xl font-bold">Appearance</h2>
+        <h2 className="mb-3 font-bold font-serif text-xl">Appearance</h2>
         <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <p className="font-semibold">Theme</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Match your system, or always use light or dark.
             </p>
           </div>
@@ -1507,22 +1798,28 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
 
       {onDeleteAccount ? (
         <section className="mt-10">
-          <h2 className="mb-3 font-serif text-xl font-bold text-destructive">Danger zone</h2>
+          <h2 className="mb-3 font-bold font-serif text-destructive text-xl">
+            Danger zone
+          </h2>
           <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-destructive/30 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="min-w-0">
               <p className="font-semibold">Delete account</p>
-              <p className="text-sm text-muted-foreground">
-                Permanently delete your account and your recipes. Ingredients others cook with become
-                part of the shared catalog. This can't be undone.
+              <p className="text-muted-foreground text-sm">
+                Permanently delete your account and your recipes. Ingredients
+                others cook with become part of the shared catalog. This can't
+                be undone.
               </p>
             </div>
             <button
               type="button"
-              className={cn(buttonClasses({ variant: "ghost", size: "sm" }), "shrink-0 text-destructive ring-1 ring-destructive/40")}
+              className={cn(
+                buttonClasses({ variant: "ghost", size: "sm" }),
+                "shrink-0 text-destructive ring-1 ring-destructive/40"
+              )}
               onClick={() => {
-                setError(null);
-                setPassword("");
-                setDeleteOpen(true);
+                setError(null)
+                setPassword("")
+                setDeleteOpen(true)
               }}
             >
               Delete account
@@ -1533,8 +1830,8 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
               <DialogHeader>
                 <DialogTitle>Delete your account?</DialogTitle>
                 <DialogDescription>
-                  This permanently deletes your account, sessions, and messages, and removes your
-                  recipes. Enter your password to confirm.
+                  This permanently deletes your account, sessions, and messages,
+                  and removes your recipes. Enter your password to confirm.
                 </DialogDescription>
               </DialogHeader>
               <input
@@ -1545,22 +1842,31 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-border bg-transparent p-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               />
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {error ? (
+                <p className="text-destructive text-sm">{error}</p>
+              ) : null}
               <DialogFooter>
-                <DialogClose className={buttonClasses({ variant: "ghost", size: "sm" })}>Cancel</DialogClose>
+                <DialogClose
+                  className={buttonClasses({ variant: "ghost", size: "sm" })}
+                >
+                  Cancel
+                </DialogClose>
                 <button
                   type="button"
                   disabled={deleting || !password}
-                  className={cn(buttonClasses({ size: "sm" }), "bg-destructive text-destructive-foreground")}
+                  className={cn(
+                    buttonClasses({ size: "sm" }),
+                    "bg-destructive text-destructive-foreground"
+                  )}
                   onClick={async () => {
-                    setDeleting(true);
-                    setError(null);
+                    setDeleting(true)
+                    setError(null)
                     try {
-                      await onDeleteAccount(password);
+                      await onDeleteAccount(password)
                     } catch {
-                      setError("That password didn't match. Please try again.");
+                      setError("That password didn't match. Please try again.")
                     } finally {
-                      setDeleting(false);
+                      setDeleting(false)
                     }
                   }}
                 >
@@ -1572,5 +1878,5 @@ export function SettingsView({ onDeleteAccount }: { onDeleteAccount?: (password:
         </section>
       ) : null}
     </div>
-  );
+  )
 }

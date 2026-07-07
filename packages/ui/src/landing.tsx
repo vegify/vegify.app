@@ -1,9 +1,10 @@
-import { ArrowRight, Layers, Laptop, Search } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { buttonClasses } from "./button";
-import { SIGNUPS_ENABLED } from "./auth-form";
-import type { NavLink } from "./screens";
-import { VegifyLogo } from "./vegify-logo";
+import type { CSSProperties, ReactNode } from "react"
+import { ArrowRight, Laptop, Layers, Search } from "lucide-react"
+
+import { SIGNUPS_ENABLED } from "./auth-form"
+import { buttonClasses } from "./button"
+import type { NavLink } from "./screens"
+import { VegifyLogo } from "./vegify-logo"
 
 /**
  * LANDING — the public, unauthenticated marketing page rendered at "/" for logged-out
@@ -18,7 +19,7 @@ import { VegifyLogo } from "./vegify-logo";
  * Web-only: the desktop app is a signed-in native shell and never renders this.
  */
 
-type Nutrient = { name: string; dv: number; color: string; low?: boolean };
+type Nutrient = { name: string; dv: number; color: string; low?: boolean }
 
 // Illustrative %DV for one serving of a hearty plant-based bowl. The story is the point:
 // plant foods cover iron/folate/magnesium well and run short on B12 and vitamin D — exactly
@@ -31,25 +32,26 @@ const SAMPLE: Nutrient[] = [
   { name: "Calcium", dv: 26, color: "var(--color-orange)" },
   { name: "Potassium", dv: 22, color: "var(--color-yellow)" },
   { name: "Vitamin B12", dv: 4, color: "var(--color-magenta)", low: true },
-  { name: "Vitamin D", dv: 2, color: "var(--color-magenta)", low: true },
-];
+  { name: "Vitamin D", dv: 2, color: "var(--color-magenta)", low: true }
+]
 
 const MOTION_CSS = `
 @media (prefers-reduced-motion: no-preference) {
   .vg-rise { opacity: 0; animation: vg-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
 }
 @keyframes vg-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-`;
+`
 
 export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
   // Signups are gated (invite-only) right now, so the primary action is Sign in. When signups
   // open, the primary flips to Get started (/signup) and Sign in becomes the secondary — two
   // distinct intents. The same "Sign in" label is reused in nav + footer (one label per intent).
-  const primaryHref = SIGNUPS_ENABLED ? "/signup" : "/login";
-  const primaryLabel = SIGNUPS_ENABLED ? "Get started" : "Sign in";
+  const primaryHref = SIGNUPS_ENABLED ? "/signup" : "/login"
+  const primaryLabel = SIGNUPS_ENABLED ? "Get started" : "Sign in"
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: MOTION_CSS is a local constant stylesheet; no user input reaches it */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
       <JsonLd />
 
@@ -65,7 +67,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         <nav className="flex items-center gap-2 sm:gap-4">
           <LinkComponent
             href="/login"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="rounded-lg px-3 py-2 font-medium text-muted-foreground text-sm transition-colors hover:text-foreground"
           >
             Sign in
           </LinkComponent>
@@ -73,7 +75,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
             <LinkComponent
               href="/signup"
               className={buttonClasses({
-                className: "h-9 rounded-lg px-4 text-sm font-semibold",
+                className: "h-9 rounded-lg px-4 font-semibold text-sm"
               })}
             >
               Get started
@@ -87,19 +89,19 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         <section className="mx-auto grid max-w-7xl items-center gap-12 px-5 pt-10 pb-20 sm:px-8 md:pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
           <div>
             <p
-              className="vg-rise text-sm font-semibold tracking-wide text-primary uppercase"
+              className="vg-rise font-semibold text-primary text-sm uppercase tracking-wide"
               style={{ animationDelay: "0ms" }}
             >
               Plant-based micronutrition
             </p>
             <h1
-              className="vg-rise mt-4 font-serif text-4xl leading-[1.05] font-bold text-balance text-primary-dark sm:text-5xl lg:text-6xl"
+              className="vg-rise mt-4 text-balance font-bold font-serif text-4xl text-primary-dark leading-[1.05] sm:text-5xl lg:text-6xl"
               style={{ animationDelay: "60ms" }}
             >
               Know exactly what your plants are feeding you.
             </h1>
             <p
-              className="vg-rise mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground"
+              className="vg-rise mt-6 max-w-xl text-lg text-muted-foreground leading-relaxed"
               style={{ animationDelay: "120ms" }}
             >
               Vegify tracks the vitamins and minerals in every plant-based
@@ -113,7 +115,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                 href={primaryHref}
                 className={buttonClasses({
                   className:
-                    "h-12 gap-2 rounded-xl px-6 text-base font-semibold sm:text-lg [&_svg]:size-5",
+                    "h-12 gap-2 rounded-xl px-6 font-semibold text-base sm:text-lg [&_svg]:size-5"
                 })}
               >
                 {primaryLabel}
@@ -124,7 +126,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                 className={buttonClasses({
                   variant: "outline",
                   className:
-                    "h-12 rounded-xl px-6 text-base font-medium sm:text-lg",
+                    "h-12 rounded-xl px-6 font-medium text-base sm:text-lg"
                 })}
               >
                 See how it works
@@ -148,14 +150,14 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         >
           <h2
             id="features-heading"
-            className="max-w-2xl font-serif text-3xl font-bold text-balance text-primary-dark sm:text-4xl"
+            className="max-w-2xl text-balance font-bold font-serif text-3xl text-primary-dark sm:text-4xl"
           >
             More than a calorie counter.
           </h2>
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {/* Large tinted cell — the differentiator, with real nutrient chips */}
             <article className="relative overflow-hidden rounded-2xl bg-primary/5 p-7 ring-1 ring-primary/15 lg:col-span-2 lg:p-9">
-              <h3 className="font-serif text-2xl font-semibold">
+              <h3 className="font-semibold font-serif text-2xl">
                 The micronutrients that matter
               </h3>
               <p className="mt-3 max-w-lg text-muted-foreground">
@@ -172,15 +174,15 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
                   "Folate",
                   "Magnesium",
                   "Omega-3",
-                  "Vitamin D",
+                  "Vitamin D"
                 ].map((n, i) => (
                   <li
                     key={n}
-                    className="rounded-full px-3.5 py-1.5 text-sm font-medium text-foreground ring-1"
+                    className="rounded-full px-3.5 py-1.5 font-medium text-foreground text-sm ring-1"
                     style={
                       {
                         backgroundColor: `color-mix(in oklab, ${CHIP_COLORS[i]} 14%, transparent)`,
-                        "--tw-ring-color": `color-mix(in oklab, ${CHIP_COLORS[i]} 40%, transparent)`,
+                        "--tw-ring-color": `color-mix(in oklab, ${CHIP_COLORS[i]} 40%, transparent)`
                       } as CSSProperties
                     }
                   >
@@ -213,7 +215,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         {/* ---- Nesting spotlight: the unique domain model, made concrete ---- */}
         <section
           aria-labelledby="nesting-heading"
-          className="border-y border-border bg-muted/40"
+          className="border-border border-y bg-muted/40"
         >
           <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-2 lg:gap-16">
             <div>
@@ -222,11 +224,11 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
               </span>
               <h2
                 id="nesting-heading"
-                className="mt-3 font-serif text-3xl font-bold text-balance text-primary-dark sm:text-4xl"
+                className="mt-3 text-balance font-bold font-serif text-3xl text-primary-dark sm:text-4xl"
               >
                 A recipe is an ingredient.
               </h2>
-              <p className="mt-5 max-w-lg text-lg leading-relaxed text-muted-foreground">
+              <p className="mt-5 max-w-lg text-lg text-muted-foreground leading-relaxed">
                 Build a base once, then cook it into the next recipe. A biga
                 becomes pizza dough. The dough becomes a Friday night pizza.
                 Nutrition rolls up through every layer, so you never re-enter an
@@ -239,7 +241,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
 
         {/* ---- Closing CTA ---- */}
         <section className="mx-auto max-w-7xl px-5 py-20 text-center sm:px-8 sm:py-28">
-          <h2 className="mx-auto max-w-2xl font-serif text-3xl font-bold text-balance text-primary-dark sm:text-4xl">
+          <h2 className="mx-auto max-w-2xl text-balance font-bold font-serif text-3xl text-primary-dark sm:text-4xl">
             Cook with the full picture.
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
@@ -250,7 +252,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
               href={primaryHref}
               className={buttonClasses({
                 className:
-                  "h-12 gap-2 rounded-xl px-7 text-base font-semibold sm:text-lg [&_svg]:size-5",
+                  "h-12 gap-2 rounded-xl px-7 font-semibold text-base sm:text-lg [&_svg]:size-5"
               })}
             >
               {primaryLabel}
@@ -261,11 +263,11 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
       </main>
 
       {/* ---- Footer ---- */}
-      <footer className="border-t border-border">
+      <footer className="border-border border-t">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-5 py-10 sm:flex-row sm:items-center sm:px-8">
           <div>
             <VegifyLogo className="h-6 w-auto text-primary" />
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-muted-foreground text-sm">
               Micronutrition tracking for plant-based cooking.
             </p>
           </div>
@@ -281,7 +283,7 @@ export function LandingView({ LinkComponent }: { LinkComponent: NavLink }) {
         </div>
       </footer>
     </div>
-  );
+  )
 }
 
 // Chip accent colors, raw palette vars from packages/tokens (fixed brand hues, same in both modes).
@@ -293,29 +295,29 @@ const CHIP_COLORS = [
   "var(--color-green)",
   "var(--color-violet)",
   "var(--color-green-light)",
-  "var(--color-yellow)",
-];
+  "var(--color-yellow)"
+]
 
 function FeatureCard({
   icon,
   title,
-  children,
+  children
 }: {
-  icon: ReactNode;
-  title: string;
-  children: ReactNode;
+  icon: ReactNode
+  title: string
+  children: ReactNode
 }) {
   return (
     <article className="rounded-2xl bg-card p-7 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-primary/40">
       <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
         {icon}
       </div>
-      <h3 className="mt-4 font-serif text-xl font-semibold">{title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+      <h3 className="mt-4 font-semibold font-serif text-xl">{title}</h3>
+      <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
         {children}
       </p>
     </article>
-  );
+  )
 }
 
 /**
@@ -325,16 +327,16 @@ function FeatureCard({
 function NutrientReadout() {
   return (
     <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl ring-1 ring-foreground/10 sm:p-7">
-      <div className="flex items-baseline justify-between border-b border-border pb-3">
+      <div className="flex items-baseline justify-between border-border border-b pb-3">
         <div>
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
             Sample serving
           </p>
-          <p className="mt-1 font-serif text-xl font-semibold">
+          <p className="mt-1 font-semibold font-serif text-xl">
             Lentil &amp; tahini bowl
           </p>
         </div>
-        <p className="text-sm font-medium text-muted-foreground">480 kcal</p>
+        <p className="font-medium text-muted-foreground text-sm">480 kcal</p>
       </div>
 
       <ul className="mt-4 space-y-3">
@@ -343,7 +345,7 @@ function NutrientReadout() {
             key={n.name}
             className="grid grid-cols-[7.5rem_1fr_auto] items-center gap-3"
           >
-            <span className="text-sm font-medium">{n.name}</span>
+            <span className="font-medium text-sm">{n.name}</span>
             <span
               className="h-2 overflow-hidden rounded-full bg-muted"
               aria-hidden
@@ -354,9 +356,9 @@ function NutrientReadout() {
               />
             </span>
             {n.low ? (
-              <span className="text-xs font-semibold text-magenta">Low</span>
+              <span className="font-semibold text-magenta text-xs">Low</span>
             ) : (
-              <span className="text-sm font-semibold tabular-nums">
+              <span className="font-semibold text-sm tabular-nums">
                 {n.dv}%
               </span>
             )}
@@ -364,16 +366,16 @@ function NutrientReadout() {
         ))}
       </ul>
 
-      <p className="mt-5 border-t border-border pt-3 text-xs text-muted-foreground">
+      <p className="mt-5 border-border border-t pt-3 text-muted-foreground text-xs">
         Percent of daily value. Illustrative values.
       </p>
     </div>
-  );
+  )
 }
 
 /** Concept diagram for recipe nesting — labeled steps, not a mock screenshot. */
 function NestFlow() {
-  const steps = ["Biga", "Pizza dough", "Margherita pizza"];
+  const steps = ["Biga", "Pizza dough", "Margherita pizza"]
   return (
     <div className="rounded-2xl bg-card p-6 ring-1 ring-foreground/10 sm:p-8">
       <ol className="space-y-3">
@@ -383,7 +385,7 @@ function NestFlow() {
               className="flex items-center gap-3 rounded-xl bg-primary/5 px-4 py-3 ring-1 ring-foreground/10"
               style={{ marginLeft: `${i * 1.5}rem` }}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-serif text-sm font-bold text-primary-dark">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-bold font-serif text-primary-dark text-sm">
                 {i + 1}
               </span>
               <span className="font-medium">{s}</span>
@@ -398,11 +400,11 @@ function NestFlow() {
           </li>
         ))}
       </ol>
-      <p className="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
+      <p className="mt-5 border-border border-t pt-4 text-muted-foreground text-sm">
         Iron, calcium, and folate add up automatically.
       </p>
     </div>
-  );
+  )
 }
 
 function JsonLd() {
@@ -415,14 +417,14 @@ function JsonLd() {
         url: "https://vegify.app/",
         name: "Vegify",
         description: "Micronutrition tracking for plant-based cooking.",
-        publisher: { "@id": "https://vegify.app/#org" },
+        publisher: { "@id": "https://vegify.app/#org" }
       },
       {
         "@type": "Organization",
         "@id": "https://vegify.app/#org",
         name: "Vegify",
         url: "https://vegify.app/",
-        logo: "https://vegify.app/logo512.png",
+        logo: "https://vegify.app/logo512.png"
       },
       {
         "@type": "SoftwareApplication",
@@ -436,17 +438,18 @@ function JsonLd() {
           "Per-ingredient micronutrient tracking",
           "Recipes that nest as ingredients with rolled-up nutrition",
           "Shared catalog of ingredients and recipes",
-          "Web app and offline-capable native desktop app",
+          "Web app and offline-capable native desktop app"
         ],
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-        publisher: { "@id": "https://vegify.app/#org" },
-      },
-    ],
-  };
+        publisher: { "@id": "https://vegify.app/#org" }
+      }
+    ]
+  }
   return (
     <script
       type="application/ld+json"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD of locally built page metadata; the standard way to emit structured data
       dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
     />
-  );
+  )
 }

@@ -1,89 +1,103 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
-import { getCurrent as getCurrentDeepLinks, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import {
-  Link,
-  Outlet,
-  RouterProvider,
-  createHashHistory,
-  createRootRouteWithContext,
-  createRoute,
-  createRouter,
-  useNavigate,
-  useParams,
-  useRouter,
-  useRouterState,
-} from '@tanstack/react-router'
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState
+} from "react"
 import {
+  infiniteQueryOptions,
   QueryClient,
   QueryClientProvider,
-  infiniteQueryOptions,
   queryOptions,
   useQuery,
   useQueryClient,
   useSuspenseInfiniteQuery,
-  useSuspenseQuery,
-} from '@tanstack/react-query'
-import { AppShell, type AppShellLinkProps } from '@vegify/ui/app-shell'
-import { PAGE_SIZE, parseSort, type Sort } from '@vegify/ui/catalog'
+  useSuspenseQuery
+} from "@tanstack/react-query"
+import {
+  createHashHistory,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  Link,
+  Outlet,
+  RouterProvider,
+  useNavigate,
+  useParams,
+  useRouter,
+  useRouterState
+} from "@tanstack/react-router"
+import { listen } from "@tauri-apps/api/event"
+import {
+  getCurrent as getCurrentDeepLinks,
+  onOpenUrl
+} from "@tauri-apps/plugin-deep-link"
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification
+} from "@tauri-apps/plugin-notification"
+import { AppShell, type AppShellLinkProps } from "@vegify/ui/app-shell"
 import {
   EmailVerificationBanner,
   ForgotPasswordView,
   LoginView,
-  SignupView,
-} from '@vegify/ui/auth-form'
+  SignupView
+} from "@vegify/ui/auth-form"
+import { PAGE_SIZE, parseSort, type Sort } from "@vegify/ui/catalog"
+import {
+  IngredientForm,
+  type IngredientFormDefaults,
+  type IngredientFormInput
+} from "@vegify/ui/ingredient-form"
+import {
+  type ConversationSummary,
+  MessagesView,
+  ThreadView,
+  type ThreadVM
+} from "@vegify/ui/messages"
+import {
+  describeNotification,
+  NotificationsView,
+  type NotificationVM
+} from "@vegify/ui/notifications"
+import type { NutritionFactsData } from "@vegify/ui/nutrition-facts"
+import {
+  composeRecipeInput,
+  type RecipeEditState,
+  RecipeForm,
+  type RecipeFormDefaults,
+  type RecipeFormInput
+} from "@vegify/ui/recipe-form"
 import {
   HomeView,
   IngredientDetailView,
-  IngredientListView,
-  ProfileView,
-  RecipeDetailView,
-  RecipeListView,
-  SearchResultsView,
-  SettingsView,
   type IngredientDetailVM,
   type IngredientEditAdapter,
   type IngredientListItem,
+  IngredientListView,
+  ProfileView,
   type ProfileVM,
+  RecipeDetailView,
   type RecipeDetailVM,
   type RecipeEditAdapter,
   type RecipeEditRow,
   type RecipeListItem,
-} from '@vegify/ui/screens'
-import { IngredientForm, type IngredientFormDefaults, type IngredientFormInput } from '@vegify/ui/ingredient-form'
+  RecipeListView,
+  SearchResultsView,
+  SettingsView
+} from "@vegify/ui/screens"
+import { useChromeSearch } from "@vegify/ui/use-chrome-search"
+import { useEditHistory } from "@vegify/ui/use-edit-history"
+
 import {
-  RecipeForm,
-  composeRecipeInput,
-  type RecipeEditState,
-  type RecipeFormDefaults,
-  type RecipeFormInput,
-} from '@vegify/ui/recipe-form'
-import {
-  MessagesView,
-  ThreadView,
-  type ConversationSummary,
-  type ThreadVM,
-} from '@vegify/ui/messages'
-import {
-  NotificationsView,
-  describeNotification,
-  type NotificationVM,
-} from '@vegify/ui/notifications'
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from '@tauri-apps/plugin-notification'
-import { useChromeSearch } from '@vegify/ui/use-chrome-search'
-import { useEditHistory } from '@vegify/ui/use-edit-history'
-import type { NutritionFactsData } from '@vegify/ui/nutrition-facts'
-import {
-  vegifyData,
   type AuthUser,
   type IngredientEditData,
   type RecipeCard,
   type RecipeView,
-} from './bindings'
+  vegifyData
+} from "./bindings"
 
 // The desktop renders the SAME shared screens (@vegify/ui) as web, over the on-device Rust DAL
 // (vegifyData, typed IPC — no server). Like web it uses TanStack Router; the only differences are a
@@ -99,7 +113,9 @@ const num = (n: number | null) => n ?? 0
 // single-session SPA, so there's no per-request cache isolation to worry about (unlike web SSR). The
 // auto-sync pull + every mutation invalidate the relevant keys, so the screens refetch reactively
 // when the local cache changes — no router.invalidate() / manual refresh. See [[server-source-of-truth]].
-const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } }
+})
 
 // --- form helpers (shared by create + edit) ---
 const searchForForm = async (q: string) => {
@@ -109,7 +125,11 @@ const searchForForm = async (q: string) => {
     name: r.name,
     servingGrams: r.servingGrams,
     caloriesPer100g: r.caloriesPer100g,
-    readings: r.readings.map((x) => ({ name: x.name, amountPer100g: num(x.amountPer100g), unit: x.unit })),
+    readings: r.readings.map((x) => ({
+      name: x.name,
+      amountPer100g: num(x.amountPer100g),
+      unit: x.unit
+    }))
   }))
 }
 
@@ -145,64 +165,86 @@ function scheduleSync(delayMs = 1000) {
 }
 
 const saveRecipeFromForm = (input: RecipeFormInput) =>
-  vegifyData.saveRecipe({
-    id: input.id ?? null,
-    asIngredientId: null, // form never sets it; the sync pull supplies it when mirroring server rows
-    visibility: input.visibility,
-    name: input.name,
-    subtitle: input.subtitle,
-    directions: input.directions,
-    servingGrams: input.servingGrams,
-    batchGrams: input.batchGrams,
-    items: input.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams, unit: null })),
-  }).then((id) => {
-    scheduleSync()
-    return id
-  })
+  vegifyData
+    .saveRecipe({
+      id: input.id ?? null,
+      asIngredientId: null, // form never sets it; the sync pull supplies it when mirroring server rows
+      visibility: input.visibility,
+      name: input.name,
+      subtitle: input.subtitle,
+      directions: input.directions,
+      servingGrams: input.servingGrams,
+      batchGrams: input.batchGrams,
+      items: input.items.map((it) => ({
+        ingredientId: it.ingredientId,
+        grams: it.grams,
+        unit: null
+      }))
+    })
+    .then((id) => {
+      scheduleSync()
+      return id
+    })
 const saveIngredientFromForm = (input: IngredientFormInput) =>
-  vegifyData.saveIngredient({
-    id: input.id ?? null,
-    visibility: input.visibility,
-    name: input.name,
-    description: input.description,
-    price: input.price,
-    caloriesPer100g: input.caloriesPer100g,
-    servingGrams: input.servingGrams,
-    packageGrams: input.packageGrams,
-    nutrients: input.nutrients,
-  }).then((id) => {
-    scheduleSync()
-    return id
-  })
+  vegifyData
+    .saveIngredient({
+      id: input.id ?? null,
+      visibility: input.visibility,
+      name: input.name,
+      description: input.description,
+      price: input.price,
+      caloriesPer100g: input.caloriesPer100g,
+      servingGrams: input.servingGrams,
+      packageGrams: input.packageGrams,
+      nutrients: input.nutrients
+    })
+    .then((id) => {
+      scheduleSync()
+      return id
+    })
 
 // --- IPC results → shared view-models (the desktop's data adapter) ---
 // Photos are served from the server's CloudFront (not the local cache); resolve the base ONCE at
 // boot so the synchronous VM mappers can compose `<base>/<photoKey>`. Empty until resolved → the
 // card/hero placeholders show, then a post-resolve invalidate fills them in.
-let MEDIA_BASE = ''
+let MEDIA_BASE = ""
 export async function initMediaBase() {
-  MEDIA_BASE = await vegifyData.mediaBase().catch(() => '')
+  MEDIA_BASE = await vegifyData.mediaBase().catch(() => "")
 }
-const mediaUrl = (key?: string | null): string | null => (key && MEDIA_BASE ? `${MEDIA_BASE}/${key}` : null)
+const mediaUrl = (key?: string | null): string | null =>
+  key && MEDIA_BASE ? `${MEDIA_BASE}/${key}` : null
 
 const toRecipeListItem = (r: RecipeCard): RecipeListItem => ({
   id: r.id,
   name: r.name,
   subtitle: r.subtitle,
-  photoUrl: mediaUrl(r.photoKey),
+  photoUrl: mediaUrl(r.photoKey)
 })
 
 function recipeViewToNutrition(recipe: RecipeView): NutritionFactsData {
   const serving = recipe.serving
   return {
-    heading: 'This Recipe',
-    serving: serving ? { amount: num(serving.amount), unit: serving.unit ?? 'g', grams: num(serving.grams) } : null,
-    servingsPerBatch: recipe.batchGrams && serving?.grams ? recipe.batchGrams / serving.grams : null,
+    heading: "This Recipe",
+    serving: serving
+      ? {
+          amount: num(serving.amount),
+          unit: serving.unit ?? "g",
+          grams: num(serving.grams)
+        }
+      : null,
+    servingsPerBatch:
+      recipe.batchGrams && serving?.grams
+        ? recipe.batchGrams / serving.grams
+        : null,
     caloriesPerServing:
       recipe.nutrition.caloriesPer100g != null && serving?.grams
         ? (recipe.nutrition.caloriesPer100g * serving.grams) / 100
         : recipe.nutrition.caloriesPer100g,
-    readings: recipe.nutrition.readings.map((r) => ({ name: r.name, amountPer100g: num(r.amountPer100g), unit: r.unit })),
+    readings: recipe.nutrition.readings.map((r) => ({
+      name: r.name,
+      amountPer100g: num(r.amountPer100g),
+      unit: r.unit
+    }))
   }
 }
 function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
@@ -215,24 +257,43 @@ function recipeViewToVM(id: string, recipe: RecipeView): RecipeDetailVM {
     directions: recipe.directions,
     items: recipe.items.map((item) => ({
       key: item.id,
-      label: `${item.amount.amount ?? ''} ${item.amount.unit ?? ''} ${item.name}`.trim(),
-      href: item.recipeId ? `/recipes/${item.recipeId}` : `/ingredients/${item.id}`,
+      label:
+        `${item.amount.amount ?? ""} ${item.amount.unit ?? ""} ${item.name}`.trim(),
+      href: item.recipeId
+        ? `/recipes/${item.recipeId}`
+        : `/ingredients/${item.id}`,
       ingredientId: item.id,
-      deleted: item.deleted,
+      deleted: item.deleted
     })),
-    nutrition: recipeViewToNutrition(recipe),
+    nutrition: recipeViewToNutrition(recipe)
   }
 }
 function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
   const grams = data.servingGrams
   const nutrition: NutritionFactsData = {
-    heading: 'This Ingredient',
-    caloriesPerServing: data.caloriesPer100g != null ? data.caloriesPer100g * (grams ? grams / 100 : 1) : null,
-    serving: grams != null ? { amount: grams, unit: 'g', grams } : null,
-    servingsPerBatch: data.packageGrams && grams ? data.packageGrams / grams : null,
-    readings: data.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+    heading: "This Ingredient",
+    caloriesPerServing:
+      data.caloriesPer100g != null
+        ? data.caloriesPer100g * (grams ? grams / 100 : 1)
+        : null,
+    serving: grams != null ? { amount: grams, unit: "g", grams } : null,
+    servingsPerBatch:
+      data.packageGrams && grams ? data.packageGrams / grams : null,
+    readings: data.nutrients.map((n) => ({
+      name: n.name,
+      amountPer100g: num(n.amountPer100g),
+      unit: n.unit
+    }))
   }
-  return { id: data.id, name: data.name, description: data.description, canEdit: data.canEdit, deleted: data.deleted, creator: data.creator, nutrition }
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description,
+    canEdit: data.canEdit,
+    deleted: data.deleted,
+    creator: data.creator,
+    nutrition
+  }
 }
 
 // --- query definitions (the DAL reads, as queryOptions; loaders prefetch them, components read them).
@@ -241,16 +302,23 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
 type Cursor = { id: string; name: string }
 const recipesQuery = (sort: Sort) =>
   infiniteQueryOptions({
-    queryKey: ['recipes', sort],
+    queryKey: ["recipes", sort],
     queryFn: async ({ pageParam }) =>
       (
-        await vegifyData.listRecipes({ sort, cursor: pageParam?.id ?? null, cursorName: pageParam?.name ?? null, limit: PAGE_SIZE })
+        await vegifyData.listRecipes({
+          sort,
+          cursor: pageParam?.id ?? null,
+          cursorName: pageParam?.name ?? null,
+          limit: PAGE_SIZE
+        })
       ).map(toRecipeListItem),
     initialPageParam: undefined as Cursor | undefined,
     getNextPageParam: (last): Cursor | undefined => {
       const tail = last.at(-1)
-      return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
-    },
+      return !tail || last.length < PAGE_SIZE
+        ? undefined
+        : { id: tail.id, name: tail.name }
+    }
   })
 // The detail payload mirrors web's: the read VM plus, for an owner, the editable state the inline
 // editor patches (visibility/servings/item-grams) and the display rows (href from recipeId). Same
@@ -261,17 +329,20 @@ type RecipeDetailPayload = {
 }
 const recipeDetailQuery = (id: string) =>
   queryOptions({
-    queryKey: ['recipe', id],
+    queryKey: ["recipe", id],
     queryFn: async (): Promise<RecipeDetailPayload | null> => {
       const r = await vegifyData.recipe(id)
       if (!r) return null
       const vm = recipeViewToVM(id, r)
-      let edit: RecipeDetailPayload['edit'] = null
+      let edit: RecipeDetailPayload["edit"] = null
       if (r.canEdit) {
         const editData = await vegifyData.recipeForEdit(id)
         if (editData) {
           const hrefById = new Map(
-            r.items.map((it) => [it.id, it.recipeId ? `/recipes/${it.recipeId}` : `/ingredients/${it.id}`]),
+            r.items.map((it) => [
+              it.id,
+              it.recipeId ? `/recipes/${it.recipeId}` : `/ingredients/${it.id}`
+            ])
           )
           edit = {
             state: {
@@ -281,28 +352,39 @@ const recipeDetailQuery = (id: string) =>
               subtitle: editData.subtitle,
               directions: editData.directions,
               servings: editData.servings,
-              items: editData.items.map((i) => ({ ingredientId: i.ingredientId, grams: i.grams ?? 0 })),
+              items: editData.items.map((i) => ({
+                ingredientId: i.ingredientId,
+                grams: i.grams ?? 0
+              }))
             },
             rows: editData.items.map((i) => ({
               ingredientId: i.ingredientId,
               name: i.name,
               grams: i.grams ?? 0,
-              href: hrefById.get(i.ingredientId) ?? `/ingredients/${i.ingredientId}`,
+              href:
+                hrefById.get(i.ingredientId) ??
+                `/ingredients/${i.ingredientId}`,
               // Per-item readings feed the LIVE nutrition recompute (scrub/type) — same as web.
               caloriesPer100g: i.caloriesPer100g,
-              readings: i.readings.map((r) => ({ ...r, amountPer100g: r.amountPer100g ?? 0 })),
-            })),
+              readings: i.readings.map((r) => ({
+                ...r,
+                amountPer100g: r.amountPer100g ?? 0
+              }))
+            }))
           }
         }
       }
       return { vm, edit }
-    },
+    }
   })
 const recipeEditQuery = (id: string) =>
-  queryOptions({ queryKey: ['recipe-edit', id], queryFn: () => vegifyData.recipeForEdit(id) })
+  queryOptions({
+    queryKey: ["recipe-edit", id],
+    queryFn: () => vegifyData.recipeForEdit(id)
+  })
 const profileQuery = (username: string) =>
   queryOptions({
-    queryKey: ['profile', username],
+    queryKey: ["profile", username],
     queryFn: async (): Promise<ProfileVM | null> => {
       const p = await vegifyData.getProfile(username)
       if (!p) return null
@@ -312,37 +394,58 @@ const profileQuery = (username: string) =>
         recipes: p.recipes.map(toRecipeListItem),
         // id-only mapping (no slug/username): the desktop links by id everywhere — offline-first,
         // no slug-resolution routes in the shell.
-        ingredients: p.ingredients.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+        ingredients: p.ingredients.map((i) => ({
+          id: i.id,
+          name: i.name,
+          caloriesPer100g: i.caloriesPer100g
+        }))
       }
-    },
+    }
   })
 const ingredientsQuery = (sort: Sort) =>
   infiniteQueryOptions({
-    queryKey: ['ingredients', sort],
+    queryKey: ["ingredients", sort],
     queryFn: async ({ pageParam }): Promise<IngredientListItem[]> =>
       (
-        await vegifyData.listIngredients({ sort, cursor: pageParam?.id ?? null, cursorName: pageParam?.name ?? null, limit: PAGE_SIZE })
-      ).map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+        await vegifyData.listIngredients({
+          sort,
+          cursor: pageParam?.id ?? null,
+          cursorName: pageParam?.name ?? null,
+          limit: PAGE_SIZE
+        })
+      ).map((i) => ({
+        id: i.id,
+        name: i.name,
+        caloriesPer100g: i.caloriesPer100g
+      })),
     initialPageParam: undefined as Cursor | undefined,
     getNextPageParam: (last): Cursor | undefined => {
       const tail = last.at(-1)
-      return !tail || last.length < PAGE_SIZE ? undefined : { id: tail.id, name: tail.name }
-    },
+      return !tail || last.length < PAGE_SIZE
+        ? undefined
+        : { id: tail.id, name: tail.name }
+    }
   })
 // Mirrors the recipe payload: the read VM plus, for an owner, the full editable data the inline
 // editor patches (a 1:1 save map — the ingredient stores everything per-100g, no derivation).
-type IngredientDetailPayload = { vm: IngredientDetailVM; edit: IngredientEditData | null }
+type IngredientDetailPayload = {
+  vm: IngredientDetailVM
+  edit: IngredientEditData | null
+}
 const ingredientDetailQuery = (id: string) =>
   queryOptions({
-    queryKey: ['ingredient', id],
+    queryKey: ["ingredient", id],
     queryFn: async (): Promise<IngredientDetailPayload | null> => {
       const d = await vegifyData.ingredient(id)
       if (!d) return null
       return { vm: ingredientEditToVM(d), edit: d.canEdit ? d : null }
-    },
+    }
   })
 const ingredientEditQuery = (id: string) =>
-  queryOptions({ queryKey: ['ingredient-edit', id], queryFn: () => vegifyData.ingredientForEdit(id) })
+  queryOptions({
+    queryKey: ["ingredient-edit", id],
+    queryFn: () => vegifyData.ingredientForEdit(id)
+  })
 
 // --- nav port: a TanStack Router <Link> (over memory history). The SAME adapter web uses. ---
 function LinkComponent({ href, ...props }: AppShellLinkProps) {
@@ -370,7 +473,7 @@ function SignInRequired({ action }: { action: string }) {
       <p className="mb-4 text-muted-foreground">Sign in to {action}.</p>
       <Link
         to="/login"
-        className="inline-flex items-center rounded-lg bg-green-dark px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+        className="inline-flex items-center rounded-lg bg-green-dark px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90"
       >
         Sign in
       </Link>
@@ -383,20 +486,37 @@ function SignInRequired({ action }: { action: string }) {
 // the next keystroke loads, so the list doesn't flicker to empty between inputs (mirrors web).
 function SearchOverlay({ query }: { query: string }) {
   const { data } = useQuery({
-    queryKey: ['search', query],
+    queryKey: ["search", query],
     queryFn: async () => {
-      const [recipes, ings] = await Promise.all([vegifyData.listRecipes({}), vegifyData.searchIngredients(query)])
+      const [recipes, ings] = await Promise.all([
+        vegifyData.listRecipes({}),
+        vegifyData.searchIngredients(query)
+      ])
       const q = query.toLowerCase()
       return {
-        recipes: recipes.filter((r) => r.name.toLowerCase().includes(q)).map(toRecipeListItem),
-        ingredients: ings.map((i) => ({ id: i.id, name: i.name, caloriesPer100g: i.caloriesPer100g })),
+        recipes: recipes
+          .filter((r) => r.name.toLowerCase().includes(q))
+          .map(toRecipeListItem),
+        ingredients: ings.map((i) => ({
+          id: i.id,
+          name: i.name,
+          caloriesPer100g: i.caloriesPer100g
+        }))
       }
     },
-    placeholderData: (prev) => prev,
+    placeholderData: (prev) => prev
   })
-  const res = data ?? { recipes: [] as RecipeListItem[], ingredients: [] as IngredientListItem[] }
+  const res = data ?? {
+    recipes: [] as RecipeListItem[],
+    ingredients: [] as IngredientListItem[]
+  }
   return (
-    <SearchResultsView query={query} recipes={res.recipes} ingredients={res.ingredients} LinkComponent={LinkComponent} />
+    <SearchResultsView
+      query={query}
+      recipes={res.recipes}
+      ingredients={res.ingredients}
+      LinkComponent={LinkComponent}
+    />
   )
 }
 
@@ -425,59 +545,66 @@ function RootChrome() {
   // Unread-DM badge. The WS push → scheduleSync → invalidateQueries() chain keeps it realtime; the
   // interval is the quiet-network fallback. Signed out there is nothing to count.
   const { data: unreadMessages } = useQuery({
-    queryKey: ['messages-unread'],
+    queryKey: ["messages-unread"],
     queryFn: () => vegifyData.messagesUnread(),
     enabled: !!auth?.user,
-    refetchInterval: 60_000,
+    refetchInterval: 60_000
   })
   const { data: unreadNotifications } = useQuery({
-    queryKey: ['notifications-unread'],
+    queryKey: ["notifications-unread"],
     queryFn: () => vegifyData.notificationsUnread(),
     enabled: !!auth?.user,
-    refetchInterval: 60_000,
+    refetchInterval: 60_000
   })
 
   useEffect(() => {
-    const focusSearch = () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
+    const focusSearch = () =>
+      document.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
       const el = e.target as HTMLElement | null
-      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable === true
-      if (meta && e.key === '1') {
+      const typing =
+        el?.tagName === "INPUT" ||
+        el?.tagName === "TEXTAREA" ||
+        el?.isContentEditable === true
+      if (meta && e.key === "1") {
         e.preventDefault()
-        setSearch('')
-        navigate({ to: '/' })
-      } else if (meta && e.key === '2') {
+        setSearch("")
+        navigate({ to: "/" })
+      } else if (meta && e.key === "2") {
         e.preventDefault()
-        setSearch('')
-        navigate({ to: '/recipes', search: { sort: 'newest' } })
-      } else if (meta && e.key === '3') {
+        setSearch("")
+        navigate({ to: "/recipes", search: { sort: "newest" } })
+      } else if (meta && e.key === "3") {
         e.preventDefault()
-        setSearch('')
-        navigate({ to: '/ingredients', search: { sort: 'newest' } })
-      } else if (meta && e.key === ',') {
+        setSearch("")
+        navigate({ to: "/ingredients", search: { sort: "newest" } })
+      } else if (meta && e.key === ",") {
         e.preventDefault()
-        setSearch('')
-        navigate({ to: '/settings' })
-      } else if (meta && e.key === '[') {
+        setSearch("")
+        navigate({ to: "/settings" })
+      } else if (meta && e.key === "[") {
         e.preventDefault()
-        setSearch('')
+        setSearch("")
         router.history.back()
-      } else if (meta && e.key === ']') {
+      } else if (meta && e.key === "]") {
         e.preventDefault()
-        setSearch('')
+        setSearch("")
         router.history.forward()
-      } else if ((meta && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) {
+      } else if (
+        (meta && e.key.toLowerCase() === "k") ||
+        (e.key === "/" && !typing)
+      ) {
         e.preventDefault()
         focusSearch()
-      } else if (e.key === 'Escape') {
-        setSearch('')
+      } else if (e.key === "Escape") {
+        setSearch("")
         ;(document.activeElement as HTMLElement | null)?.blur?.()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [navigate, router])
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [navigate, router, setSearch])
 
   // Bootstrap + keep sync flowing: an initial pull on mount (fresh sign-in or a restored session), a
   // realtime WebSocket push (the primary trigger — the Rust client emits `server-content-changed`), a
@@ -489,22 +616,22 @@ function RootChrome() {
     // WS push is the primary trigger now, so the interval drops to a 5-min net for missed pushes / WS gaps.
     const interval = setInterval(() => scheduleSync(0), 5 * 60_000)
     const onOnline = () => scheduleSync(0)
-    window.addEventListener('online', onOnline)
+    window.addEventListener("online", onOnline)
     // Realtime: pull the instant the server says content changed (another device — or our own push echo).
-    const unlisten = listen('server-content-changed', () => scheduleSync(0))
+    const unlisten = listen("server-content-changed", () => scheduleSync(0))
     // Bell events additionally refetch the badges and — when the window isn't focused — fire a native
     // OS toast for the newest unread entry (the sender's own client gets the event too, but it has no
     // unread rows, so toastNewestNotification no-ops).
-    const unlistenNotif = listen('server-notification', () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
-      queryClient.invalidateQueries({ queryKey: ['messages-unread'] })
-      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    const unlistenNotif = listen("server-notification", () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] })
+      queryClient.invalidateQueries({ queryKey: ["notifications-unread"] })
+      queryClient.invalidateQueries({ queryKey: ["messages-unread"] })
+      queryClient.invalidateQueries({ queryKey: ["conversations"] })
       if (!document.hasFocus()) void toastNewestNotification()
     })
     return () => {
       clearInterval(interval)
-      window.removeEventListener('online', onOnline)
+      window.removeEventListener("online", onOnline)
       unlisten.then((f) => f())
       unlistenNotif.then((f) => f())
     }
@@ -517,55 +644,71 @@ function RootChrome() {
       ingredientsNav
       searchValue={search}
       onSearchChange={setSearch}
-      user={auth?.user ? { name: auth.user.name, email: auth.user.email, username: auth.user.username } : undefined}
+      user={
+        auth?.user
+          ? {
+              name: auth.user.name,
+              email: auth.user.email,
+              username: auth.user.username
+            }
+          : undefined
+      }
       onSignOut={auth?.onSignOut}
       unreadMessages={unreadMessages ?? 0}
       unreadNotifications={unreadNotifications ?? 0}
     >
-      {auth?.user && !auth.user.emailVerified ? <EmailVerificationNotice email={auth.user.email} /> : null}
+      {auth?.user && !auth.user.emailVerified ? (
+        <EmailVerificationNotice email={auth.user.email} />
+      ) : null}
       {query ? <SearchOverlay query={query} /> : <Outlet />}
     </AppShell>
   )
 }
 
 // ---- routes (mirror web's route files; loaders prefetch the on-device DAL into the QueryClient) ----
-const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: RootChrome })
+const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  component: RootChrome
+})
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/',
-  component: () => <HomeView LinkComponent={LinkComponent} />,
+  path: "/",
+  component: () => <HomeView LinkComponent={LinkComponent} />
 })
 
 const recipesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/recipes',
-  validateSearch: (s: { sort?: string }): { sort: Sort } => ({ sort: parseSort(s.sort) }),
+  path: "/recipes",
+  validateSearch: (s: { sort?: string }): { sort: Sort } => ({
+    sort: parseSort(s.sort)
+  }),
   loaderDeps: ({ search }) => ({ sort: search.sort }),
-  loader: ({ context, deps }) => context.queryClient.ensureInfiniteQueryData(recipesQuery(deps.sort)),
+  loader: ({ context, deps }) =>
+    context.queryClient.ensureInfiniteQueryData(recipesQuery(deps.sort)),
   component: function RecipesList() {
     const auth = useContext(AuthContext)
     const { sort } = recipesRoute.useSearch()
     const navigate = useNavigate()
-    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery(recipesQuery(sort))
+    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+      useSuspenseInfiniteQuery(recipesQuery(sort))
     return (
       <RecipeListView
         recipes={data.pages.flat()}
         canCreate={!!auth?.user}
         LinkComponent={LinkComponent}
         sort={sort}
-        onSortChange={(s) => navigate({ to: '/recipes', search: { sort: s } })}
+        onSortChange={(s) => navigate({ to: "/recipes", search: { sort: s } })}
         onLoadMore={fetchNextPage}
         hasMore={hasNextPage}
         isLoadingMore={isFetchingNextPage}
       />
     )
-  },
+  }
 })
 
 const recipeNewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/recipes/new',
+  path: "/recipes/new",
   component: function NewRecipe() {
     const auth = useContext(AuthContext)
     const navigate = useNavigate()
@@ -577,22 +720,23 @@ const recipeNewRoute = createRoute({
           onSearch={searchForForm}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
-            await queryClient.invalidateQueries({ queryKey: ['recipes'] }) // the list gains the new recipe
-            navigate({ to: '/recipes', search: { sort: 'newest' } })
+            await queryClient.invalidateQueries({ queryKey: ["recipes"] }) // the list gains the new recipe
+            navigate({ to: "/recipes", search: { sort: "newest" } })
           }}
         />
       </div>
     )
-  },
+  }
 })
 
 const recipeDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/recipes/$recipeId',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeDetailQuery(params.recipeId)),
+  path: "/recipes/$recipeId",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(recipeDetailQuery(params.recipeId)),
   component: function RecipeDetail() {
     const auth = useContext(AuthContext)
-    const { recipeId } = useParams({ from: '/recipes/$recipeId' })
+    const { recipeId } = useParams({ from: "/recipes/$recipeId" })
     const { data } = useSuspenseQuery(recipeDetailQuery(recipeId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
@@ -602,16 +746,16 @@ const recipeDetailRoute = createRoute({
     // (commit + history before the early return to keep hook order stable.)
     const commit = async (next: RecipeEditState) => {
       const id = await saveRecipeFromForm(composeRecipeInput(next))
-      await queryClient.invalidateQueries({ queryKey: ['recipe', String(id)] })
-      await queryClient.invalidateQueries({ queryKey: ['recipes'] })
+      await queryClient.invalidateQueries({ queryKey: ["recipe", String(id)] })
+      await queryClient.invalidateQueries({ queryKey: ["recipes"] })
     }
     const history = useEditHistory(commit)
     if (!data) return <NotFound what="recipe" />
 
     const editState = data.edit?.state
-    const patch = (p: Partial<RecipeEditState>) => {
-      history.record(editState!)
-      return commit({ ...editState!, ...p })
+    const patch = (from: RecipeEditState, p: Partial<RecipeEditState>) => {
+      history.record(from)
+      return commit({ ...from, ...p })
     }
 
     const edit: RecipeEditAdapter | undefined =
@@ -619,37 +763,46 @@ const recipeDetailRoute = createRoute({
         ? {
             visibility: editState.visibility,
             items: data.edit.rows,
-            rename: (name) => patch({ name }),
-            setSubtitle: (subtitle) => patch({ subtitle: subtitle || null }),
-            setDirections: (directions) => patch({ directions: directions || null }),
-            setVisibility: (visibility) => patch({ visibility }),
+            rename: (name) => patch(editState, { name }),
+            setSubtitle: (subtitle) =>
+              patch(editState, { subtitle: subtitle || null }),
+            setDirections: (directions) =>
+              patch(editState, { directions: directions || null }),
+            setVisibility: (visibility) => patch(editState, { visibility }),
             setItemAmount: (ingredientId, grams) =>
-              patch({
+              patch(editState, {
                 items: editState.items.map((i) =>
-                  i.ingredientId === ingredientId ? { ...i, grams } : i,
-                ),
+                  i.ingredientId === ingredientId ? { ...i, grams } : i
+                )
               }),
             addItem: (ingredient) =>
-              patch({
+              patch(editState, {
                 items: [
                   ...editState.items,
-                  { ingredientId: ingredient.id, grams: ingredient.servingGrams ?? 100 },
-                ],
+                  {
+                    ingredientId: ingredient.id,
+                    grams: ingredient.servingGrams ?? 100
+                  }
+                ]
               }),
             removeItem: (ingredientId) =>
-              patch({ items: editState.items.filter((i) => i.ingredientId !== ingredientId) }),
+              patch(editState, {
+                items: editState.items.filter(
+                  (i) => i.ingredientId !== ingredientId
+                )
+              }),
             remove: async () => {
               await vegifyData.deleteRecipe(editState.id)
               scheduleSync()
-              queryClient.removeQueries({ queryKey: ['recipe', editState.id] })
-              await queryClient.invalidateQueries({ queryKey: ['recipes'] })
-              navigate({ to: '/recipes', search: { sort: 'newest' } })
+              queryClient.removeQueries({ queryKey: ["recipe", editState.id] })
+              await queryClient.invalidateQueries({ queryKey: ["recipes"] })
+              navigate({ to: "/recipes", search: { sort: "newest" } })
             },
             search: searchForForm,
             undo: () => void history.undo(editState),
             redo: () => void history.redo(editState),
             canUndo: history.canUndo,
-            canRedo: history.canRedo,
+            canRedo: history.canRedo
           }
         : undefined
 
@@ -658,8 +811,10 @@ const recipeDetailRoute = createRoute({
       ? async (ingredientId: string) => {
           await vegifyData.restoreIngredient(ingredientId)
           scheduleSync()
-          await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
-          await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
+          await queryClient.invalidateQueries({
+            queryKey: ["recipe", recipeId]
+          })
+          await queryClient.invalidateQueries({ queryKey: ["ingredients"] })
         }
       : undefined
 
@@ -671,21 +826,24 @@ const recipeDetailRoute = createRoute({
         onRestoreIngredient={onRestoreIngredient}
         onReportContent={
           auth?.user && !edit
-            ? async (reason, note) => { await vegifyData.reportContent('recipe', recipeId, reason, note) }
+            ? async (reason, note) => {
+                await vegifyData.reportContent("recipe", recipeId, reason, note)
+              }
             : undefined
         }
       />
     )
-  },
+  }
 })
 
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/$username',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(profileQuery(params.username)),
+  path: "/$username",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(profileQuery(params.username)),
   component: function Profile() {
     const auth = useContext(AuthContext)
-    const { username } = useParams({ from: '/$username' })
+    const { username } = useParams({ from: "/$username" })
     const { data: profile } = useSuspenseQuery(profileQuery(username))
     const queryClient = useQueryClient()
     const canModerate = !!auth?.user && auth.user.username !== username
@@ -695,7 +853,13 @@ const profileRoute = createRoute({
         profile={profile}
         LinkComponent={LinkComponent}
         canMessage={canModerate}
-        onReport={canModerate ? async (reason, note) => { await vegifyData.reportContent('user', username, reason, note) } : undefined}
+        onReport={
+          canModerate
+            ? async (reason, note) => {
+                await vegifyData.reportContent("user", username, reason, note)
+              }
+            : undefined
+        }
         onToggleBlock={
           canModerate
             ? async () => {
@@ -706,7 +870,7 @@ const profileRoute = createRoute({
         }
       />
     )
-  },
+  }
 })
 
 // ---- messages (1:1 DMs — online-only IPC proxies to the backend; auth required, like the web) ----
@@ -714,45 +878,51 @@ const profileRoute = createRoute({
 // shared screens' strict VM types — the usual bindings→VM transform, à la toRecipeListItem.
 
 const conversationsQuery = queryOptions({
-  queryKey: ['conversations'],
+  queryKey: ["conversations"],
   queryFn: async (): Promise<ConversationSummary[]> =>
     (await vegifyData.messageConversations()).map((c) => ({
       ...c,
       lastAt: c.lastAt ?? 0,
-      unread: c.unread ?? 0,
-    })),
+      unread: c.unread ?? 0
+    }))
 })
 
 const threadQuery = (username: string) =>
   queryOptions({
-    queryKey: ['thread', username],
+    queryKey: ["thread", username],
     queryFn: async (): Promise<ThreadVM> => {
       const t = await vegifyData.messageThread(username)
-      return { with: t.with, messages: t.messages.map((m) => ({ ...m, createdAt: m.createdAt ?? 0 })) }
+      return {
+        with: t.with,
+        messages: t.messages.map((m) => ({
+          ...m,
+          createdAt: m.createdAt ?? 0
+        }))
+      }
     },
     // The WS push already schedules a sync (which invalidates every query); this interval is the
     // fallback while a thread sits open with the network quiet.
-    refetchInterval: 15_000,
+    refetchInterval: 15_000
   })
 
 // The bell. IPC ships payload as a raw JSON string (specta has no stable JSON type) — parse here
 // into the shared screen's VM.
 const notificationsQuery = queryOptions({
-  queryKey: ['notifications'],
+  queryKey: ["notifications"],
   queryFn: async (): Promise<NotificationVM[]> =>
     (await vegifyData.notifications()).map((n) => ({
       id: n.id,
       kind: n.kind,
       payload: safeParse(n.payload),
       createdAt: n.createdAt ?? 0,
-      read: n.read,
-    })),
+      read: n.read
+    }))
 })
 
-function safeParse(raw: string): NotificationVM['payload'] {
+function safeParse(raw: string): NotificationVM["payload"] {
   try {
     const v = JSON.parse(raw)
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null
   } catch {
     return null
   }
@@ -763,7 +933,7 @@ function safeParse(raw: string): NotificationVM['payload'] {
 async function toastNewestNotification() {
   try {
     let granted = await isPermissionGranted()
-    if (!granted) granted = (await requestPermission()) === 'granted'
+    if (!granted) granted = (await requestPermission()) === "granted"
     if (!granted) return
     const rows = await vegifyData.notifications()
     const newest = rows.find((n) => !n.read)
@@ -773,7 +943,7 @@ async function toastNewestNotification() {
       kind: newest.kind,
       payload: safeParse(newest.payload),
       createdAt: newest.createdAt ?? 0,
-      read: newest.read,
+      read: newest.read
     })
     sendNotification({ title: d.title, body: d.detail })
   } catch {
@@ -783,12 +953,12 @@ async function toastNewestNotification() {
 
 const notificationsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/notifications',
+  path: "/notifications",
   component: function Notifications() {
     const auth = useContext(AuthContext)
     if (!auth?.user) return <SignInRequired action="see your notifications" />
     return <NotificationsInner />
-  },
+  }
 })
 
 function NotificationsInner() {
@@ -799,49 +969,59 @@ function NotificationsInner() {
   useEffect(() => {
     void (async () => {
       await vegifyData.notificationsMarkRead()
-      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
-      queryClient.invalidateQueries({ queryKey: ['notifications'], refetchType: 'none' })
+      queryClient.invalidateQueries({ queryKey: ["notifications-unread"] })
+      queryClient.invalidateQueries({
+        queryKey: ["notifications"],
+        refetchType: "none"
+      })
     })()
   }, [queryClient])
 
-  return <NotificationsView notifications={notifications} LinkComponent={LinkComponent} />
+  return (
+    <NotificationsView
+      notifications={notifications}
+      LinkComponent={LinkComponent}
+    />
+  )
 }
 
 const messagesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/messages',
+  path: "/messages",
   // No loader: the fetch is auth-gated, so it runs inside the component where the gate can render.
   component: function Messages() {
     const auth = useContext(AuthContext)
     if (!auth?.user) return <SignInRequired action="read your messages" />
     return <MessagesInner />
-  },
+  }
 })
 
 function MessagesInner() {
   const { data: conversations } = useSuspenseQuery(conversationsQuery)
-  return <MessagesView conversations={conversations} LinkComponent={LinkComponent} />
+  return (
+    <MessagesView conversations={conversations} LinkComponent={LinkComponent} />
+  )
 }
 
 const messageThreadRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/messages/$username',
+  path: "/messages/$username",
   component: function Thread() {
     const auth = useContext(AuthContext)
     if (!auth?.user) return <SignInRequired action="read your messages" />
     return <ThreadInner />
-  },
+  }
 })
 
 function ThreadInner() {
-  const { username } = useParams({ from: '/messages/$username' })
+  const { username } = useParams({ from: "/messages/$username" })
   const queryClient = useQueryClient()
   const { data: thread } = useSuspenseQuery(threadQuery(username))
   const [sending, setSending] = useState(false)
 
   // Opening the thread consumed unread state server-side — drop the chrome badge immediately.
   useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ['messages-unread'] })
+    queryClient.invalidateQueries({ queryKey: ["messages-unread"] })
   }, [queryClient, username])
 
   return (
@@ -853,8 +1033,10 @@ function ThreadInner() {
         setSending(true)
         try {
           await vegifyData.sendMessage({ to: username, body })
-          await queryClient.invalidateQueries({ queryKey: ['thread', username] })
-          queryClient.invalidateQueries({ queryKey: ['conversations'] })
+          await queryClient.invalidateQueries({
+            queryKey: ["thread", username]
+          })
+          queryClient.invalidateQueries({ queryKey: ["conversations"] })
         } finally {
           setSending(false)
         }
@@ -865,11 +1047,12 @@ function ThreadInner() {
 
 const recipeEditRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/recipes/$recipeId/edit',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(recipeEditQuery(params.recipeId)),
+  path: "/recipes/$recipeId/edit",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(recipeEditQuery(params.recipeId)),
   component: function EditRecipe() {
     const auth = useContext(AuthContext)
-    const { recipeId } = useParams({ from: '/recipes/$recipeId/edit' })
+    const { recipeId } = useParams({ from: "/recipes/$recipeId/edit" })
     const { data: d } = useSuspenseQuery(recipeEditQuery(recipeId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
@@ -887,8 +1070,12 @@ const recipeEditRoute = createRoute({
         name: it.name,
         grams: num(it.grams),
         caloriesPer100g: it.caloriesPer100g,
-        readings: it.readings.map((x) => ({ name: x.name, amountPer100g: num(x.amountPer100g), unit: x.unit })),
-      })),
+        readings: it.readings.map((x) => ({
+          name: x.name,
+          amountPer100g: num(x.amountPer100g),
+          unit: x.unit
+        }))
+      }))
     }
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
@@ -897,54 +1084,64 @@ const recipeEditRoute = createRoute({
           onSearch={searchForForm}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
-            await queryClient.invalidateQueries({ queryKey: ['recipes'] })
-            await queryClient.invalidateQueries({ queryKey: ['recipe', recipeId] })
-            await queryClient.invalidateQueries({ queryKey: ['recipe-edit', recipeId] })
-            navigate({ to: '/recipes/$recipeId', params: { recipeId } })
+            await queryClient.invalidateQueries({ queryKey: ["recipes"] })
+            await queryClient.invalidateQueries({
+              queryKey: ["recipe", recipeId]
+            })
+            await queryClient.invalidateQueries({
+              queryKey: ["recipe-edit", recipeId]
+            })
+            navigate({ to: "/recipes/$recipeId", params: { recipeId } })
           }}
           onDelete={async () => {
             await vegifyData.deleteRecipe(recipeId)
             scheduleSync()
-            queryClient.removeQueries({ queryKey: ['recipe', recipeId] })
-            queryClient.removeQueries({ queryKey: ['recipe-edit', recipeId] })
-            await queryClient.invalidateQueries({ queryKey: ['recipes'] })
-            navigate({ to: '/recipes', search: { sort: 'newest' } })
+            queryClient.removeQueries({ queryKey: ["recipe", recipeId] })
+            queryClient.removeQueries({ queryKey: ["recipe-edit", recipeId] })
+            await queryClient.invalidateQueries({ queryKey: ["recipes"] })
+            navigate({ to: "/recipes", search: { sort: "newest" } })
           }}
         />
       </div>
     )
-  },
+  }
 })
 
 const ingredientsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/ingredients',
-  validateSearch: (s: { sort?: string }): { sort: Sort } => ({ sort: parseSort(s.sort) }),
+  path: "/ingredients",
+  validateSearch: (s: { sort?: string }): { sort: Sort } => ({
+    sort: parseSort(s.sort)
+  }),
   loaderDeps: ({ search }) => ({ sort: search.sort }),
-  loader: ({ context, deps }) => context.queryClient.ensureInfiniteQueryData(ingredientsQuery(deps.sort)),
+  loader: ({ context, deps }) =>
+    context.queryClient.ensureInfiniteQueryData(ingredientsQuery(deps.sort)),
   component: function IngredientsList() {
     const auth = useContext(AuthContext)
     const { sort } = ingredientsRoute.useSearch()
     const navigate = useNavigate()
-    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery(ingredientsQuery(sort))
+    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+      useSuspenseInfiniteQuery(ingredientsQuery(sort))
     return (
       <IngredientListView
         ingredients={data.pages.flat()}
         canCreate={!!auth?.user}
         LinkComponent={LinkComponent}
         sort={sort}
-        onSortChange={(s) => navigate({ to: '/ingredients', search: { sort: s } })}
+        onSortChange={(s) =>
+          navigate({ to: "/ingredients", search: { sort: s } })
+        }
         onLoadMore={fetchNextPage}
         hasMore={hasNextPage}
         isLoadingMore={isFetchingNextPage}
       />
     )
-  },
+  }
 })
 
 const ingredientNewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/ingredients/new',
+  path: "/ingredients/new",
   component: function NewIngredient() {
     const auth = useContext(AuthContext)
     const navigate = useNavigate()
@@ -955,22 +1152,25 @@ const ingredientNewRoute = createRoute({
         <IngredientForm
           onSave={async (input) => {
             await saveIngredientFromForm(input)
-            await queryClient.invalidateQueries({ queryKey: ['ingredients'] }) // list gains the new item
-            navigate({ to: '/ingredients', search: { sort: 'newest' } })
+            await queryClient.invalidateQueries({ queryKey: ["ingredients"] }) // list gains the new item
+            navigate({ to: "/ingredients", search: { sort: "newest" } })
           }}
         />
       </div>
     )
-  },
+  }
 })
 
 const ingredientDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/ingredients/$ingredientId',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientDetailQuery(params.ingredientId)),
+  path: "/ingredients/$ingredientId",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(
+      ingredientDetailQuery(params.ingredientId)
+    ),
   component: function IngredientDetail() {
     const auth = useContext(AuthContext)
-    const { ingredientId } = useParams({ from: '/ingredients/$ingredientId' })
+    const { ingredientId } = useParams({ from: "/ingredients/$ingredientId" })
     const { data } = useSuspenseQuery(ingredientDetailQuery(ingredientId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
@@ -985,38 +1185,48 @@ const ingredientDetailRoute = createRoute({
         caloriesPer100g: next.caloriesPer100g,
         servingGrams: next.servingGrams,
         packageGrams: next.packageGrams,
-        nutrients: next.nutrients.map((n) => ({ name: n.name, amountPer100g: num(n.amountPer100g), unit: n.unit })),
+        nutrients: next.nutrients.map((n) => ({
+          name: n.name,
+          amountPer100g: num(n.amountPer100g),
+          unit: n.unit
+        }))
       })
-      await queryClient.invalidateQueries({ queryKey: ['ingredient', String(id)] })
-      await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-      await queryClient.invalidateQueries({ queryKey: ['recipe'] })
+      await queryClient.invalidateQueries({
+        queryKey: ["ingredient", String(id)]
+      })
+      await queryClient.invalidateQueries({ queryKey: ["ingredients"] })
+      await queryClient.invalidateQueries({ queryKey: ["recipe"] })
     }
     const history = useEditHistory(commit)
     if (!data) return <NotFound what="ingredient" />
 
     const state = data.edit
-    const patch = (p: Partial<IngredientEditData>) => {
-      history.record(state!)
-      return commit({ ...state!, ...p })
+    const patch = (
+      from: IngredientEditData,
+      p: Partial<IngredientEditData>
+    ) => {
+      history.record(from)
+      return commit({ ...from, ...p })
     }
 
     const edit: IngredientEditAdapter | undefined = state
       ? {
           visibility: state.visibility,
-          rename: (name) => patch({ name }),
-          setDescription: (description) => patch({ description: description || null }),
-          setVisibility: (visibility) => patch({ visibility }),
+          rename: (name) => patch(state, { name }),
+          setDescription: (description) =>
+            patch(state, { description: description || null }),
+          setVisibility: (visibility) => patch(state, { visibility }),
           remove: async () => {
             await vegifyData.deleteIngredient(state.id)
             scheduleSync()
-            queryClient.removeQueries({ queryKey: ['ingredient', state.id] })
-            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-            navigate({ to: '/ingredients', search: { sort: 'newest' } })
+            queryClient.removeQueries({ queryKey: ["ingredient", state.id] })
+            await queryClient.invalidateQueries({ queryKey: ["ingredients"] })
+            navigate({ to: "/ingredients", search: { sort: "newest" } })
           },
           undo: () => void history.undo(state),
           redo: () => void history.redo(state),
           canUndo: history.canUndo,
-          canRedo: history.canRedo,
+          canRedo: history.canRedo
         }
       : undefined
 
@@ -1027,21 +1237,33 @@ const ingredientDetailRoute = createRoute({
         edit={edit}
         onReportContent={
           auth?.user && !edit
-            ? async (reason, note) => { await vegifyData.reportContent('ingredient', ingredientId, reason, note) }
+            ? async (reason, note) => {
+                await vegifyData.reportContent(
+                  "ingredient",
+                  ingredientId,
+                  reason,
+                  note
+                )
+              }
             : undefined
         }
       />
     )
-  },
+  }
 })
 
 const ingredientEditRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/ingredients/$ingredientId/edit',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(ingredientEditQuery(params.ingredientId)),
+  path: "/ingredients/$ingredientId/edit",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(
+      ingredientEditQuery(params.ingredientId)
+    ),
   component: function EditIngredient() {
     const auth = useContext(AuthContext)
-    const { ingredientId } = useParams({ from: '/ingredients/$ingredientId/edit' })
+    const { ingredientId } = useParams({
+      from: "/ingredients/$ingredientId/edit"
+    })
     const { data: d } = useSuspenseQuery(ingredientEditQuery(ingredientId))
     const navigate = useNavigate()
     const queryClient = useQueryClient()
@@ -1056,8 +1278,13 @@ const ingredientEditRoute = createRoute({
       priceCents: d.price,
       servingGrams: d.servingGrams,
       packageGrams: d.packageGrams,
-      caloriesPerServing: d.caloriesPer100g != null ? d.caloriesPer100g * scale : null,
-      nutrients: d.nutrients.map((n) => ({ name: n.name, amountPerServing: num(n.amountPer100g) * scale, unit: n.unit })),
+      caloriesPerServing:
+        d.caloriesPer100g != null ? d.caloriesPer100g * scale : null,
+      nutrients: d.nutrients.map((n) => ({
+        name: n.name,
+        amountPerServing: num(n.amountPer100g) * scale,
+        unit: n.unit
+      }))
     }
     return (
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
@@ -1065,28 +1292,39 @@ const ingredientEditRoute = createRoute({
           defaults={defaults}
           onSave={async (input) => {
             await saveIngredientFromForm(input)
-            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-            await queryClient.invalidateQueries({ queryKey: ['ingredient', ingredientId] })
-            await queryClient.invalidateQueries({ queryKey: ['ingredient-edit', ingredientId] })
-            navigate({ to: '/ingredients/$ingredientId', params: { ingredientId } })
+            await queryClient.invalidateQueries({ queryKey: ["ingredients"] })
+            await queryClient.invalidateQueries({
+              queryKey: ["ingredient", ingredientId]
+            })
+            await queryClient.invalidateQueries({
+              queryKey: ["ingredient-edit", ingredientId]
+            })
+            navigate({
+              to: "/ingredients/$ingredientId",
+              params: { ingredientId }
+            })
           }}
           onDelete={async () => {
             await vegifyData.deleteIngredient(ingredientId)
             scheduleSync()
-            queryClient.removeQueries({ queryKey: ['ingredient', ingredientId] })
-            queryClient.removeQueries({ queryKey: ['ingredient-edit', ingredientId] })
-            await queryClient.invalidateQueries({ queryKey: ['ingredients'] })
-            navigate({ to: '/ingredients', search: { sort: 'newest' } })
+            queryClient.removeQueries({
+              queryKey: ["ingredient", ingredientId]
+            })
+            queryClient.removeQueries({
+              queryKey: ["ingredient-edit", ingredientId]
+            })
+            await queryClient.invalidateQueries({ queryKey: ["ingredients"] })
+            navigate({ to: "/ingredients", search: { sort: "newest" } })
           }}
         />
       </div>
     )
-  },
+  }
 })
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/settings',
+  path: "/settings",
   component: function Settings() {
     const auth = useContext(AuthContext)
     const navigate = useNavigate()
@@ -1099,35 +1337,35 @@ const settingsRoute = createRoute({
                 await vegifyData.deleteAccount(password)
                 auth.onSignOut()
                 queryClient.clear()
-                navigate({ to: '/' })
+                navigate({ to: "/" })
               }
             : undefined
         }
       />
     )
-  },
+  }
 })
 
 // /login mounts the shared auth views INSIDE the now-always-present router (the app is usable logged-out,
 // so signing in is a destination, not a gate). On success: adopt the session and return home.
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/login',
+  path: "/login",
   component: function LoginPage() {
     const auth = useContext(AuthContext)
     const navigate = useNavigate()
     useEffect(() => {
-      if (auth?.user) navigate({ to: '/' }) // already signed in — nothing to do here
+      if (auth?.user) navigate({ to: "/" }) // already signed in — nothing to do here
     }, [auth?.user, navigate])
     return (
       <AuthGate
         onAuthed={(u) => {
           auth?.onAuthed(u)
-          navigate({ to: '/' })
+          navigate({ to: "/" })
         }}
       />
     )
-  },
+  }
 })
 
 const routeTree = rootRoute.addChildren([
@@ -1145,7 +1383,7 @@ const routeTree = rootRoute.addChildren([
   messagesRoute,
   messageThreadRoute,
   notificationsRoute,
-  profileRoute,
+  profileRoute
 ])
 
 // The desktop loads the SPA from a fixed entry (tauri://localhost/index.html), so a hard webview
@@ -1154,16 +1392,16 @@ const routeTree = rootRoute.addChildren([
 // parks the active route in the URL fragment: it survives a reload AND is never sent to the asset
 // server (so no sub-path 404 — the reason memory history was used). Seed a fresh launch (no fragment
 // yet) with /recipes to preserve the prior landing screen.
-if (!window.location.hash) window.location.hash = '#/recipes'
+if (!window.location.hash) window.location.hash = "#/recipes"
 
 const router = createRouter({
   routeTree,
   history: createHashHistory(),
-  defaultPreload: 'intent',
-  context: { queryClient },
+  defaultPreload: "intent",
+  context: { queryClient }
 })
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router
   }
@@ -1181,8 +1419,9 @@ declare module '@tanstack/react-router' {
 function deepLinkToPath(url: string): string | null {
   try {
     const u = new URL(url)
-    const path = u.protocol === 'vegify:' ? `/${u.host}${u.pathname}` : u.pathname
-    return `${path.replace(/\/+$/, '') || '/'}${u.search}`
+    const path =
+      u.protocol === "vegify:" ? `/${u.host}${u.pathname}` : u.pathname
+    return `${path.replace(/\/+$/, "") || "/"}${u.search}`
   } catch {
     return null
   }
@@ -1191,7 +1430,9 @@ function openDeepLinks(urls: string[] | null) {
   const path = urls?.map(deepLinkToPath).find(Boolean)
   if (path) router.history.push(path)
 }
-getCurrentDeepLinks().then(openDeepLinks).catch(() => {})
+getCurrentDeepLinks()
+  .then(openDeepLinks)
+  .catch(() => {})
 void onOpenUrl(openDeepLinks).catch(() => {})
 
 export function App() {
@@ -1214,7 +1455,7 @@ export function App() {
           queryClient.clear() // drop the signed-out user's cached content; the next pull refills public content
           setUser(null)
         },
-        onAuthed: setUser,
+        onAuthed: setUser
       }}
     >
       <QueryClientProvider client={queryClient}>
@@ -1228,25 +1469,35 @@ export function App() {
 // authenticates via the on-device DAL → web auth route. Sits OUTSIDE the router (which only mounts
 // once authed); a TanStack Router migration of the guard itself would make this a route beforeLoad.
 function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
-  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login')
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login")
   // The shared auth views navigate via hrefs; with no router mounted yet, map each to a local mode.
   const authLink = useCallback(
     ({ href, children, className, ...rest }: AppShellLinkProps) => (
       <button
         type="button"
         className={className}
-        onClick={() => setMode(href === '/signup' ? 'signup' : href === '/forgot' ? 'forgot' : 'login')}
+        onClick={() =>
+          setMode(
+            href === "/signup"
+              ? "signup"
+              : href === "/forgot"
+                ? "forgot"
+                : "login"
+          )
+        }
         {...rest}
       >
         {children}
       </button>
     ),
-    [],
+    []
   )
   const toError = (e: unknown) => ({
-    error: String((e as { message?: string })?.message ?? e ?? 'Something went wrong.'),
+    error: String(
+      (e as { message?: string })?.message ?? e ?? "Something went wrong."
+    )
   })
-  if (mode === 'signup') {
+  if (mode === "signup") {
     return (
       <SignupView
         LinkComponent={authLink}
@@ -1260,7 +1511,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
       />
     )
   }
-  if (mode === 'forgot') {
+  if (mode === "forgot") {
     // The request is enumeration-safe (always resolves to the "check your email" confirmation). The
     // reset link in the email opens vegify.app/reset in the browser — desktop never holds the token.
     return (

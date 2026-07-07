@@ -11,11 +11,15 @@ default:
     @just --list
 
 # Everything CI enforces. Run before every push.
-check: tokens typecheck web-test build rust
+check: lint tokens typecheck web-test build rust
 
 # JS deps, frozen exactly as CI installs them.
 install:
     pnpm install --frozen-lockfile
+
+# One lint/format layer for the whole workspace (biome; config at the root).
+lint:
+    pnpm exec biome check .
 
 # Design tokens -> packages/tokens/dist/theme.css (gitignored; a prereq for the JS typecheck/build).
 tokens:

@@ -5,8 +5,8 @@
 import {
   CloudWatchLogsClient,
   CreateLogStreamCommand,
-  PutLogEventsCommand,
-} from '@aws-sdk/client-cloudwatch-logs'
+  PutLogEventsCommand
+} from "@aws-sdk/client-cloudwatch-logs"
 
 const client = new CloudWatchLogsClient({})
 const LOG_GROUP = process.env.LOG_GROUP_NAME
@@ -18,16 +18,21 @@ const MAX_EVENTS = 1000 // cap a single batch so a hostile client can't blow up 
 const ORIGIN_SECRET = process.env.ORIGIN_SECRET
 const ON_LAMBDA = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
 
-const reply = (statusCode) => ({ statusCode, headers: { 'content-type': 'application/json' }, body: '' })
+const reply = (statusCode) => ({
+  statusCode,
+  headers: { "content-type": "application/json" },
+  body: ""
+})
 
 export const handler = async (event) => {
   if (ON_LAMBDA && !ORIGIN_SECRET) return reply(503)
-  if (ORIGIN_SECRET && event.headers?.['x-vegify-origin'] !== ORIGIN_SECRET) return reply(403)
+  if (ORIGIN_SECRET && event.headers?.["x-vegify-origin"] !== ORIGIN_SECRET)
+    return reply(403)
   // Function URL payload (HTTP API v2 shape). Only accept POSTs; the browser logger never GETs.
-  if (event?.requestContext?.http?.method !== 'POST') return reply(405)
+  if (event?.requestContext?.http?.method !== "POST") return reply(405)
 
-  let raw = event.body ?? ''
-  if (event.isBase64Encoded) raw = Buffer.from(raw, 'base64').toString('utf8')
+  let raw = event.body ?? ""
+  if (event.isBase64Encoded) raw = Buffer.from(raw, "base64").toString("utf8")
   let payload
   try {
     payload = JSON.parse(raw)
@@ -35,41 +40,53 @@ export const handler = async (event) => {
     return reply(400)
   }
 
-  const events = Array.isArray(payload?.events) ? payload.events.slice(0, MAX_EVENTS) : []
+  const events = Array.isArray(payload?.events)
+    ? payload.events.slice(0, MAX_EVENTS)
+    : []
   if (events.length === 0) return reply(204)
 
   const logEvents = events
     .map((e) => ({
       timestamp: Number(e?.ts) || Date.now(),
       message: JSON.stringify({
-        level: e?.level ?? 'info',
-        msg: e?.msg ?? '',
+        level: e?.level ?? "info",
+        msg: e?.msg ?? "",
         url: e?.url,
         ctx: e?.ctx,
-        ua: event.headers?.['user-agent'],
-        ip: event.headers?.['x-forwarded-for'],
-      }),
+        ua: event.headers?.["user-agent"],
+        ip: event.headers?.["x-forwarded-for"]
+      })
     }))
     .sort((a, b) => a.timestamp - b.timestamp) // PutLogEvents requires events in chronological order
 
   // One stream per UTC day + client session: a session's events stay together and streams stay small.
   // (PutLogEvents no longer needs a sequenceToken, so appending to an existing stream just works.)
   const day = new Date().toISOString().slice(0, 10)
-  const session = String(payload.session ?? Math.random().toString(36).slice(2, 10)).replace(/[^a-zA-Z0-9_-]/g, '')
+  const session = String(
+    payload.session ?? Math.random().toString(36).slice(2, 10)
+  ).replace(/[^a-zA-Z0-9_-]/g, "")
   const logStreamName = `${day}/${session}`
 
   try {
-    await client.send(new CreateLogStreamCommand({ logGroupName: LOG_GROUP, logStreamName }))
+    await client.send(
+      new CreateLogStreamCommand({ logGroupName: LOG_GROUP, logStreamName })
+    )
   } catch (e) {
     // Re-using a stream is the common case — the create then throws ResourceAlreadyExists; ignore it.
-    if (e?.name !== 'ResourceAlreadyExistsException') {
-      console.error('CreateLogStream failed', e?.name, e?.message)
+    if (e?.name !== "ResourceAlreadyExistsException") {
+      console.error("CreateLogStream failed", e?.name, e?.message)
     }
   }
   try {
-    await client.send(new PutLogEventsCommand({ logGroupName: LOG_GROUP, logStreamName, logEvents }))
+    await client.send(
+      new PutLogEventsCommand({
+        logGroupName: LOG_GROUP,
+        logStreamName,
+        logEvents
+      })
+    )
   } catch (e) {
-    console.error('PutLogEvents failed', e?.name, e?.message)
+    console.error("PutLogEvents failed", e?.name, e?.message)
     return reply(502)
   }
   return reply(204)
