@@ -19,6 +19,6 @@
     "aws-cdk-lib": "^2.261.0",
     "constructs": "^10.4.2",
     "tsx": "^4.23.0",
-    "typescript": "^5.7.2"
+    "typescript": "^6.0.3"
   }
 }
