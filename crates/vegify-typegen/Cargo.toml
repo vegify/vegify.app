@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "vegify-typegen"
 version = "0.1.0"
 edition = "2021"
@@ -11,3 +12,6 @@ vegify-api-types = { path = "../../services/api/types" }
 # Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
 specta-typescript = "=0.0.12"
 specta-serde = "=0.0.12"
+
+[lints]
+workspace = true

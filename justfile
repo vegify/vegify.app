@@ -39,6 +39,9 @@ rust: rust-core rust-desktop
 # Server + shared core (CI's `ci` rust job — no dev DB needed).
 rust-core:
     cargo test -p vegify-server -p vegify-core
+    # Lint gate for every non-desktop member (the desktop crate needs the webview
+    # stack, which CI's ubuntu runner doesn't carry — rust-desktop covers it).
+    cargo clippy -p vegify-server -p vegify-core -p vegify-config -p vegify-api-types -p vegify-typegen -p vegify-admin -p usda-importer -p vegify-client-rs --all-targets --locked -- -D warnings
     # The dev-tool crates ship in no build, so nothing else compiles them — keep them honest here.
     cargo check -p vegify-admin -p usda-importer
     # The SDK compiles standalone WITHOUT its specta feature (a plain consumer's tree) — the desktop
@@ -49,6 +52,7 @@ rust-core:
 # schema-parity test.
 rust-desktop:
     cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+    cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked -- -D warnings
     # Release-mode check: `cfg(debug_assertions)` branches compile OUT in release, so a warning can
     # hide from every debug build and first appear in the shipped desktop build (it happened: an
     # unused PathBuf import only the release build could see). Check, not build — types + lints only.

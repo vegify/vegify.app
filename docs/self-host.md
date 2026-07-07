@@ -29,7 +29,7 @@ pnpm db:seed                          # optional sample data
 pnpm build                            # turbo build of everything
 ```
 
-`pnpm dev` runs both app shells locally (web-next :3000, web-start :3001) against the local SQLite file — no AWS needed to develop.
+`pnpm dev` runs the app shells locally (web on :47307) against the local SQLite file — no AWS needed to develop.
 
 ## 2. Configure
 

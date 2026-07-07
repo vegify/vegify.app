@@ -41,7 +41,7 @@ Run the pieces:
 
 ```sh
 cargo run -p vegify-server           # the backend (auth + content API)
-pnpm dev                             # web (:3001) + desktop, against that backend
+pnpm dev                             # web (:47307) + desktop, against that backend
 ```
 
 The web is stateless and reaches the backend at `VEGIFY_API_URL` (default `http://localhost:8787`). Build and serve it on Bun the way production does:

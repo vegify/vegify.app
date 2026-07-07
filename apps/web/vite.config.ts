@@ -16,6 +16,9 @@ import tailwindcss from '@tailwindcss/vite'
 const routeFiles = readdirSync(new URL('./src/routes', import.meta.url))
 
 const config = defineConfig({
+  // Uncommon pinned dev port; strict so a taken port fails loudly instead of
+  // silently shifting. (The Fargate/container PORT in infra is unrelated.)
+  server: { port: 47307, strictPort: true },
   resolve: { tsconfigPaths: true },
   define: { __VEGIFY_ROUTE_FILES__: JSON.stringify(routeFiles) },
   // Bundle every dep INTO the SSR build (incl. react + the @vegify/* workspace packages) so the

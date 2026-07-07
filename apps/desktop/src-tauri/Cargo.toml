@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "vegify"
 version = "0.0.0" # vestigial - the version is git-tag-derived (see .github/workflows/deploy.yml)
 description = "Vegify desktop (local-first)"
@@ -62,3 +63,6 @@ tauri-plugin-tracing = "0.3"
 # the simulator/device console until upstream compiles for iOS.
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 tracing-subscriber = "0.3"
+
+[lints]
+workspace = true

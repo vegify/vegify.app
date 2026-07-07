@@ -1184,38 +1184,7 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod migration_tests {
-    use super::*;
 
-    #[test]
-    fn ensure_schema_is_idempotent_and_additive() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, email TEXT, password_hash TEXT, created_at INTEGER, updated_at INTEGER);",
-        )
-        .unwrap();
-        // Run twice: the first creates the table + adds the column, the second is a clean no-op.
-        ensure_schema(&conn).unwrap();
-        ensure_schema(&conn).unwrap();
-        let prt_cols: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')", [], |r| r.get(0))
-            .unwrap();
-        assert!(prt_cols >= 6, "password_reset_tokens should be created with its columns");
-        let evt_cols: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('email_verification_tokens')", [], |r| r.get(0))
-            .unwrap();
-        assert!(evt_cols >= 6, "email_verification_tokens should be created with its columns");
-        let added: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(added, 1, "email_verified_at should be added exactly once");
-    }
-}
 
 /// Liveness probe — unauthenticated, no DB touch. The release pipeline polls this through CloudFront
 /// after the server deploys, as the gate before it publishes the web + desktop clients.
@@ -1360,4 +1329,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(%addr, db = %db_path, "vegify-server listening");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    #[test]
+    fn ensure_schema_is_idempotent_and_additive() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, email TEXT, password_hash TEXT, created_at INTEGER, updated_at INTEGER);",
+        )
+        .unwrap();
+        // Run twice: the first creates the table + adds the column, the second is a clean no-op.
+        ensure_schema(&conn).unwrap();
+        ensure_schema(&conn).unwrap();
+        let prt_cols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('password_reset_tokens')", [], |r| r.get(0))
+            .unwrap();
+        assert!(prt_cols >= 6, "password_reset_tokens should be created with its columns");
+        let evt_cols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('email_verification_tokens')", [], |r| r.get(0))
+            .unwrap();
+        assert!(evt_cols >= 6, "email_verification_tokens should be created with its columns");
+        let added: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(added, 1, "email_verified_at should be added exactly once");
+    }
 }
