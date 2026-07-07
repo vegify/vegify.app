@@ -57,7 +57,9 @@ impl From<vegify_core::Error> for DataError {
 // store, EXTRACTED from this module (the app consumes the SDK; applications are leaves). The wire
 // types are re-exported under their original names so the IPC trait, the generated bindings, and
 // the tests are unchanged.
-pub use vegify_client::{AuthUser, DmConversation, DmMessage, DmNotification, DmParty, DmThread, Session};
+pub use vegify_client::{
+    AuthUser, DmConversation, DmMessage, DmNotification, DmParty, DmThread, Session,
+};
 use vegify_client::{SessionStore, VegifyClient};
 
 impl From<vegify_client::Error> for DataError {
@@ -152,10 +154,14 @@ pub async fn run_ws_push(app: tauri::AppHandle) {
                             Ok(Message::Text(payload)) => {
                                 tracing::info!(change = %payload, "ws push: change received");
                                 let _ = app.emit("server-content-changed", ());
-                                let is_notification = serde_json::from_str::<serde_json::Value>(&payload)
-                                    .ok()
-                                    .and_then(|v| v.get("changed").and_then(|c| c.as_str().map(String::from)))
-                                    .is_some_and(|kind| kind == "notification");
+                                let is_notification =
+                                    serde_json::from_str::<serde_json::Value>(&payload)
+                                        .ok()
+                                        .and_then(|v| {
+                                            v.get("changed")
+                                                .and_then(|c| c.as_str().map(String::from))
+                                        })
+                                        .is_some_and(|kind| kind == "notification");
                                 if is_notification {
                                     let _ = app.emit("server-notification", ());
                                 }
@@ -189,7 +195,10 @@ fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
 /// vegify-core's do_save_* stamped with its REAL owner (so per-viewer gates mirror the server).
 /// Pruning falls out: anything the pull no longer returns simply isn't recreated. The caller pushes
 /// first, so no unpushed local create is lost. Atomic: any error rolls back, leaving the cache intact.
-fn apply_pull(conn: &mut Connection, payload: &vegify_client::PullPayload) -> Result<(), DataError> {
+fn apply_pull(
+    conn: &mut Connection,
+    payload: &vegify_client::PullPayload,
+) -> Result<(), DataError> {
     let tx = conn.transaction()?;
     tx.execute_batch(
         "DELETE FROM ingredient_in_recipe;
@@ -223,7 +232,10 @@ fn apply_pull(conn: &mut Connection, payload: &vegify_client::PullPayload) -> Re
         // The tombstone rides OUTSIDE the mutation shape (user edits must never touch it) — stamp it
         // after the save, exactly as the server pull reported it.
         if let Some(ts) = ing.deleted_at {
-            tx.execute("UPDATE ingredients SET deleted_at = ?1 WHERE id = ?2", params![ts, ing.id])?;
+            tx.execute(
+                "UPDATE ingredients SET deleted_at = ?1 WHERE id = ?2",
+                params![ts, ing.id],
+            )?;
         }
     }
     for r in &payload.recipes {
@@ -297,7 +309,10 @@ fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     // and the soft-delete tombstone (`deleted_at`). Fresh DBs get them from schema.sql's CREATE.
     for (col, ddl) in [
         ("source", "ALTER TABLE ingredients ADD COLUMN source TEXT"),
-        ("deleted_at", "ALTER TABLE ingredients ADD COLUMN deleted_at INTEGER"),
+        (
+            "deleted_at",
+            "ALTER TABLE ingredients ADD COLUMN deleted_at INTEGER",
+        ),
     ] {
         let present: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = ?1",
@@ -335,11 +350,16 @@ pub struct Db {
 impl Db {
     pub fn open(db_path: &str) -> Result<Self, DataError> {
         let conn = Connection::open(db_path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
-            .ok();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+        )
+        .ok();
         init_meta_tables(&conn)?;
         ensure_content_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn), auth: Mutex::new(session_store().load()) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+            auth: Mutex::new(session_store().load()),
+        })
     }
 
     /// Run a write with the connection locked. (Formerly captured a SQLite changeset for the S3 sync
@@ -357,15 +377,19 @@ impl Db {
     /// the content API and deleting the row on success.
     fn enqueue(&self, op: &str, payload: serde_json::Value) -> Result<(), DataError> {
         let json = serde_json::to_string(&payload).map_err(|e| DataError::Db(e.to_string()))?;
-        self.conn
-            .lock()
-            .unwrap()
-            .execute("INSERT INTO _outbox(op, payload) VALUES (?1, ?2)", params![op, json])?;
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO _outbox(op, payload) VALUES (?1, ?2)",
+            params![op, json],
+        )?;
         Ok(())
     }
 
     fn current_uid(&self) -> Option<String> {
-        self.auth.lock().unwrap().as_ref().map(|s| s.user.id.clone())
+        self.auth
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.user.id.clone())
     }
 
     /// The current opaque session token (for the content API's Bearer auth + server-side logout).
@@ -376,8 +400,9 @@ impl Db {
     /// The signed-in user id, or an auth error. WRITES require a session — you may only create or edit
     /// your OWN content; reads use `current_uid` (an anonymous viewer simply sees public content).
     fn require_uid(&self) -> Result<String, DataError> {
-        self.current_uid()
-            .ok_or_else(|| DataError::Auth("Sign in to add or edit recipes and ingredients.".into()))
+        self.current_uid().ok_or_else(|| {
+            DataError::Auth("Sign in to add or edit recipes and ingredients.".into())
+        })
     }
 
     /// The session token, or an auth error — for the online-only endpoints (messages) where an
@@ -406,7 +431,9 @@ impl Db {
                 tracing::debug!("push: outbox empty");
                 return Ok(());
             };
-            let token = self.current_token().ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
+            let token = self
+                .current_token()
+                .ok_or_else(|| DataError::Auth("Not signed in.".into()))?;
             let payload: serde_json::Value =
                 serde_json::from_str(&payload_json).map_err(|e| DataError::Db(e.to_string()))?;
             tracing::info!(seq, op = %op, "push: sending outbox item");
@@ -414,12 +441,19 @@ impl Db {
             match op.as_str() {
                 "saveRecipe" => client.content_post(&token, "recipes", &payload)?,
                 "saveIngredient" => client.content_post(&token, "ingredients", &payload)?,
-                "deleteRecipe" => client.content_delete(&token, "recipes", payload_id(&payload)?)?,
-                "deleteIngredient" => client.content_delete(&token, "ingredients", payload_id(&payload)?)?,
+                "deleteRecipe" => {
+                    client.content_delete(&token, "recipes", payload_id(&payload)?)?
+                }
+                "deleteIngredient" => {
+                    client.content_delete(&token, "ingredients", payload_id(&payload)?)?
+                }
                 "restoreIngredient" => client.restore_ingredient(&token, payload_id(&payload)?)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
-            self.conn.lock().unwrap().execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
+            self.conn
+                .lock()
+                .unwrap()
+                .execute("DELETE FROM _outbox WHERE seq = ?1", params![seq])?;
         }
     }
 
@@ -464,7 +498,10 @@ impl Db {
                 )
                 .optional()?;
             if let Some(stale_id) = stale {
-                conn.execute("UPDATE ingredients SET user_id = ?1 WHERE user_id = ?2", params![user.id, stale_id])?;
+                conn.execute(
+                    "UPDATE ingredients SET user_id = ?1 WHERE user_id = ?2",
+                    params![user.id, stale_id],
+                )?;
                 conn.execute("DELETE FROM users WHERE id = ?1", params![stale_id])?;
             }
             conn.execute(
@@ -489,7 +526,10 @@ pub trait VegifyData {
         username: String,
         slug: String,
     ) -> Result<Option<RecipeSlugHit>, DataError>;
-    fn resolve_ingredient_by_slug(&self, slug: String) -> Result<Option<IngredientSlugHit>, DataError>;
+    fn resolve_ingredient_by_slug(
+        &self,
+        slug: String,
+    ) -> Result<Option<IngredientSlugHit>, DataError>;
     fn recipe_for_edit(&self, id: String) -> Result<Option<RecipeEditData>, DataError>;
     fn list_ingredients(&self, page: Page) -> Result<Vec<IngredientCard>, DataError>;
     fn ingredient(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
@@ -527,7 +567,13 @@ pub trait VegifyData {
     fn notifications_unread(&self) -> Result<f64, DataError>;
     fn notifications_mark_read(&self) -> Result<(), DataError>;
     /// UGC safety (App Review 1.2): report content/users, block/unblock a user.
-    fn report_content(&self, target_type: String, target_id: String, reason: String, note: String) -> Result<(), DataError>;
+    fn report_content(
+        &self,
+        target_type: String,
+        target_id: String,
+        reason: String,
+        note: String,
+    ) -> Result<(), DataError>;
     fn block_user(&self, username: String) -> Result<(), DataError>;
     fn unblock_user(&self, username: String) -> Result<(), DataError>;
     /// Delete the signed-in account (App Review 5.1.1(v)); password-reconfirmed, then signs out locally.
@@ -569,7 +615,10 @@ impl VegifyData for Db {
         vegify_core::resolve_recipe_by_slug(&conn, &username, &slug).map_err(Into::into)
     }
 
-    fn resolve_ingredient_by_slug(&self, slug: String) -> Result<Option<IngredientSlugHit>, DataError> {
+    fn resolve_ingredient_by_slug(
+        &self,
+        slug: String,
+    ) -> Result<Option<IngredientSlugHit>, DataError> {
         let conn = self.conn.lock().unwrap();
         vegify_core::resolve_ingredient_by_slug(&conn, &slug).map_err(Into::into)
     }
@@ -611,21 +660,27 @@ impl VegifyData for Db {
         if input.id.is_none() {
             input.id = Some(new_id());
         }
-        let id = self.with_conn(|conn| do_save_ingredient(conn, &input, Some(uid.as_str())).map_err(Into::into))?;
+        let id = self.with_conn(|conn| {
+            do_save_ingredient(conn, &input, Some(uid.as_str())).map_err(Into::into)
+        })?;
         self.enqueue("saveIngredient", to_json(&input)?)?;
         Ok(id)
     }
 
     fn delete_ingredient(&self, id: String) -> Result<(), DataError> {
         let uid = self.require_uid()?;
-        self.with_conn(|conn| do_delete_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
+        self.with_conn(|conn| {
+            do_delete_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into)
+        })?;
         self.enqueue("deleteIngredient", serde_json::json!({ "id": id }))?;
         Ok(())
     }
 
     fn restore_ingredient(&self, id: String) -> Result<(), DataError> {
         let uid = self.require_uid()?;
-        self.with_conn(|conn| do_restore_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
+        self.with_conn(|conn| {
+            do_restore_ingredient(conn, &id, Some(uid.as_str())).map_err(Into::into)
+        })?;
         self.enqueue("restoreIngredient", serde_json::json!({ "id": id }))?;
         Ok(())
     }
@@ -639,7 +694,9 @@ impl VegifyData for Db {
             input.id = Some(new_id());
             input.as_ingredient_id = Some(new_id());
         }
-        let id = self.with_conn(|conn| do_save_recipe(conn, &input, Some(uid.as_str())).map_err(Into::into))?;
+        let id = self.with_conn(|conn| {
+            do_save_recipe(conn, &input, Some(uid.as_str())).map_err(Into::into)
+        })?;
         self.enqueue("saveRecipe", to_json(&input)?)?;
         Ok(id)
     }
@@ -751,7 +808,13 @@ impl VegifyData for Db {
         Ok(client().notifications_mark_all_read(&token)?)
     }
 
-    fn report_content(&self, target_type: String, target_id: String, reason: String, note: String) -> Result<(), DataError> {
+    fn report_content(
+        &self,
+        target_type: String,
+        target_id: String,
+        reason: String,
+        note: String,
+    ) -> Result<(), DataError> {
         let token = self.require_token()?;
         Ok(client().report(&token, &target_type, &target_id, &reason, &note)?)
     }
@@ -822,11 +885,16 @@ mod tests {
     fn recipe_nutrition_on_device() {
         let db = Db::open(&crate::db_path()).expect("open");
         let id = recipe_id_by_name(&db, "Complete Shake");
-        let r = VegifyData::recipe(&db, id).expect("query ok").expect("recipe exists");
+        let r = VegifyData::recipe(&db, id)
+            .expect("query ok")
+            .expect("recipe exists");
         let cal100 = r.nutrition.calories_per_100g.expect("has calories");
         let grams = r.serving.as_ref().expect("has serving").grams;
         let per_serving = cal100 * grams / 100.0;
-        eprintln!("recipe {:?}: {:.1} cal/serving (ULID {})", r.name, per_serving, r.id);
+        eprintln!(
+            "recipe {:?}: {:.1} cal/serving (ULID {})",
+            r.name, per_serving, r.id
+        );
         assert!((per_serving - 307.5).abs() < 0.5, "got {per_serving:.2}");
     }
 
@@ -842,7 +910,10 @@ mod tests {
         sign_in_seed(&db); // own the saved recipe so the owner-gated edit-load returns it
 
         let hits = VegifyData::search_ingredients(&db, "Flour".into()).expect("search");
-        let flour = hits.into_iter().find(|h| h.name.contains("Flour")).expect("a flour exists");
+        let flour = hits
+            .into_iter()
+            .find(|h| h.name.contains("Flour"))
+            .expect("a flour exists");
 
         let id = VegifyData::save_recipe(
             &db,
@@ -855,21 +926,40 @@ mod tests {
                 directions: Some("mix".into()),
                 serving_grams: Some(100.0),
                 batch_grams: Some(500.0),
-                items: vec![RecipeItemInput { ingredient_id: flour.id.clone(), grams: 500.0, unit: None }],
-            slug: None,
+                items: vec![RecipeItemInput {
+                    ingredient_id: flour.id.clone(),
+                    grams: 500.0,
+                    unit: None,
+                }],
+                slug: None,
             },
         )
         .expect("save recipe with an item");
 
-        let r = VegifyData::recipe(&db, id.clone()).expect("read").expect("exists");
+        let r = VegifyData::recipe(&db, id.clone())
+            .expect("read")
+            .expect("exists");
         assert_eq!(r.name, "UI Flow Bread");
-        assert_eq!(r.items.len(), 1, "the searched ingredient is attached as an item");
+        assert_eq!(
+            r.items.len(),
+            1,
+            "the searched ingredient is attached as an item"
+        );
         assert_eq!(r.items[0].name, flour.name);
-        assert!(r.nutrition.calories_per_100g.is_some(), "flour has calories → recipe aggregates them");
-        eprintln!("UI-flow recipe: {} item(s), {:?} cal/100g", r.items.len(), r.nutrition.calories_per_100g);
+        assert!(
+            r.nutrition.calories_per_100g.is_some(),
+            "flour has calories → recipe aggregates them"
+        );
+        eprintln!(
+            "UI-flow recipe: {} item(s), {:?} cal/100g",
+            r.items.len(),
+            r.nutrition.calories_per_100g
+        );
 
         // edit-with-defaults: per-item nutrition + servings (batch/serving = 500/100 = 5).
-        let edit = VegifyData::recipe_for_edit(&db, id).expect("edit").expect("exists");
+        let edit = VegifyData::recipe_for_edit(&db, id)
+            .expect("edit")
+            .expect("exists");
         assert_eq!(edit.servings, Some(5.0));
         assert_eq!(edit.items.len(), 1);
         assert_eq!(edit.items[0].calories_per_100g, Some(364.0));
@@ -901,25 +991,34 @@ mod tests {
                     amount_per_100g: 17.3,
                     unit: "g".into(),
                 }],
-            slug: None,
+                slug: None,
             },
         )
         .expect("save ingredient");
 
         let cards = VegifyData::list_ingredients(&db, Page::default()).expect("list");
-        assert!(cards.iter().any(|c| c.name == "Test Tofu"), "browser shows the new ingredient");
+        assert!(
+            cards.iter().any(|c| c.name == "Test Tofu"),
+            "browser shows the new ingredient"
+        );
         assert!(
             !cards.iter().any(|c| c.name.contains("Complete Shake")),
             "browser excludes recipe as-ingredients"
         );
 
-        let e = VegifyData::ingredient_for_edit(&db, id).expect("edit").expect("exists");
+        let e = VegifyData::ingredient_for_edit(&db, id)
+            .expect("edit")
+            .expect("exists");
         assert_eq!(e.name, "Test Tofu");
         assert_eq!(e.serving_grams, Some(85.0));
         assert_eq!(e.calories_per_100g, Some(144.0));
         assert_eq!(e.nutrients.len(), 1);
         assert_eq!(e.nutrients[0].name, "Protein");
-        eprintln!("ingredient edit: {} nutrient(s), serving {:?}g", e.nutrients.len(), e.serving_grams);
+        eprintln!(
+            "ingredient edit: {} nutrient(s), serving {:?}g",
+            e.nutrients.len(),
+            e.serving_grams
+        );
     }
 
     // A signed-in user's writes are stamped with their id. foreign_keys=ON requires that user to
@@ -945,7 +1044,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("save");
@@ -960,7 +1059,11 @@ mod tests {
                 |r| r.get(0),
             )
             .expect("query owner");
-        assert_eq!(owner.as_deref(), Some(uid.as_str()), "recipe is stamped with the signed-in user");
+        assert_eq!(
+            owner.as_deref(),
+            Some(uid.as_str()),
+            "recipe is stamped with the signed-in user"
+        );
     }
 
     // Full sign-in path against a running web shell (real network + OS keychain). #[ignore]'d so the
@@ -978,7 +1081,10 @@ mod tests {
 
         let user = VegifyData::sign_in(
             &db,
-            SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+            SignInInput {
+                email: "dev@example.com".into(),
+                password: "dev-password".into(),
+            },
         )
         .expect("sign in");
         assert_eq!(user.email, "dev@example.com");
@@ -986,19 +1092,29 @@ mod tests {
 
         // A fresh Db (simulating relaunch) restores the session from the keychain — offline-capable.
         let db2 = Db::open(db_path.to_str().unwrap()).expect("reopen");
-        let restored =
-            VegifyData::current_user(&db2).expect("current").expect("restored from keychain");
-        assert_eq!(restored.id, user.id, "session persisted to the keychain across reopen");
+        let restored = VegifyData::current_user(&db2)
+            .expect("current")
+            .expect("restored from keychain");
+        assert_eq!(
+            restored.id, user.id,
+            "session persisted to the keychain across reopen"
+        );
 
         // Wrong password is rejected (the server's message surfaces as DataError::Auth).
         let bad = VegifyData::sign_in(
             &db,
-            SignInInput { email: "dev@example.com".into(), password: "nope".into() },
+            SignInInput {
+                email: "dev@example.com".into(),
+                password: "nope".into(),
+            },
         );
         assert!(bad.is_err(), "wrong password should be rejected");
 
         VegifyData::sign_out(&db).expect("sign out");
-        assert!(VegifyData::current_user(&db).expect("current").is_none(), "cleared after sign out");
+        assert!(
+            VegifyData::current_user(&db).expect("current").is_none(),
+            "cleared after sign out"
+        );
     }
 
     // A4 visibility model (mirrors the web's 2-user test): public content is shared, private is
@@ -1039,7 +1155,7 @@ mod tests {
                     serving_grams: Some(100.0),
                     package_grams: None,
                     nutrients: vec![],
-            slug: None,
+                    slug: None,
                 },
             )
             .expect("john saves")
@@ -1060,7 +1176,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("john saves recipe");
@@ -1069,26 +1185,53 @@ mod tests {
         set_auth(&db, &bob, "Bob");
 
         // Lists + search (isListed): Bob sees John's PUBLIC, not John's private.
-        let listed: Vec<String> =
-            VegifyData::list_ingredients(&db, Page::default()).expect("bob list").into_iter().map(|c| c.name).collect();
-        assert!(listed.contains(&"John Public Sauce".to_string()), "bob sees john's public");
-        assert!(!listed.contains(&"John Secret Sauce".to_string()), "bob must NOT see john's private");
+        let listed: Vec<String> = VegifyData::list_ingredients(&db, Page::default())
+            .expect("bob list")
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert!(
+            listed.contains(&"John Public Sauce".to_string()),
+            "bob sees john's public"
+        );
+        assert!(
+            !listed.contains(&"John Secret Sauce".to_string()),
+            "bob must NOT see john's private"
+        );
         let found: Vec<String> = VegifyData::search_ingredients(&db, "John".into())
             .expect("bob search")
             .into_iter()
             .map(|r| r.name)
             .collect();
-        assert!(found.contains(&"John Public Sauce".to_string()), "search returns public");
-        assert!(!found.contains(&"John Secret Sauce".to_string()), "search hides private");
+        assert!(
+            found.contains(&"John Public Sauce".to_string()),
+            "search returns public"
+        );
+        assert!(
+            !found.contains(&"John Secret Sauce".to_string()),
+            "search hides private"
+        );
 
         // Detail (canView): public viewable; private 404s (None). can_edit is false for the non-owner.
-        let bob_view = VegifyData::ingredient(&db, public.clone()).expect("ok").expect("public viewable");
-        assert!(!bob_view.can_edit, "non-owner sees no edit affordance on public content");
-        assert!(VegifyData::ingredient(&db, secret.clone()).expect("ok").is_none(), "private hidden");
+        let bob_view = VegifyData::ingredient(&db, public.clone())
+            .expect("ok")
+            .expect("public viewable");
+        assert!(
+            !bob_view.can_edit,
+            "non-owner sees no edit affordance on public content"
+        );
+        assert!(
+            VegifyData::ingredient(&db, secret.clone())
+                .expect("ok")
+                .is_none(),
+            "private hidden"
+        );
 
         // Edit-load (isOwner): Bob can't load John's public ingredient for editing.
         assert!(
-            VegifyData::ingredient_for_edit(&db, public.clone()).expect("ok").is_none(),
+            VegifyData::ingredient_for_edit(&db, public.clone())
+                .expect("ok")
+                .is_none(),
             "non-owner can't edit-load"
         );
 
@@ -1105,36 +1248,63 @@ mod tests {
                 serving_grams: None,
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         );
         assert!(hijack.is_err(), "bob can't edit john's ingredient");
-        assert!(VegifyData::delete_ingredient(&db, public.clone()).is_err(), "bob can't delete john's");
+        assert!(
+            VegifyData::delete_ingredient(&db, public.clone()).is_err(),
+            "bob can't delete john's"
+        );
 
         // Recipe gates (separate SQL from the ingredient path): John's private recipe is hidden,
         // unviewable, un-editable, and un-deletable by Bob.
-        let recipe_names: Vec<String> =
-            VegifyData::list_recipes(&db, Page::default()).expect("bob recipes").into_iter().map(|c| c.name).collect();
-        assert!(!recipe_names.contains(&"John Secret Recipe".to_string()), "private recipe not listed");
-        assert!(VegifyData::recipe(&db, secret_recipe.clone()).expect("ok").is_none(), "private recipe 404s");
+        let recipe_names: Vec<String> = VegifyData::list_recipes(&db, Page::default())
+            .expect("bob recipes")
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
         assert!(
-            VegifyData::recipe_for_edit(&db, secret_recipe.clone()).expect("ok").is_none(),
+            !recipe_names.contains(&"John Secret Recipe".to_string()),
+            "private recipe not listed"
+        );
+        assert!(
+            VegifyData::recipe(&db, secret_recipe.clone())
+                .expect("ok")
+                .is_none(),
+            "private recipe 404s"
+        );
+        assert!(
+            VegifyData::recipe_for_edit(&db, secret_recipe.clone())
+                .expect("ok")
+                .is_none(),
             "non-owner can't edit-load the recipe"
         );
-        assert!(VegifyData::delete_recipe(&db, secret_recipe.clone()).is_err(), "bob can't delete the recipe");
+        assert!(
+            VegifyData::delete_recipe(&db, secret_recipe.clone()).is_err(),
+            "bob can't delete the recipe"
+        );
 
         // --- Back as John (the owner) ---
         set_auth(&db, &john, "John");
-        let own_recipe = VegifyData::recipe(&db, secret_recipe.clone()).expect("ok").expect("owner views recipe");
+        let own_recipe = VegifyData::recipe(&db, secret_recipe.clone())
+            .expect("ok")
+            .expect("owner views recipe");
         assert!(own_recipe.can_edit, "owner sees the recipe edit affordance");
         assert!(
-            VegifyData::recipe_for_edit(&db, secret_recipe).expect("ok").is_some(),
+            VegifyData::recipe_for_edit(&db, secret_recipe)
+                .expect("ok")
+                .is_some(),
             "owner can edit-load their recipe"
         );
         let e = VegifyData::ingredient_for_edit(&db, secret.clone())
             .expect("ok")
             .expect("owner edit-load");
-        assert_eq!(e.visibility, Visibility::Private, "edit defaults carry the stored visibility");
+        assert_eq!(
+            e.visibility,
+            Visibility::Private,
+            "edit defaults carry the stored visibility"
+        );
         assert!(e.can_edit, "owner edit-load is editable");
         // Owner can edit (change visibility) then delete own content.
         VegifyData::save_ingredient(
@@ -1149,14 +1319,21 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("owner edits own");
-        let own_ing = VegifyData::ingredient(&db, public.clone()).expect("ok").expect("owner views own");
-        assert!(own_ing.can_edit, "owner sees the edit affordance on their own ingredient");
+        let own_ing = VegifyData::ingredient(&db, public.clone())
+            .expect("ok")
+            .expect("owner views own");
+        assert!(
+            own_ing.can_edit,
+            "owner sees the edit affordance on their own ingredient"
+        );
         VegifyData::delete_ingredient(&db, public).expect("owner deletes own");
-        eprintln!("visibility: public shared, private hidden from non-owner, edit/delete owner-gated");
+        eprintln!(
+            "visibility: public shared, private hidden from non-owner, edit/delete owner-gated"
+        );
     }
 
     #[test]
@@ -1168,7 +1345,10 @@ mod tests {
         let _ = VegifyData::sign_out(&db); // ensure logged-out regardless of any stored session
 
         // Reads work anonymously (public content from the local cache)…
-        assert!(VegifyData::list_recipes(&db, Page::default()).is_ok(), "anonymous reads work");
+        assert!(
+            VegifyData::list_recipes(&db, Page::default()).is_ok(),
+            "anonymous reads work"
+        );
         // …but writes are refused up front, so nothing is stamped NULL-owner or queued to the outbox.
         let r = VegifyData::save_recipe(
             &db,
@@ -1182,10 +1362,13 @@ mod tests {
                 serving_grams: None,
                 batch_grams: None,
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         );
-        assert!(matches!(r, Err(DataError::Auth(_))), "anonymous recipe create is refused");
+        assert!(
+            matches!(r, Err(DataError::Auth(_))),
+            "anonymous recipe create is refused"
+        );
         let i = VegifyData::save_ingredient(
             &db,
             SaveIngredientInput {
@@ -1198,12 +1381,18 @@ mod tests {
                 serving_grams: None,
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         );
-        assert!(matches!(i, Err(DataError::Auth(_))), "anonymous ingredient create is refused");
         assert!(
-            matches!(VegifyData::delete_recipe(&db, new_id()), Err(DataError::Auth(_))),
+            matches!(i, Err(DataError::Auth(_))),
+            "anonymous ingredient create is refused"
+        );
+        assert!(
+            matches!(
+                VegifyData::delete_recipe(&db, new_id()),
+                Err(DataError::Auth(_))
+            ),
             "anonymous delete is refused"
         );
     }
@@ -1218,11 +1407,25 @@ mod tests {
 
         // The full list (default page) is newest-first: ids (ULIDs) strictly descending.
         let all = VegifyData::list_recipes(&db, Page::default()).expect("all");
-        assert!(all.len() >= 3, "seed has several public recipes (got {})", all.len());
-        assert!(all.windows(2).all(|w| w[0].id > w[1].id), "ordered newest-first by id");
+        assert!(
+            all.len() >= 3,
+            "seed has several public recipes (got {})",
+            all.len()
+        );
+        assert!(
+            all.windows(2).all(|w| w[0].id > w[1].id),
+            "ordered newest-first by id"
+        );
 
         // Page 1 (no cursor) is the newest `limit` of that list.
-        let p1 = VegifyData::list_recipes(&db, Page { limit: Some(2), ..Default::default() }).expect("page 1");
+        let p1 = VegifyData::list_recipes(
+            &db,
+            Page {
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .expect("page 1");
         assert_eq!(p1.len(), 2, "limit caps the page");
         assert_eq!(
             p1.iter().map(|c| &c.id).collect::<Vec<_>>(),
@@ -1233,11 +1436,22 @@ mod tests {
         // Page 2 (cursor = page 1's last id) continues with NO overlap and NO skip.
         let p2 = VegifyData::list_recipes(
             &db,
-            Page { cursor: Some(p1[1].id.clone()), limit: Some(2), ..Default::default() },
+            Page {
+                cursor: Some(p1[1].id.clone()),
+                limit: Some(2),
+                ..Default::default()
+            },
         )
         .expect("page 2");
-        assert_eq!(p2.first().map(|c| &c.id), all.get(2).map(|c| &c.id), "page 2 starts right after page 1");
-        assert!(p2.iter().all(|c| p1.iter().all(|x| x.id != c.id)), "pages do not overlap");
+        assert_eq!(
+            p2.first().map(|c| &c.id),
+            all.get(2).map(|c| &c.id),
+            "page 2 starts right after page 1"
+        );
+        assert!(
+            p2.iter().all(|c| p1.iter().all(|x| x.id != c.id)),
+            "pages do not overlap"
+        );
     }
 
     #[test]
@@ -1248,12 +1462,25 @@ mod tests {
         let db = Db::open(db_path.to_str().unwrap()).expect("open");
         let _ = VegifyData::sign_out(&db);
 
-        let list = |sort| VegifyData::list_recipes(&db, Page { sort, ..Default::default() }).expect("list");
+        let list = |sort| {
+            VegifyData::list_recipes(
+                &db,
+                Page {
+                    sort,
+                    ..Default::default()
+                },
+            )
+            .expect("list")
+        };
         let ids = |cards: &[RecipeCard]| cards.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
         let names = |cards: &[RecipeCard]| cards.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
 
-        let (newest, oldest, az, za) =
-            (list(Sort::Newest), list(Sort::Oldest), list(Sort::NameAsc), list(Sort::NameDesc));
+        let (newest, oldest, az, za) = (
+            list(Sort::Newest),
+            list(Sort::Oldest),
+            list(Sort::NameAsc),
+            list(Sort::NameDesc),
+        );
         assert!(newest.len() >= 3, "seed has several public recipes");
 
         // Recency: newest is oldest reversed (same id keyset, opposite direction).
@@ -1270,8 +1497,15 @@ mod tests {
         assert_eq!(names(&za), az_rev, "Z→A == A→Z reversed");
 
         // The composite (name, id) keyset for A→Z paginates without overlap or gaps.
-        let p1 = VegifyData::list_recipes(&db, Page { sort: Sort::NameAsc, limit: Some(2), ..Default::default() })
-            .expect("az page 1");
+        let p1 = VegifyData::list_recipes(
+            &db,
+            Page {
+                sort: Sort::NameAsc,
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .expect("az page 1");
         assert_eq!(p1.len(), 2);
         let p2 = VegifyData::list_recipes(
             &db,
@@ -1283,8 +1517,15 @@ mod tests {
             },
         )
         .expect("az page 2");
-        assert_eq!(p2.first().map(|c| &c.id), az.get(2).map(|c| &c.id), "A→Z page 2 continues after page 1");
-        assert!(p2.iter().all(|c| p1.iter().all(|x| x.id != c.id)), "A→Z pages do not overlap");
+        assert_eq!(
+            p2.first().map(|c| &c.id),
+            az.get(2).map(|c| &c.id),
+            "A→Z page 2 continues after page 1"
+        );
+        assert!(
+            p2.iter().all(|c| p1.iter().all(|x| x.id != c.id)),
+            "A→Z pages do not overlap"
+        );
     }
 
     // Upsert-by-id + as-ingredient-id threading (step 1 of the sync engine). A supplied-but-absent id
@@ -1313,7 +1554,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("save with a supplied id");
@@ -1336,7 +1577,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("re-apply updates");
@@ -1346,7 +1587,11 @@ mod tests {
             .filter(|c| c.name.starts_with("Pulled Ingredient"))
             .map(|c| c.name)
             .collect();
-        assert_eq!(pulled, vec!["Pulled Ingredient v2".to_string()], "one row, updated in place");
+        assert_eq!(
+            pulled,
+            vec!["Pulled Ingredient v2".to_string()],
+            "one row, updated in place"
+        );
 
         // --- recipe + nesting: a Biga (its as-ingredient id supplied) consumed by a Dough as an item ---
         let biga_rid = new_id();
@@ -1363,7 +1608,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(300.0),
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("apply biga with supplied ids");
@@ -1383,16 +1628,32 @@ mod tests {
             directions: None,
             serving_grams: Some(250.0),
             batch_grams: Some(500.0),
-            items: vec![RecipeItemInput { ingredient_id: biga_aiid.clone(), grams: 300.0, unit: None }],
+            items: vec![RecipeItemInput {
+                ingredient_id: biga_aiid.clone(),
+                grams: 300.0,
+                unit: None,
+            }],
             slug: None,
         };
         let returned_dough =
             VegifyData::save_recipe(&db, build_dough()).expect("apply dough consuming the biga");
-        assert_eq!(returned_dough, dough_rid, "the supplied recipe id is honored");
+        assert_eq!(
+            returned_dough, dough_rid,
+            "the supplied recipe id is honored"
+        );
 
-        let view = VegifyData::recipe(&db, dough_rid.clone()).expect("read").expect("exists");
-        assert_eq!(view.items.len(), 1, "the nested biga item resolved (FK intact via threaded as-ing id)");
-        assert_eq!(view.items[0].name, "Pulled Biga", "the item resolves to the biga's as-ingredient");
+        let view = VegifyData::recipe(&db, dough_rid.clone())
+            .expect("read")
+            .expect("exists");
+        assert_eq!(
+            view.items.len(),
+            1,
+            "the nested biga item resolved (FK intact via threaded as-ing id)"
+        );
+        assert_eq!(
+            view.items[0].name, "Pulled Biga",
+            "the item resolves to the biga's as-ingredient"
+        );
 
         // re-apply the SAME dough (an idempotent pull) → still ONE dough with that id, ONE item
         VegifyData::save_recipe(&db, build_dough()).expect("re-apply dough");
@@ -1402,10 +1663,18 @@ mod tests {
             .filter(|c| c.name == "Pulled Dough")
             .map(|c| c.id)
             .collect();
-        assert_eq!(doughs, vec![dough_rid.clone()], "idempotent: one dough with the supplied id");
-        let again = VegifyData::recipe(&db, dough_rid.clone()).expect("read").expect("exists");
+        assert_eq!(
+            doughs,
+            vec![dough_rid.clone()],
+            "idempotent: one dough with the supplied id"
+        );
+        let again = VegifyData::recipe(&db, dough_rid.clone())
+            .expect("read")
+            .expect("exists");
         assert_eq!(again.items.len(), 1, "re-apply did not duplicate the item");
-        eprintln!("upsert-by-id: supplied ids honored; nested biga/dough FK stable across re-apply");
+        eprintln!(
+            "upsert-by-id: supplied ids honored; nested biga/dough FK stable across re-apply"
+        );
     }
 
     // Step 3: every local content write records a semantic mutation in the _outbox push queue, FIFO,
@@ -1422,7 +1691,9 @@ mod tests {
 
         let outbox = |db: &Db| -> Vec<(String, serde_json::Value)> {
             let conn = db.conn.lock().unwrap();
-            let mut stmt = conn.prepare("SELECT op, payload FROM _outbox ORDER BY seq").unwrap();
+            let mut stmt = conn
+                .prepare("SELECT op, payload FROM _outbox ORDER BY seq")
+                .unwrap();
             let v = stmt
                 .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
                 .unwrap()
@@ -1446,7 +1717,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(200.0),
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("save recipe");
@@ -1455,7 +1726,11 @@ mod tests {
             .conn
             .lock()
             .unwrap()
-            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&rid], |r| r.get(0))
+            .query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+                [&rid],
+                |r| r.get(0),
+            )
             .expect("local recipe row");
 
         let iid = VegifyData::save_ingredient(
@@ -1470,7 +1745,7 @@ mod tests {
                 serving_grams: Some(50.0),
                 package_grams: None,
                 nutrients: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("save ingredient");
@@ -1478,13 +1753,24 @@ mod tests {
 
         let rows = outbox(&db);
         let ops: Vec<&str> = rows.iter().map(|(op, _)| op.as_str()).collect();
-        assert_eq!(ops, ["saveRecipe", "saveIngredient", "deleteRecipe"], "one FIFO entry per write");
+        assert_eq!(
+            ops,
+            ["saveRecipe", "saveIngredient", "deleteRecipe"],
+            "one FIFO entry per write"
+        );
 
         // saveRecipe payload = the content-API body: resolved recipe id, camelCase fields, NO userId.
         let recipe_payload = &rows[0].1;
-        assert_eq!(recipe_payload["id"], serde_json::json!(rid), "carries the resolved recipe id");
+        assert_eq!(
+            recipe_payload["id"],
+            serde_json::json!(rid),
+            "carries the resolved recipe id"
+        );
         assert_eq!(recipe_payload["name"], "Outbox Recipe");
-        assert!(recipe_payload.get("userId").is_none(), "userId omitted — the server stamps it");
+        assert!(
+            recipe_payload.get("userId").is_none(),
+            "userId omitted — the server stamps it"
+        );
         assert_eq!(
             recipe_payload["asIngredientId"],
             serde_json::json!(local_ai),
@@ -1515,16 +1801,29 @@ mod tests {
         let _ = VegifyData::sign_out(&db); // clean slot
         VegifyData::sign_in(
             &db,
-            SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+            SignInInput {
+                email: "dev@example.com".into(),
+                password: "dev-password".into(),
+            },
         )
         .expect("sign in");
         let token = db.current_token().expect("token after sign in");
 
         // pull: the seed world comes back in mutation shape (recipes carry their as-ingredient id).
         let p = client().content_pull(Some(&token)).expect("pull");
-        eprintln!("pull: {} recipes, {} ingredients", p.recipes.len(), p.ingredients.len());
-        assert!(!p.recipes.is_empty() && !p.ingredients.is_empty(), "seed content pulled");
-        assert!(p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()), "recipes carry as-ingredient id");
+        eprintln!(
+            "pull: {} recipes, {} ingredients",
+            p.recipes.len(),
+            p.ingredients.len()
+        );
+        assert!(
+            !p.recipes.is_empty() && !p.ingredients.is_empty(),
+            "seed content pulled"
+        );
+        assert!(
+            p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()),
+            "recipes carry as-ingredient id"
+        );
 
         // post a recipe via the client → it appears in a fresh pull.
         let rid = new_id();
@@ -1532,17 +1831,26 @@ mod tests {
             "id": rid, "asIngredientId": new_id(), "name": "Client Posted Loaf", "visibility": "public",
             "servingGrams": 100.0, "batchGrams": 200.0, "items": []
         });
-        client().content_post(&token, "recipes", &body).expect("post recipe");
+        client()
+            .content_post(&token, "recipes", &body)
+            .expect("post recipe");
         let p2 = client().content_pull(Some(&token)).expect("pull2");
         assert!(
-            p2.recipes.iter().any(|r| r.id == rid && r.name == "Client Posted Loaf"),
+            p2.recipes
+                .iter()
+                .any(|r| r.id == rid && r.name == "Client Posted Loaf"),
             "posted recipe appears in the pull"
         );
 
         // delete via the client → gone from the next pull.
-        client().content_delete(&token, "recipes", &rid).expect("delete recipe");
+        client()
+            .content_delete(&token, "recipes", &rid)
+            .expect("delete recipe");
         let p3 = client().content_pull(Some(&token)).expect("pull3");
-        assert!(!p3.recipes.iter().any(|r| r.id == rid), "deleted recipe is gone");
+        assert!(
+            !p3.recipes.iter().any(|r| r.id == rid),
+            "deleted recipe is gone"
+        );
         VegifyData::sign_out(&db).ok();
         eprintln!("content client round-trip OK: pull → post → pull → delete → pull");
     }
@@ -1569,7 +1877,10 @@ mod tests {
             let _ = VegifyData::sign_out(dev);
             VegifyData::sign_in(
                 dev,
-                SignInInput { email: "dev@example.com".into(), password: "dev-password".into() },
+                SignInInput {
+                    email: "dev@example.com".into(),
+                    password: "dev-password".into(),
+                },
             )
             .expect("sign in");
         }
@@ -1591,7 +1902,7 @@ mod tests {
                 serving_grams: Some(100.0),
                 batch_grams: Some(300.0),
                 items: vec![],
-            slug: None,
+                slug: None,
             },
         )
         .expect("A saves biga");
@@ -1599,7 +1910,11 @@ mod tests {
             .conn
             .lock()
             .unwrap()
-            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&biga_rid], |r| r.get(0))
+            .query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+                [&biga_rid],
+                |r| r.get(0),
+            )
             .expect("biga as-ingredient");
         VegifyData::save_recipe(
             &a,
@@ -1612,8 +1927,12 @@ mod tests {
                 directions: None,
                 serving_grams: Some(250.0),
                 batch_grams: Some(500.0),
-                items: vec![RecipeItemInput { ingredient_id: biga_ai.clone(), grams: 300.0, unit: None }],
-            slug: None,
+                items: vec![RecipeItemInput {
+                    ingredient_id: biga_ai.clone(),
+                    grams: 300.0,
+                    unit: None,
+                }],
+                slug: None,
             },
         )
         .expect("A saves dough consuming the biga");
@@ -1622,8 +1941,11 @@ mod tests {
         a.sync_now().expect("A sync (push + pull)");
         b.sync_now().expect("B sync (push-empty + pull)");
 
-        let names: Vec<String> =
-            VegifyData::list_recipes(&b, Page::default()).expect("B list").into_iter().map(|c| c.name).collect();
+        let names: Vec<String> = VegifyData::list_recipes(&b, Page::default())
+            .expect("B list")
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
         assert!(names.contains(&biga_name), "B converged on A's Biga");
         assert!(names.contains(&dough_name), "B converged on A's Dough");
 
@@ -1633,13 +1955,21 @@ mod tests {
             .into_iter()
             .find(|c| c.name == dough_name)
             .expect("dough on B");
-        let view = VegifyData::recipe(&b, dough.id).expect("B recipe").expect("exists");
-        assert_eq!(view.items.len(), 1, "B's Dough kept its item through push→pull");
+        let view = VegifyData::recipe(&b, dough.id)
+            .expect("B recipe")
+            .expect("exists");
+        assert_eq!(
+            view.items.len(),
+            1,
+            "B's Dough kept its item through push→pull"
+        );
         assert_eq!(
             view.items[0].name, biga_name,
             "the item resolves to A's Biga as-ingredient — nested FK stable cross-replica"
         );
-        eprintln!("two-replica round-trip OK: A wrote nested Biga/Dough → pushed → B pulled + converged");
+        eprintln!(
+            "two-replica round-trip OK: A wrote nested Biga/Dough → pushed → B pulled + converged"
+        );
     }
 
     // Regression for the email-collision the GUI sign-in surfaced (P5 identity reconciliation): a
@@ -1657,13 +1987,19 @@ mod tests {
             .conn
             .lock()
             .unwrap()
-            .query_row("SELECT id, email FROM users LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row("SELECT id, email FROM users LIMIT 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .expect("a seed user");
         let owned_before: i64 = db
             .conn
             .lock()
             .unwrap()
-            .query_row("SELECT count(*) FROM ingredients WHERE user_id = ?1", [&seed_id], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM ingredients WHERE user_id = ?1",
+                [&seed_id],
+                |r| r.get(0),
+            )
             .expect("count");
         assert!(owned_before > 0, "the seed user owns some content");
 
@@ -1679,17 +2015,34 @@ mod tests {
         .expect("reconcile, not UNIQUE users.email");
 
         let conn = db.conn.lock().unwrap();
-        let id_for_email: String =
-            conn.query_row("SELECT id FROM users WHERE email = ?1", [&email], |r| r.get(0)).expect("one user");
+        let id_for_email: String = conn
+            .query_row("SELECT id FROM users WHERE email = ?1", [&email], |r| {
+                r.get(0)
+            })
+            .expect("one user");
         assert_eq!(id_for_email, server_id, "the cache adopted the server id");
-        let stale_rows: i64 =
-            conn.query_row("SELECT count(*) FROM users WHERE id = ?1", [&seed_id], |r| r.get(0)).unwrap();
+        let stale_rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM users WHERE id = ?1",
+                [&seed_id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(stale_rows, 0, "the stale seed user row is gone");
         let owned_after: i64 = conn
-            .query_row("SELECT count(*) FROM ingredients WHERE user_id = ?1", [&server_id], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM ingredients WHERE user_id = ?1",
+                [&server_id],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(owned_after, owned_before, "the seed user's content now belongs to the server id");
-        eprintln!("reconcile OK: email collision resolved, content re-pointed {seed_id} → {server_id}");
+        assert_eq!(
+            owned_after, owned_before,
+            "the seed user's content now belongs to the server id"
+        );
+        eprintln!(
+            "reconcile OK: email collision resolved, content re-pointed {seed_id} → {server_id}"
+        );
     }
 
     /// Drift guard: Drizzle (`.data/vegify.db` via `pnpm db:push`) is the content-schema source of
@@ -1713,7 +2066,9 @@ mod tests {
                 .collect();
             let mut cols = BTreeSet::new();
             for t in names {
-                let mut q = conn.prepare(&format!("SELECT name FROM pragma_table_info('{t}')")).unwrap();
+                let mut q = conn
+                    .prepare(&format!("SELECT name FROM pragma_table_info('{t}')"))
+                    .unwrap();
                 for c in q.query_map([], |r| r.get::<_, String>(0)).unwrap() {
                     cols.insert(format!("{t}.{}", c.unwrap()));
                 }
@@ -1768,14 +2123,25 @@ mod tests {
             }],
             slug: None,
         };
-        let id = do_save_ingredient(&conn, &input, None).expect("save into the freshly-created schema");
-        let name: String =
-            conn.query_row("SELECT name FROM ingredients WHERE id = ?1", [&id], |r| r.get(0)).unwrap();
+        let id =
+            do_save_ingredient(&conn, &input, None).expect("save into the freshly-created schema");
+        let name: String = conn
+            .query_row("SELECT name FROM ingredients WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(name, "Rolled Oats");
         // The on-demand catalog/amount rows landed too (find_or_create_nutrient / upsert_amount).
-        let nutrients: i64 = conn.query_row("SELECT count(*) FROM nutrients", [], |r| r.get(0)).unwrap();
-        let amounts: i64 = conn.query_row("SELECT count(*) FROM amounts", [], |r| r.get(0)).unwrap();
-        assert!(nutrients >= 1 && amounts >= 1, "nutrient + amount rows created on demand");
+        let nutrients: i64 = conn
+            .query_row("SELECT count(*) FROM nutrients", [], |r| r.get(0))
+            .unwrap();
+        let amounts: i64 = conn
+            .query_row("SELECT count(*) FROM amounts", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            nutrients >= 1 && amounts >= 1,
+            "nutrient + amount rows created on demand"
+        );
         drop(conn);
         let _ = fs::remove_file(&path);
         eprintln!("fresh DB accepted a content write: ingredient {id}");
@@ -1804,19 +2170,26 @@ mod tests {
             slug: slug.map(str::to_string),
         };
         let slug_of = |conn: &Connection, id: &str| -> String {
-            conn.query_row("SELECT slug FROM ingredients WHERE id=?1", [id], |r| r.get::<_, Option<String>>(0))
-                .unwrap()
-                .unwrap_or_default()
+            conn.query_row("SELECT slug FROM ingredients WHERE id=?1", [id], |r| {
+                r.get::<_, Option<String>>(0)
+            })
+            .unwrap()
+            .unwrap_or_default()
         };
 
         // Leaf ingredients: kebab + global dedup.
         let a = do_save_ingredient(&conn, &ing("Rolled Oats", None), None).unwrap();
         let b = do_save_ingredient(&conn, &ing("Rolled Oats", None), None).unwrap();
         assert_eq!(slug_of(&conn, &a), "rolled-oats");
-        assert_eq!(slug_of(&conn, &b), "rolled-oats-2", "global collision gets a numeric suffix");
+        assert_eq!(
+            slug_of(&conn, &b),
+            "rolled-oats-2",
+            "global collision gets a numeric suffix"
+        );
 
         // A pull-provided slug is stored verbatim (no generation).
-        let c = do_save_ingredient(&conn, &ing("Rolled Oats", Some("server-picked-slug")), None).unwrap();
+        let c = do_save_ingredient(&conn, &ing("Rolled Oats", Some("server-picked-slug")), None)
+            .unwrap();
         assert_eq!(slug_of(&conn, &c), "server-picked-slug");
 
         // Recipes: slug unique PER USER (same name under different users may coincide). Real user
@@ -1844,25 +2217,50 @@ mod tests {
         let r_u2 = do_save_recipe(&conn, &mk_recipe("Biga"), Some("user-2")).unwrap();
         let recipe_slug = |rid: &str| -> String {
             let as_ing: String = conn
-                .query_row("SELECT as_ingredient_id FROM recipes WHERE id=?1", [rid], |r| r.get(0))
+                .query_row(
+                    "SELECT as_ingredient_id FROM recipes WHERE id=?1",
+                    [rid],
+                    |r| r.get(0),
+                )
                 .unwrap();
             slug_of(&conn, &as_ing)
         };
         assert_eq!(recipe_slug(&r_u1a), "biga");
-        assert_eq!(recipe_slug(&r_u1b), "biga-2", "same user, same name → suffix");
-        assert_eq!(recipe_slug(&r_u2), "biga", "different user reuses the slug (per-user scope)");
+        assert_eq!(
+            recipe_slug(&r_u1b),
+            "biga-2",
+            "same user, same name → suffix"
+        );
+        assert_eq!(
+            recipe_slug(&r_u2),
+            "biga",
+            "different user reuses the slug (per-user scope)"
+        );
 
         // Rename a recipe → new slug, old one logged to slug_history for a 301.
         let as_ing_u1a: String = conn
-            .query_row("SELECT as_ingredient_id FROM recipes WHERE id=?1", [&r_u1a], |r| r.get(0))
+            .query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id=?1",
+                [&r_u1a],
+                |r| r.get(0),
+            )
             .unwrap();
         do_save_recipe(
             &conn,
-            &SaveRecipeInput { id: Some(r_u1a.clone()), as_ingredient_id: Some(as_ing_u1a), name: "Poolish".into(), ..mk_recipe("Poolish") },
+            &SaveRecipeInput {
+                id: Some(r_u1a.clone()),
+                as_ingredient_id: Some(as_ing_u1a),
+                name: "Poolish".into(),
+                ..mk_recipe("Poolish")
+            },
             Some("user-1"),
         )
         .unwrap();
-        assert_eq!(recipe_slug(&r_u1a), "poolish", "rename regenerates the slug");
+        assert_eq!(
+            recipe_slug(&r_u1a),
+            "poolish",
+            "rename regenerates the slug"
+        );
         let history: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM slug_history WHERE scope='user-1' AND slug='biga'",
@@ -1929,22 +2327,34 @@ mod tests {
         let sm = vegify_core::public_sitemap(&conn).unwrap();
         let ings: Vec<&str> = sm.ingredients.iter().map(|i| i.slug.as_str()).collect();
         assert!(ings.contains(&"tofu"), "public leaf ingredient listed");
-        assert!(!ings.contains(&"secret-sauce"), "private ingredient excluded");
         assert!(
-            sm.ingredients.iter().any(|i| i.slug == "tofu" && i.username.is_none()),
+            !ings.contains(&"secret-sauce"),
+            "private ingredient excluded"
+        );
+        assert!(
+            sm.ingredients
+                .iter()
+                .any(|i| i.slug == "tofu" && i.username.is_none()),
             "unowned leaf = the catalog namespace (/ingredients/<slug>)"
         );
         assert!(
-            sm.ingredients.iter().any(|i| i.slug == "chef-paste" && i.username.as_deref() == Some("chef")),
+            sm.ingredients
+                .iter()
+                .any(|i| i.slug == "chef-paste" && i.username.as_deref() == Some("chef")),
             "owned leaf carries its owner handle (canonical /<username>/ingredients/<slug>)"
         );
 
         let recs: Vec<&str> = sm.recipes.iter().map(|r| r.slug.as_str()).collect();
         assert!(recs.contains(&"public-stew"), "public recipe listed");
         assert!(!recs.contains(&"private-stew"), "private recipe excluded");
-        assert!(!recs.contains(&"headless-stew"), "recipe under a handle-less user excluded");
         assert!(
-            sm.recipes.iter().any(|r| r.username == "chef" && r.slug == "public-stew"),
+            !recs.contains(&"headless-stew"),
+            "recipe under a handle-less user excluded"
+        );
+        assert!(
+            sm.recipes
+                .iter()
+                .any(|r| r.username == "chef" && r.slug == "public-stew"),
             "listed recipe carries its owner handle"
         );
 

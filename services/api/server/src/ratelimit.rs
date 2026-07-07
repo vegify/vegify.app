@@ -26,27 +26,59 @@ pub struct Limit {
 
 /// Login attempts per client IP — generous because the web's logins arrive via a handful of Lambda
 /// egress IPs; the per-identifier lockout below is the real credential-stuffing guard.
-pub const LOGIN_IP: Limit = Limit { name: "login-ip", max: 20, window: Duration::from_secs(60) };
+pub const LOGIN_IP: Limit = Limit {
+    name: "login-ip",
+    max: 20,
+    window: Duration::from_secs(60),
+};
 /// FAILED logins per account identifier (only failures count; a success clears the bucket). This is
 /// IP-independent on purpose: it holds against distributed stuffing and through the SSR aggregation.
-pub const LOGIN_FAILS: Limit = Limit { name: "login-fails", max: 5, window: Duration::from_secs(15 * 60) };
+pub const LOGIN_FAILS: Limit = Limit {
+    name: "login-fails",
+    max: 5,
+    window: Duration::from_secs(15 * 60),
+};
 /// Bootstrap (claiming an invited, passwordless account) per IP — a small guessing surface.
-pub const BOOTSTRAP_IP: Limit = Limit { name: "bootstrap-ip", max: 5, window: Duration::from_secs(60 * 60) };
+pub const BOOTSTRAP_IP: Limit = Limit {
+    name: "bootstrap-ip",
+    max: 5,
+    window: Duration::from_secs(60 * 60),
+};
 /// Account creation per IP (only reachable while the signups-open decision allows it).
-pub const SIGNUP_IP: Limit = Limit { name: "signup-ip", max: 5, window: Duration::from_secs(60 * 60) };
+pub const SIGNUP_IP: Limit = Limit {
+    name: "signup-ip",
+    max: 5,
+    window: Duration::from_secs(60 * 60),
+};
 /// Outbound-email endpoints (reset + verification requests) per IP…
-pub const EMAIL_SEND_IP: Limit = Limit { name: "email-ip", max: 10, window: Duration::from_secs(60 * 60) };
+pub const EMAIL_SEND_IP: Limit = Limit {
+    name: "email-ip",
+    max: 10,
+    window: Duration::from_secs(60 * 60),
+};
 /// …and per requested address — this one protects SES reputation and the inbox being spammed, and
 /// it fires identically for registered and unregistered addresses (no enumeration signal).
-pub const EMAIL_SEND_ID: Limit = Limit { name: "email-id", max: 3, window: Duration::from_secs(60 * 60) };
+pub const EMAIL_SEND_ID: Limit = Limit {
+    name: "email-id",
+    max: 3,
+    window: Duration::from_secs(60 * 60),
+};
 /// Token-consuming endpoints (reset/verification confirm) per IP — token-guessing budget.
-pub const TOKEN_CONFIRM_IP: Limit = Limit { name: "confirm-ip", max: 10, window: Duration::from_secs(60) };
+pub const TOKEN_CONFIRM_IP: Limit = Limit {
+    name: "confirm-ip",
+    max: 10,
+    window: Duration::from_secs(60),
+};
 /// A GENERAL per-IP budget across EVERY endpoint (applied as middleware) — defense-in-depth beyond
 /// the auth-specific limits above. It bounds any single source's load on the nano and slows naive
 /// scrapers of the public read endpoints (content pull, search, profiles), while staying generous
 /// enough that legit native-app traffic and the SSR Lambda's IP-aggregated reads never brush it
 /// (600/min = 10 req/s sustained per IP). Distributed scraping is an edge-WAF concern, not this.
-pub const GENERAL_IP: Limit = Limit { name: "general-ip", max: 600, window: Duration::from_secs(60) };
+pub const GENERAL_IP: Limit = Limit {
+    name: "general-ip",
+    max: 600,
+    window: Duration::from_secs(60),
+};
 
 /// Enforce a limit and, on rejection, emit a greppable `rate_limited` warn (the CloudWatch abuse
 /// metric filter counts these) before returning the retry-after seconds. Use this at every
@@ -93,7 +125,10 @@ impl RateLimiter {
 
     /// Forget `key`'s bucket — a successful login clears its failure count.
     pub fn clear(&self, limit: Limit, key: &str) {
-        self.entries.lock().unwrap().remove(&(limit.name, key.to_string()));
+        self.entries
+            .lock()
+            .unwrap()
+            .remove(&(limit.name, key.to_string()));
     }
 
     fn hit_at(&self, limit: Limit, key: &str, now: Instant) -> Result<(), u64> {
@@ -101,9 +136,11 @@ impl RateLimiter {
         if map.len() >= SWEEP_THRESHOLD {
             map.retain(|_, e| now.duration_since(e.window_start) < e.window);
         }
-        let entry = map
-            .entry((limit.name, key.to_string()))
-            .or_insert(Entry { window_start: now, window: limit.window, count: 0 });
+        let entry = map.entry((limit.name, key.to_string())).or_insert(Entry {
+            window_start: now,
+            window: limit.window,
+            count: 0,
+        });
         if now.duration_since(entry.window_start) >= limit.window {
             entry.window_start = now;
             entry.count = 0;
@@ -160,7 +197,11 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 mod tests {
     use super::*;
 
-    const TEST: Limit = Limit { name: "test", max: 3, window: Duration::from_secs(60) };
+    const TEST: Limit = Limit {
+        name: "test",
+        max: 3,
+        window: Duration::from_secs(60),
+    };
 
     #[test]
     fn allows_up_to_max_then_rejects_with_retry_after() {
@@ -169,7 +210,9 @@ mod tests {
         for _ in 0..3 {
             assert!(rl.hit_at(TEST, "k", t0).is_ok());
         }
-        let retry = rl.hit_at(TEST, "k", t0 + Duration::from_secs(10)).unwrap_err();
+        let retry = rl
+            .hit_at(TEST, "k", t0 + Duration::from_secs(10))
+            .unwrap_err();
         assert_eq!(retry, 50, "retry-after counts down the remaining window");
     }
 
@@ -181,7 +224,10 @@ mod tests {
             rl.hit_at(TEST, "k", t0).unwrap();
         }
         assert!(rl.hit_at(TEST, "k", t0 + Duration::from_secs(59)).is_err());
-        assert!(rl.hit_at(TEST, "k", t0 + Duration::from_secs(60)).is_ok(), "a fresh window opens");
+        assert!(
+            rl.hit_at(TEST, "k", t0 + Duration::from_secs(60)).is_ok(),
+            "a fresh window opens"
+        );
     }
 
     #[test]
@@ -192,22 +238,39 @@ mod tests {
             rl.hit_at(TEST, "a", t0).unwrap();
         }
         assert!(rl.hit_at(TEST, "b", t0).is_ok(), "other keys unaffected");
-        const OTHER: Limit = Limit { name: "other", max: 3, window: Duration::from_secs(60) };
-        assert!(rl.hit_at(OTHER, "a", t0).is_ok(), "same key under another limit name unaffected");
+        const OTHER: Limit = Limit {
+            name: "other",
+            max: 3,
+            window: Duration::from_secs(60),
+        };
+        assert!(
+            rl.hit_at(OTHER, "a", t0).is_ok(),
+            "same key under another limit name unaffected"
+        );
     }
 
     #[test]
     fn over_probes_without_counting_and_clear_resets() {
         let rl = RateLimiter::new();
         let t0 = Instant::now();
-        assert!(rl.over_at(TEST, "k", t0).is_none(), "unknown key is not over");
+        assert!(
+            rl.over_at(TEST, "k", t0).is_none(),
+            "unknown key is not over"
+        );
         for _ in 0..3 {
             rl.hit_at(TEST, "k", t0).unwrap();
         }
         assert!(rl.over_at(TEST, "k", t0).is_some());
-        assert!(rl.over_at(TEST, "k", t0 + Duration::from_secs(60)).is_none(), "expired window is not over");
+        assert!(
+            rl.over_at(TEST, "k", t0 + Duration::from_secs(60))
+                .is_none(),
+            "expired window is not over"
+        );
         rl.clear(TEST, "k");
-        assert!(rl.hit_at(TEST, "k", t0).is_ok(), "clear() forgets the bucket");
+        assert!(
+            rl.hit_at(TEST, "k", t0).is_ok(),
+            "clear() forgets the bucket"
+        );
     }
 
     #[test]
@@ -220,6 +283,9 @@ mod tests {
         for i in 0..10 {
             let _ = rl.hit_at(TEST, "k", t0 + Duration::from_secs(i));
         }
-        assert!(rl.hit_at(TEST, "k", t0 + Duration::from_secs(60)).is_ok(), "fixed window, not sliding");
+        assert!(
+            rl.hit_at(TEST, "k", t0 + Duration::from_secs(60)).is_ok(),
+            "fixed window, not sliding"
+        );
     }
 }

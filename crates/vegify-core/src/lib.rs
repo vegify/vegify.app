@@ -366,9 +366,14 @@ fn upsert_amount(
     grams: Option<f64>,
     unit: &str,
 ) -> Result<Option<String>, Error> {
-    let Some(grams) = grams else { return Ok(id.map(str::to_string)) };
+    let Some(grams) = grams else {
+        return Ok(id.map(str::to_string));
+    };
     if let Some(id) = id {
-        conn.execute("UPDATE amounts SET grams = ?2, unit = ?3 WHERE id = ?1", params![id, grams, unit])?;
+        conn.execute(
+            "UPDATE amounts SET grams = ?2, unit = ?3 WHERE id = ?1",
+            params![id, grams, unit],
+        )?;
         Ok(Some(id.to_string()))
     } else {
         let id = new_id();
@@ -388,13 +393,19 @@ fn delete_amounts(conn: &Connection, ids: &[Option<String>]) -> Result<(), Error
 }
 
 fn find_or_create_nutrient(conn: &Connection, name: &str) -> Result<String, Error> {
-    if let Some(id) =
-        conn.query_row("SELECT id FROM nutrients WHERE name = ?1", [name], |r| r.get::<_, String>(0)).optional()?
+    if let Some(id) = conn
+        .query_row("SELECT id FROM nutrients WHERE name = ?1", [name], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()?
     {
         return Ok(id);
     }
     let id = new_id();
-    conn.execute("INSERT INTO nutrients(id, name) VALUES (?1, ?2)", params![id, name])?;
+    conn.execute(
+        "INSERT INTO nutrients(id, name) VALUES (?1, ?2)",
+        params![id, name],
+    )?;
     Ok(id)
 }
 
@@ -449,7 +460,12 @@ pub fn slugify(name: &str) -> String {
 }
 
 /// Is `slug` already used in `scope` by a row other than `exclude_id`?
-fn slug_taken(conn: &Connection, slug: &str, scope: SlugScope, exclude_id: &str) -> Result<bool, Error> {
+fn slug_taken(
+    conn: &Connection,
+    slug: &str,
+    scope: SlugScope,
+    exclude_id: &str,
+) -> Result<bool, Error> {
     let n: i64 = match scope {
         SlugScope::UserRecipes(uid) => conn.query_row(
             "SELECT COUNT(*) FROM ingredients i JOIN recipes r ON r.as_ingredient_id = i.id
@@ -484,7 +500,11 @@ fn assign_generated_slug(
         candidate = format!("{base}-{n}");
     }
     let current: Option<String> = conn
-        .query_row("SELECT slug FROM ingredients WHERE id = ?1", [ing_id], |r| r.get(0))
+        .query_row(
+            "SELECT slug FROM ingredients WHERE id = ?1",
+            [ing_id],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten();
     if let Some(old) = current {
@@ -513,7 +533,10 @@ fn assign_generated_slug(
 /// Store a slug verbatim (the sync pull-apply — the server is authoritative, so no generation or
 /// history on replicas).
 fn store_slug(conn: &Connection, ing_id: &str, slug: &str) -> Result<(), Error> {
-    conn.execute("UPDATE ingredients SET slug = ?1 WHERE id = ?2", params![slug, ing_id])?;
+    conn.execute(
+        "UPDATE ingredients SET slug = ?1 WHERE id = ?2",
+        params![slug, ing_id],
+    )?;
     Ok(())
 }
 
@@ -528,7 +551,12 @@ pub fn backfill_all_slugs(conn: &Connection) -> Result<(), Error> {
         )?;
         let v = stmt
             .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get::<_, i64>(3)? != 0))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get::<_, i64>(3)? != 0,
+                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
@@ -564,11 +592,15 @@ pub fn do_save_ingredient(
     };
 
     let ingredient_id: String = if let Some((serving, batch, owner)) = existing {
-        let id = input.id.as_deref().expect("existing row implies a supplied id");
+        let id = input
+            .id
+            .as_deref()
+            .expect("existing row implies a supplied id");
         if !is_owner(owner.as_deref(), user_id) {
             return Err(Error::Db("You can only edit your own ingredients.".into()));
         }
-        let serving_size_id = upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
+        let serving_size_id =
+            upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.package_grams, "package")?;
         conn.execute(
             "UPDATE ingredients SET name=?2, description=?3, price=?4, calories_per_100g=?5,
@@ -584,7 +616,10 @@ pub fn do_save_ingredient(
                 visibility
             ],
         )?;
-        conn.execute("DELETE FROM ingredient_nutrient WHERE ingredient_id = ?1", [id])?;
+        conn.execute(
+            "DELETE FROM ingredient_nutrient WHERE ingredient_id = ?1",
+            [id],
+        )?;
         id.to_string()
     } else {
         let serving_size_id = upsert_amount(conn, None, input.serving_grams, "serving")?;
@@ -613,7 +648,12 @@ pub fn do_save_ingredient(
     match input.slug.as_deref() {
         Some(s) => store_slug(conn, &ingredient_id, s)?,
         None => {
-            assign_generated_slug(conn, &ingredient_id, &input.name, SlugScope::GlobalIngredients)?;
+            assign_generated_slug(
+                conn,
+                &ingredient_id,
+                &input.name,
+                SlugScope::GlobalIngredients,
+            )?;
         }
     }
 
@@ -627,17 +667,31 @@ pub fn do_save_ingredient(
         if !seen.insert(nutrient_id.clone()) {
             continue;
         }
-        let unit = if n.unit.is_empty() { "g" } else { n.unit.as_str() };
+        let unit = if n.unit.is_empty() {
+            "g"
+        } else {
+            n.unit.as_str()
+        };
         conn.execute(
             "INSERT INTO ingredient_nutrient(id, ingredient_id, nutrient_id, amount_per_100g, unit)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![new_id(), ingredient_id, nutrient_id, n.amount_per_100g, unit],
+            params![
+                new_id(),
+                ingredient_id,
+                nutrient_id,
+                n.amount_per_100g,
+                unit
+            ],
         )?;
     }
     Ok(ingredient_id)
 }
 
-pub fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), Error> {
+pub fn do_delete_ingredient(
+    conn: &Connection,
+    id: &str,
+    user_id: Option<&str>,
+) -> Result<(), Error> {
     let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
         .query_row(
             "SELECT serving_size_id, batch_size_id, user_id FROM ingredients WHERE id = ?1",
@@ -645,17 +699,27 @@ pub fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) 
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
-    let Some((serving, batch, owner)) = existing else { return Ok(()) };
+    let Some((serving, batch, owner)) = existing else {
+        return Ok(());
+    };
     if !is_owner(owner.as_deref(), user_id) {
-        return Err(Error::Db("You can only delete your own ingredients.".into()));
+        return Err(Error::Db(
+            "You can only delete your own ingredients.".into(),
+        ));
     }
     // A recipe's as-ingredient card must go through do_delete_recipe: recipes.as_ingredient_id
     // CASCADES, so a raw delete here would silently take the whole recipe with it.
     let backs_recipe: Option<String> = conn
-        .query_row("SELECT id FROM recipes WHERE as_ingredient_id = ?1", [id], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM recipes WHERE as_ingredient_id = ?1",
+            [id],
+            |r| r.get(0),
+        )
         .optional()?;
     if backs_recipe.is_some() {
-        return Err(Error::Db("This is a recipe's ingredient card — delete the recipe instead.".into()));
+        return Err(Error::Db(
+            "This is a recipe's ingredient card — delete the recipe instead.".into(),
+        ));
     }
     // In use by any recipe → SOFT delete (tombstone). The row, amounts, and readings all survive so
     // every recipe that references it keeps working at full fidelity; it just leaves browse/search
@@ -679,15 +743,26 @@ pub fn do_delete_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) 
 
 /// Undo a soft delete (the greyed row's "restore?" affordance). Owner-gated like every mutation; a
 /// row that isn't tombstoned is a no-op.
-pub fn do_restore_ingredient(conn: &Connection, id: &str, user_id: Option<&str>) -> Result<(), Error> {
+pub fn do_restore_ingredient(
+    conn: &Connection,
+    id: &str,
+    user_id: Option<&str>,
+) -> Result<(), Error> {
     let owner: Option<Option<String>> = conn
-        .query_row("SELECT user_id FROM ingredients WHERE id = ?1", [id], |r| r.get(0))
+        .query_row("SELECT user_id FROM ingredients WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
         .optional()?;
     let Some(owner) = owner else { return Ok(()) };
     if !is_owner(owner.as_deref(), user_id) {
-        return Err(Error::Db("You can only restore your own ingredients.".into()));
+        return Err(Error::Db(
+            "You can only restore your own ingredients.".into(),
+        ));
     }
-    conn.execute("UPDATE ingredients SET deleted_at = NULL WHERE id = ?1", [id])?;
+    conn.execute(
+        "UPDATE ingredients SET deleted_at = NULL WHERE id = ?1",
+        [id],
+    )?;
     Ok(())
 }
 
@@ -716,12 +791,16 @@ pub fn do_save_recipe(
     };
 
     let recipe_id: String = if let Some((as_ing_id, serving, batch, owner)) = existing {
-        let id = input.id.as_deref().expect("existing recipe implies a supplied id");
+        let id = input
+            .id
+            .as_deref()
+            .expect("existing recipe implies a supplied id");
         // The recipe's owner is its as-ingredient's owner; only the owner may edit.
         if !is_owner(owner.as_deref(), user_id) {
             return Err(Error::Db("You can only edit your own recipes.".into()));
         }
-        let serving_size_id = upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
+        let serving_size_id =
+            upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.batch_grams, "batch")?;
         conn.execute(
             "UPDATE ingredients SET name=?2, visibility=?3, serving_size_id=?4, batch_size_id=?5 WHERE id=?1",
@@ -732,13 +811,17 @@ pub fn do_save_recipe(
             params![id, input.subtitle.as_deref(), input.directions.as_deref()],
         )?;
         let prev: Vec<Option<String>> = {
-            let mut stmt = conn.prepare("SELECT amount_id FROM ingredient_in_recipe WHERE recipe_id = ?1")?;
+            let mut stmt =
+                conn.prepare("SELECT amount_id FROM ingredient_in_recipe WHERE recipe_id = ?1")?;
             let v = stmt
                 .query_map([id], |r| r.get::<_, Option<String>>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             v
         };
-        conn.execute("DELETE FROM ingredient_in_recipe WHERE recipe_id = ?1", [id])?;
+        conn.execute(
+            "DELETE FROM ingredient_in_recipe WHERE recipe_id = ?1",
+            [id],
+        )?;
         delete_amounts(conn, &prev)?;
         id.to_string()
     } else {
@@ -770,7 +853,11 @@ pub fn do_save_recipe(
             Some(s) => store_slug(conn, &as_ing_id, s)?,
             None => {
                 let owner: Option<String> = conn
-                    .query_row("SELECT user_id FROM ingredients WHERE id = ?1", [&as_ing_id], |r| r.get(0))
+                    .query_row(
+                        "SELECT user_id FROM ingredients WHERE id = ?1",
+                        [&as_ing_id],
+                        |r| r.get(0),
+                    )
                     .optional()?
                     .flatten();
                 let scope = match owner.as_deref() {
@@ -812,13 +899,16 @@ pub fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> R
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((as_ing_id, serving, batch, owner)) = as_ing else { return Ok(()) };
+    let Some((as_ing_id, serving, batch, owner)) = as_ing else {
+        return Ok(());
+    };
     if !is_owner(owner.as_deref(), user_id) {
         return Err(Error::Db("You can only delete your own recipes.".into()));
     }
 
     let item_amounts: Vec<Option<String>> = {
-        let mut stmt = conn.prepare("SELECT amount_id FROM ingredient_in_recipe WHERE recipe_id = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT amount_id FROM ingredient_in_recipe WHERE recipe_id = ?1")?;
         let v = stmt
             .query_map([id], |r| r.get::<_, Option<String>>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -828,9 +918,11 @@ pub fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> R
     delete_amounts(conn, &item_amounts)?;
 
     let still_used: Option<String> = conn
-        .query_row("SELECT id FROM ingredient_in_recipe WHERE ingredient_id = ?1 LIMIT 1", [&as_ing_id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT id FROM ingredient_in_recipe WHERE ingredient_id = ?1 LIMIT 1",
+            [&as_ing_id],
+            |r| r.get(0),
+        )
         .optional()?;
     if still_used.is_none() {
         conn.execute("DELETE FROM ingredients WHERE id = ?1", [&as_ing_id])?; // cascades ingredient_nutrient
@@ -840,7 +932,10 @@ pub fn do_delete_recipe(conn: &Connection, id: &str, user_id: Option<&str>) -> R
 }
 
 /// Aggregate an ingredient's (or recipe-as-ingredient's) nutrition to per-100g via the recursive CTE.
-pub fn aggregate_per100g(conn: &Connection, ingredient_id: &str) -> Result<AggregatedNutrition, Error> {
+pub fn aggregate_per100g(
+    conn: &Connection,
+    ingredient_id: &str,
+) -> Result<AggregatedNutrition, Error> {
     let mut stmt = conn.prepare(CTE)?;
     let rows = stmt.query_map([ingredient_id], |row| {
         Ok((
@@ -858,13 +953,20 @@ pub fn aggregate_per100g(conn: &Connection, ingredient_id: &str) -> Result<Aggre
             "cal" => calories_per_100g = per100g,
             "nut" => {
                 if let (Some(name), Some(unit), Some(v)) = (name, unit, per100g) {
-                    readings.push(Reading { name, amount_per_100g: v, unit });
+                    readings.push(Reading {
+                        name,
+                        amount_per_100g: v,
+                        unit,
+                    });
                 }
             }
             _ => {}
         }
     }
-    Ok(AggregatedNutrition { calories_per_100g, readings })
+    Ok(AggregatedNutrition {
+        calories_per_100g,
+        readings,
+    })
 }
 
 /// Load an ingredient's edit-shape data + its owner id (for the visibility gate). Shared by the
@@ -901,8 +1003,19 @@ fn load_ingredient_edit(
             },
         )
         .optional()?;
-    let Some((name, description, price, calories_per_100g, serving_grams, package_grams, visibility, owner, slug, deleted, creator)) =
-        meta
+    let Some((
+        name,
+        description,
+        price,
+        calories_per_100g,
+        serving_grams,
+        package_grams,
+        visibility,
+        owner,
+        slug,
+        deleted,
+        creator,
+    )) = meta
     else {
         return Ok(None);
     };
@@ -915,7 +1028,11 @@ fn load_ingredient_edit(
         )?;
         let v = stmt
             .query_map([id], |r| {
-                Ok(Reading { name: r.get(0)?, amount_per_100g: r.get(1)?, unit: r.get(2)? })
+                Ok(Reading {
+                    name: r.get(0)?,
+                    amount_per_100g: r.get(1)?,
+                    unit: r.get(2)?,
+                })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
@@ -1090,7 +1207,13 @@ pub fn get_profile(
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(Some(Profile { username, name, recipes, ingredients, avatar_key }))
+    Ok(Some(Profile {
+        username,
+        name,
+        recipes,
+        ingredients,
+        avatar_key,
+    }))
 }
 
 #[derive(Serialize, Type)]
@@ -1112,7 +1235,11 @@ pub fn resolve_recipe_by_slug(
     slug: &str,
 ) -> Result<Option<RecipeSlugHit>, Error> {
     let uid: Option<String> = conn
-        .query_row("SELECT id FROM users WHERE username = ?1", [username], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM users WHERE username = ?1",
+            [username],
+            |r| r.get(0),
+        )
         .optional()?;
     let Some(uid) = uid else { return Ok(None) };
 
@@ -1126,7 +1253,10 @@ pub fn resolve_recipe_by_slug(
         )
         .optional()?;
     if let Some(recipe_id) = live {
-        return Ok(Some(RecipeSlugHit { recipe_id, canonical_slug: slug.to_string() }));
+        return Ok(Some(RecipeSlugHit {
+            recipe_id,
+            canonical_slug: slug.to_string(),
+        }));
     }
 
     // Old slug → 301 to the row's current canonical (scope = owner user_id).
@@ -1147,7 +1277,10 @@ pub fn resolve_recipe_by_slug(
             )
             .optional()?;
         if let Some((recipe_id, Some(canonical_slug))) = hit {
-            return Ok(Some(RecipeSlugHit { recipe_id, canonical_slug }));
+            return Ok(Some(RecipeSlugHit {
+                recipe_id,
+                canonical_slug,
+            }));
         }
     }
     Ok(None)
@@ -1181,7 +1314,11 @@ pub fn resolve_ingredient_by_slug(
         )
         .optional()?;
     if let Some((ingredient_id, username)) = live {
-        return Ok(Some(IngredientSlugHit { ingredient_id, canonical_slug: slug.to_string(), username }));
+        return Ok(Some(IngredientSlugHit {
+            ingredient_id,
+            canonical_slug: slug.to_string(),
+            username,
+        }));
     }
     let target: Option<String> = conn
         .query_row(
@@ -1200,7 +1337,11 @@ pub fn resolve_ingredient_by_slug(
             )
             .optional()?;
         if let Some((Some(canonical_slug), username)) = canonical {
-            return Ok(Some(IngredientSlugHit { ingredient_id: target, canonical_slug, username }));
+            return Ok(Some(IngredientSlugHit {
+                ingredient_id: target,
+                canonical_slug,
+                username,
+            }));
         }
     }
     Ok(None)
@@ -1246,7 +1387,10 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
         )?;
         let v = stmt
             .query_map([], |row| {
-                Ok(SitemapRecipe { username: row.get(0)?, slug: row.get(1)? })
+                Ok(SitemapRecipe {
+                    username: row.get(0)?,
+                    slug: row.get(1)?,
+                })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
@@ -1261,11 +1405,19 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
              ORDER BY i.slug",
         )?;
         let v = stmt
-            .query_map([], |row| Ok(SitemapIngredient { username: row.get(0)?, slug: row.get(1)? }))?
+            .query_map([], |row| {
+                Ok(SitemapIngredient {
+                    username: row.get(0)?,
+                    slug: row.get(1)?,
+                })
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
-    Ok(SitemapData { recipes, ingredients })
+    Ok(SitemapData {
+        recipes,
+        ingredients,
+    })
 }
 
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
@@ -1285,7 +1437,9 @@ pub fn search_ingredients(
              ORDER BY i.name LIMIT 20",
         )?;
         let v = stmt
-            .query_map(params![like, viewer], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .query_map(params![like, viewer], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
@@ -1349,7 +1503,11 @@ pub fn recipe_for_edit(
         )?;
         let v = stmt
             .query_map([&id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<f64>>(2)?.unwrap_or(0.0)))
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
@@ -1450,7 +1608,11 @@ pub fn ingredient_for_edit(
 }
 
 /// Recipe detail (canView: serve unless it's someone else's private recipe → None, as the web 404s).
-pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Option<RecipeView>, Error> {
+pub fn recipe(
+    conn: &Connection,
+    id: String,
+    viewer: Option<&str>,
+) -> Result<Option<RecipeView>, Error> {
     let meta = conn
         .query_row(
             "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
@@ -1481,8 +1643,20 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
             },
         )
         .optional()?;
-    let Some((as_ing_id, name, subtitle, directions, creator, s_amount, s_unit, s_grams, batch_grams, owner, slug, photo_key)) =
-        meta
+    let Some((
+        as_ing_id,
+        name,
+        subtitle,
+        directions,
+        creator,
+        s_amount,
+        s_unit,
+        s_grams,
+        batch_grams,
+        owner,
+        slug,
+        photo_key,
+    )) = meta
     else {
         return Ok(None);
     };
@@ -1519,7 +1693,11 @@ pub fn recipe(conn: &Connection, id: String, viewer: Option<&str>) -> Result<Opt
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let nutrition = aggregate_per100g(conn, &as_ing_id)?;
-    let serving = s_grams.map(|grams| Amount { amount: s_amount, unit: s_unit, grams });
+    let serving = s_grams.map(|grams| Amount {
+        amount: s_amount,
+        unit: s_unit,
+        grams,
+    });
 
     Ok(Some(RecipeView {
         id,
@@ -1549,8 +1727,13 @@ mod delete_guard_tests {
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
         // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it.
-        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;").unwrap();
-        c.execute("INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')", []).unwrap();
+        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
+            .unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')",
+            [],
+        )
+        .unwrap();
         c
     }
 
@@ -1577,7 +1760,11 @@ mod delete_guard_tests {
     #[test]
     fn deleting_an_in_use_ingredient_soft_deletes_scoped_to_the_deleters_own_recipes() {
         let c = conn();
-        c.execute("INSERT INTO users (id, name, email) VALUES ('u2', 'Bob', 'b@x')", []).unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email) VALUES ('u2', 'Bob', 'b@x')",
+            [],
+        )
+        .unwrap();
         let flour = save_leaf(&c, "Flour");
         // u1's own recipe uses it, and so does u2's.
         let mine = save_recipe_with(&c, "My Bread", &flour, "u1");
@@ -1596,33 +1783,57 @@ mod delete_guard_tests {
 
         // Delisted everywhere public: browse, search, sitemap.
         let listed = list_ingredients(&c, Some("u1"), &Page::default()).unwrap();
-        assert!(listed.iter().all(|i| i.id != flour), "browse must exclude the tombstone");
+        assert!(
+            listed.iter().all(|i| i.id != flour),
+            "browse must exclude the tombstone"
+        );
         let found = search_ingredients(&c, "Flour".into(), Some("u1")).unwrap();
-        assert!(found.iter().all(|i| i.id != flour), "search must exclude the tombstone");
+        assert!(
+            found.iter().all(|i| i.id != flour),
+            "search must exclude the tombstone"
+        );
 
         // Greyed ONLY in the deleter's own recipe; the other user's recipe renders it untouched.
         let my_view = recipe(&c, mine.clone(), Some("u1")).unwrap().unwrap();
-        assert!(my_view.items[0].deleted, "deleter's own recipe shows the tombstone");
+        assert!(
+            my_view.items[0].deleted,
+            "deleter's own recipe shows the tombstone"
+        );
         let their_view = recipe(&c, theirs.clone(), Some("u2")).unwrap().unwrap();
-        assert!(!their_view.items[0].deleted, "other users' recipes are untouched");
+        assert!(
+            !their_view.items[0].deleted,
+            "other users' recipes are untouched"
+        );
         assert_eq!(their_view.items[0].name, "Flour", "full fidelity preserved");
 
         // Restore (owner-gated) brings it back to life everywhere.
-        assert!(do_restore_ingredient(&c, &flour, Some("u2")).is_err(), "only the owner restores");
+        assert!(
+            do_restore_ingredient(&c, &flour, Some("u2")).is_err(),
+            "only the owner restores"
+        );
         do_restore_ingredient(&c, &flour, Some("u1")).unwrap();
         let my_view = recipe(&c, mine, Some("u1")).unwrap().unwrap();
         assert!(!my_view.items[0].deleted);
         let found = search_ingredients(&c, "Flour".into(), None).unwrap();
-        assert!(found.iter().any(|i| i.id == flour), "restored = searchable again");
+        assert!(
+            found.iter().any(|i| i.id == flour),
+            "restored = searchable again"
+        );
 
         // Unreferenced deletes stay HARD: drop both recipes, delete again, row is gone.
         do_delete_recipe(&c, &theirs, Some("u2")).unwrap();
         // (u2 owns "Their Bread" — its delete already freed one reference.)
-        let my2: String = c.query_row("SELECT id FROM recipes LIMIT 1", [], |r| r.get(0)).unwrap();
+        let my2: String = c
+            .query_row("SELECT id FROM recipes LIMIT 1", [], |r| r.get(0))
+            .unwrap();
         do_delete_recipe(&c, &my2, Some("u1")).unwrap();
         do_delete_ingredient(&c, &flour, Some("u1")).unwrap();
         let left: i64 = c
-            .query_row("SELECT COUNT(*) FROM ingredients WHERE id = ?1", [&flour], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM ingredients WHERE id = ?1",
+                [&flour],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(left, 0, "unreferenced delete removes the row");
     }
@@ -1639,7 +1850,11 @@ mod delete_guard_tests {
                 directions: None,
                 serving_grams: None,
                 batch_grams: None,
-                items: vec![RecipeItemInput { ingredient_id: ingredient_id.to_string(), grams: 500.0, unit: None }],
+                items: vec![RecipeItemInput {
+                    ingredient_id: ingredient_id.to_string(),
+                    grams: 500.0,
+                    unit: None,
+                }],
                 slug: None,
             },
             Some(user),
@@ -1668,11 +1883,20 @@ mod delete_guard_tests {
         )
         .unwrap();
         let card: String = c
-            .query_row("SELECT as_ingredient_id FROM recipes WHERE id = ?1", [&recipe], |r| r.get(0))
+            .query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+                [&recipe],
+                |r| r.get(0),
+            )
             .unwrap();
         let err = do_delete_ingredient(&c, &card, Some("u1")).unwrap_err();
         assert!(format!("{err:?}").contains("delete the recipe instead"));
-        let recipes_left: i64 = c.query_row("SELECT COUNT(*) FROM recipes", [], |r| r.get(0)).unwrap();
-        assert_eq!(recipes_left, 1, "the recipe must survive the refused card delete");
+        let recipes_left: i64 = c
+            .query_row("SELECT COUNT(*) FROM recipes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            recipes_left, 1,
+            "the recipe must survive the refused card delete"
+        );
     }
 }

@@ -54,7 +54,9 @@ pub async fn fetch_artifact() -> Option<Vec<u8>> {
         tracing::warn!("VEGIFY_DATA_BUCKET not set — serving without the USDA catalog");
         return None;
     };
-    let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest()).load().await;
+    let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .load()
+        .await;
     let s3 = aws_sdk_s3::Client::new(&cfg);
     match s3.get_object().bucket(&bucket).key(OBJECT_KEY).send().await {
         Ok(out) => match out.body.collect().await {
@@ -177,7 +179,10 @@ mod tests {
         assert!(catalog_missing(&conn).unwrap());
         let n = ingest(&conn, &fixture_gz()).unwrap();
         assert_eq!(n, 2);
-        assert!(!catalog_missing(&conn).unwrap(), "marker present after ingest");
+        assert!(
+            !catalog_missing(&conn).unwrap(),
+            "marker present after ingest"
+        );
         let (owned, nonpublic, unslugged): (i64, i64, i64) = conn
             .query_row(
                 "SELECT
@@ -189,7 +194,11 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!((owned, nonpublic, unslugged), (0, 0, 0), "unowned, public, slugged");
+        assert_eq!(
+            (owned, nonpublic, unslugged),
+            (0, 0, 0),
+            "unowned, public, slugged"
+        );
         // Calories split onto the card column; the rest are nutrient readings.
         let (cal, readings): (f64, i64) = conn
             .query_row(
@@ -201,13 +210,19 @@ mod tests {
             )
             .unwrap();
         assert_eq!(cal, 31.0);
-        assert_eq!(readings, 2, "Iron + Vitamin C (Calories lives on the column)");
+        assert_eq!(
+            readings, 2,
+            "Iron + Vitamin C (Calories lives on the column)"
+        );
     }
 
     #[test]
     fn corrupt_artifact_rolls_back_leaving_no_marker() {
         let conn = test_conn();
         assert!(ingest(&conn, b"not gzip at all").is_err());
-        assert!(catalog_missing(&conn).unwrap(), "failed ingest leaves a clean slate for retry");
+        assert!(
+            catalog_missing(&conn).unwrap(),
+            "failed ingest leaves a clean slate for retry"
+        );
     }
 }

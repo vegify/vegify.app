@@ -56,9 +56,13 @@ fn status_error(resp: &mut ureq::http::Response<ureq::Body>) -> String {
 
 /// Read a typed body from a 2xx response; a non-2xx becomes [`Error::Api`] carrying the server's
 /// JSON `error` message (or a generic fallback if the body isn't the expected shape).
-fn read_json<T: serde::de::DeserializeOwned>(mut resp: ureq::http::Response<ureq::Body>) -> Result<T, Error> {
+fn read_json<T: serde::de::DeserializeOwned>(
+    mut resp: ureq::http::Response<ureq::Body>,
+) -> Result<T, Error> {
     if resp.status().is_success() {
-        resp.body_mut().read_json::<T>().map_err(|e| Error::Api(e.to_string()))
+        resp.body_mut()
+            .read_json::<T>()
+            .map_err(|e| Error::Api(e.to_string()))
     } else {
         Err(Error::Api(status_error(&mut resp)))
     }
@@ -236,7 +240,11 @@ pub struct SessionStore {
 
 impl SessionStore {
     pub fn new(service: impl Into<String>, account: impl Into<String>) -> Self {
-        Self { service: service.into(), account: account.into(), entry: std::sync::OnceLock::new() }
+        Self {
+            service: service.into(),
+            account: account.into(),
+            entry: std::sync::OnceLock::new(),
+        }
     }
 
     fn entry(&self) -> Result<&keyring::Entry, Error> {
@@ -259,7 +267,9 @@ impl SessionStore {
 
     pub fn store(&self, s: &Session) -> Result<(), Error> {
         let json = serde_json::to_string(s).map_err(|e| Error::Auth(e.to_string()))?;
-        self.entry()?.set_password(&json).map_err(|e| Error::Auth(e.to_string()))
+        self.entry()?
+            .set_password(&json)
+            .map_err(|e| Error::Auth(e.to_string()))
     }
 
     pub fn clear(&self) {
@@ -286,7 +296,10 @@ impl VegifyClient {
         // SDK surfaces to the user; ureq 3 otherwise collapses a non-2xx into a bare StatusCode error
         // with no body. So take every response as-is and inspect the status ourselves (see read_json /
         // expect_ok). Default agent config otherwise.
-        let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into();
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
         Self { base, agent }
     }
 
@@ -334,7 +347,11 @@ impl VegifyClient {
         // Auth surfaces ALL failures as Error::Auth (not Api/Network): a transport failure, a
         // credential rejection (the server's message), and a malformed body all read as "couldn't sign
         // you in" to the caller.
-        let mut resp = self.agent.post(&url).send_json(body).map_err(|e| Error::Auth(format!("Network error: {e}")))?;
+        let mut resp = self
+            .agent
+            .post(&url)
+            .send_json(body)
+            .map_err(|e| Error::Auth(format!("Network error: {e}")))?;
         if resp.status().is_success() {
             resp.body_mut()
                 .read_json::<WireSession>()
@@ -355,7 +372,10 @@ impl VegifyClient {
     }
 
     pub fn sign_in(&self, email: &str, password: &str) -> Result<Session, Error> {
-        self.post_auth("login", serde_json::json!({ "email": email, "password": password }))
+        self.post_auth(
+            "login",
+            serde_json::json!({ "email": email, "password": password }),
+        )
     }
 
     pub fn sign_up(&self, name: &str, email: &str, password: &str) -> Result<Session, Error> {
@@ -367,20 +387,30 @@ impl VegifyClient {
 
     /// Best-effort server-side session revoke — errors are swallowed so a local logout always works.
     pub fn logout(&self, token: &str) {
-        let _ = Self::bearer(self.agent.post(format!("{}/api/auth/logout", self.base)), token).send_empty();
+        let _ = Self::bearer(
+            self.agent.post(format!("{}/api/auth/logout", self.base)),
+            token,
+        )
+        .send_empty();
     }
 
     /// Enumeration-safe: the backend always 200s; transport errors are swallowed too, so the caller
     /// shows the same "check your email" result regardless. The reset finishes in the browser.
     pub fn request_password_reset(&self, email: &str) {
         let url = format!("{}/api/auth/password-reset/request", self.base);
-        let _ = self.agent.post(&url).send_json(serde_json::json!({ "email": email }));
+        let _ = self
+            .agent
+            .post(&url)
+            .send_json(serde_json::json!({ "email": email }));
     }
 
     /// Same contract as [`request_password_reset`](Self::request_password_reset).
     pub fn request_email_verification(&self, email: &str) {
         let url = format!("{}/api/auth/email-verification/request", self.base);
-        let _ = self.agent.post(&url).send_json(serde_json::json!({ "email": email }));
+        let _ = self
+            .agent
+            .post(&url)
+            .send_json(serde_json::json!({ "email": email }));
     }
 
     // ---- content sync ----
@@ -408,18 +438,31 @@ impl VegifyClient {
 
     /// POST /api/content/{collection} with a save payload (the server upserts by id and stamps the
     /// owner from the session). `collection` ∈ {"recipes", "ingredients"}.
-    pub fn content_post(&self, token: &str, collection: &str, body: &serde_json::Value) -> Result<(), Error> {
+    pub fn content_post(
+        &self,
+        token: &str,
+        collection: &str,
+        body: &serde_json::Value,
+    ) -> Result<(), Error> {
         tracing::debug!(collection, "POST content");
-        expect_ok(Self::bearer(self.agent.post(self.content_url(collection)), token).send_json(body).map_err(net)?)
+        expect_ok(
+            Self::bearer(self.agent.post(self.content_url(collection)), token)
+                .send_json(body)
+                .map_err(net)?,
+        )
     }
 
     /// DELETE /api/content/{collection}?id=… — idempotent server-side.
     pub fn content_delete(&self, token: &str, collection: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(collection, id, "DELETE content");
         expect_ok(
-            Self::bearer(self.agent.delete(format!("{}?id={id}", self.content_url(collection))), token)
-                .call()
-                .map_err(net)?,
+            Self::bearer(
+                self.agent
+                    .delete(format!("{}?id={id}", self.content_url(collection))),
+                token,
+            )
+            .call()
+            .map_err(net)?,
         )
     }
 
@@ -427,9 +470,15 @@ impl VegifyClient {
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");
         expect_ok(
-            Self::bearer(self.agent.post(format!("{}?id={id}", self.content_url("ingredient-restore"))), token)
-                .send_json(serde_json::json!({}))
-                .map_err(net)?,
+            Self::bearer(
+                self.agent.post(format!(
+                    "{}?id={id}",
+                    self.content_url("ingredient-restore")
+                )),
+                token,
+            )
+            .send_json(serde_json::json!({}))
+            .map_err(net)?,
         )
     }
 
@@ -440,14 +489,23 @@ impl VegifyClient {
     }
 
     pub fn conversations(&self, token: &str) -> Result<Vec<DmConversation>, Error> {
-        read_json(Self::bearer(self.agent.get(self.messages_url("conversations")), token).call().map_err(net)?)
+        read_json(
+            Self::bearer(self.agent.get(self.messages_url("conversations")), token)
+                .call()
+                .map_err(net)?,
+        )
     }
 
     pub fn thread(&self, token: &str, with: &str) -> Result<DmThread, Error> {
         read_json(
-            Self::bearer(self.agent.get(self.messages_url("thread")).query("with", with), token)
-                .call()
-                .map_err(net)?,
+            Self::bearer(
+                self.agent
+                    .get(self.messages_url("thread"))
+                    .query("with", with),
+                token,
+            )
+            .call()
+            .map_err(net)?,
         )
     }
 
@@ -464,8 +522,11 @@ impl VegifyClient {
         struct Count {
             count: f64,
         }
-        let c: Count =
-            read_json(Self::bearer(self.agent.get(self.messages_url("unread")), token).call().map_err(net)?)?;
+        let c: Count = read_json(
+            Self::bearer(self.agent.get(self.messages_url("unread")), token)
+                .call()
+                .map_err(net)?,
+        )?;
         Ok(c.count)
     }
 
@@ -487,8 +548,11 @@ impl VegifyClient {
             created_at: f64,
             read: bool,
         }
-        let rows: Vec<WireNotification> =
-            read_json(Self::bearer(self.agent.get(self.notifications_url("")), token).call().map_err(net)?)?;
+        let rows: Vec<WireNotification> = read_json(
+            Self::bearer(self.agent.get(self.notifications_url("")), token)
+                .call()
+                .map_err(net)?,
+        )?;
         Ok(rows
             .into_iter()
             .map(|n| DmNotification {
@@ -507,7 +571,9 @@ impl VegifyClient {
             count: f64,
         }
         let c: Count = read_json(
-            Self::bearer(self.agent.get(self.notifications_url("/unread")), token).call().map_err(net)?,
+            Self::bearer(self.agent.get(self.notifications_url("/unread")), token)
+                .call()
+                .map_err(net)?,
         )?;
         Ok(c.count)
     }
@@ -543,26 +609,36 @@ impl VegifyClient {
 
     pub fn block_user(&self, token: &str, username: &str) -> Result<(), Error> {
         expect_ok(
-            Self::bearer(self.agent.post(format!("{}/api/users/block", self.base)), token)
-                .send_json(serde_json::json!({ "username": username }))
-                .map_err(net)?,
+            Self::bearer(
+                self.agent.post(format!("{}/api/users/block", self.base)),
+                token,
+            )
+            .send_json(serde_json::json!({ "username": username }))
+            .map_err(net)?,
         )
     }
 
     pub fn unblock_user(&self, token: &str, username: &str) -> Result<(), Error> {
         expect_ok(
-            Self::bearer(self.agent.post(format!("{}/api/users/unblock", self.base)), token)
-                .send_json(serde_json::json!({ "username": username }))
-                .map_err(net)?,
+            Self::bearer(
+                self.agent.post(format!("{}/api/users/unblock", self.base)),
+                token,
+            )
+            .send_json(serde_json::json!({ "username": username }))
+            .map_err(net)?,
         )
     }
 
     /// Delete the signed-in account (password-reconfirmed). Irreversible.
     pub fn delete_account(&self, token: &str, password: &str) -> Result<(), Error> {
         expect_ok(
-            Self::bearer(self.agent.post(format!("{}/api/auth/delete-account", self.base)), token)
-                .send_json(serde_json::json!({ "password": password }))
-                .map_err(net)?,
+            Self::bearer(
+                self.agent
+                    .post(format!("{}/api/auth/delete-account", self.base)),
+                token,
+            )
+            .send_json(serde_json::json!({ "password": password }))
+            .map_err(net)?,
         )
     }
 }
@@ -573,8 +649,14 @@ mod tests {
 
     #[test]
     fn ws_url_derives_scheme_and_path() {
-        assert_eq!(VegifyClient::new("https://api.vegify.app/").ws_url(), "wss://api.vegify.app/ws");
-        assert_eq!(VegifyClient::new("http://localhost:8787").ws_url(), "ws://localhost:8787/ws");
+        assert_eq!(
+            VegifyClient::new("https://api.vegify.app/").ws_url(),
+            "wss://api.vegify.app/ws"
+        );
+        assert_eq!(
+            VegifyClient::new("http://localhost:8787").ws_url(),
+            "ws://localhost:8787/ws"
+        );
     }
 
     #[test]

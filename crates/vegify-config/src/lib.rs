@@ -14,7 +14,10 @@ use std::env;
 
 /// An env var, treating unset and empty/whitespace as absent.
 fn non_empty(key: &str) -> Option<String> {
-    env::var(key).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    env::var(key)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 #[cfg(feature = "server")]
@@ -28,7 +31,9 @@ pub mod server {
 
     /// Listen port.
     pub fn port() -> u16 {
-        non_empty("PORT").and_then(|p| p.parse().ok()).unwrap_or(8787)
+        non_empty("PORT")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(8787)
     }
 
     /// Signups are disabled unless VEGIFY_SIGNUPS_OPEN=1 (invite-only by default; the server is the
@@ -74,7 +79,12 @@ pub mod server {
     /// are compared lowercased/trimmed, matching how they're stored.
     pub fn admin_emails() -> Vec<String> {
         non_empty("VEGIFY_ADMIN_EMAILS")
-            .map(|v| v.split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect())
+            .map(|v| {
+                v.split(',')
+                    .map(|e| e.trim().to_lowercase())
+                    .filter(|e| !e.is_empty())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }
@@ -89,7 +99,9 @@ pub mod desktop {
     /// open-source tree carries no deployment host; an inert placeholder stands in when unset.
     pub fn server_url() -> String {
         non_empty("VEGIFY_AUTH_URL").unwrap_or_else(|| {
-            option_env!("VEGIFY_API_URL").unwrap_or("https://api.example.com").to_string()
+            option_env!("VEGIFY_API_URL")
+                .unwrap_or("https://api.example.com")
+                .to_string()
         })
     }
 

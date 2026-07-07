@@ -425,7 +425,10 @@ mod tests {
         assert_eq!(slugify("  Élodie  "), "lodie");
         assert_eq!(slugify("123"), "123"); // a valid slug; validate_username then rejects all-digits
         assert_eq!(slugify(""), "");
-        assert_eq!(validate_username(&slugify("Best Cook")), Ok("best-cook".to_string()));
+        assert_eq!(
+            validate_username(&slugify("Best Cook")),
+            Ok("best-cook".to_string())
+        );
     }
 
     #[test]

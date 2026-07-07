@@ -39,14 +39,17 @@ impl IntoResponse for AppError {
                     Json(json!({ "error": format!("Too many attempts — try again in {secs} seconds.") })),
                 )
                     .into_response();
-                resp.headers_mut()
-                    .insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(secs));
+                resp.headers_mut().insert(
+                    axum::http::header::RETRY_AFTER,
+                    axum::http::HeaderValue::from(secs),
+                );
                 return resp;
             }
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized.".to_string()),
-            AppError::InvalidCredentials => {
-                (StatusCode::UNAUTHORIZED, "Invalid email or password.".to_string())
-            }
+            AppError::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid email or password.".to_string(),
+            ),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),

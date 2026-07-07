@@ -6,7 +6,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::Value;
-pub use vegify_api_types::{PostSummary, PostFull};
+pub use vegify_api_types::{PostFull, PostSummary};
 
 /// The bundled migration seed (the two originally-in-code posts). One-time: `seed_if_empty` inserts it
 /// only into an empty table, so it never clobbers posts authored later.
@@ -23,8 +23,6 @@ struct SeedPost {
     date_display: String,
     body: Value,
 }
-
-
 
 /// Migrate the bundled posts into an EMPTY table (idempotent: no-op once any post exists).
 pub fn seed_if_empty(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -92,12 +90,14 @@ pub fn get_post(conn: &Connection, slug: &str) -> rusqlite::Result<Option<PostFu
             },
         )
         .optional()?;
-    Ok(row.map(|(slug, title, description, date_published, date_display, body)| PostFull {
-        slug,
-        title,
-        description,
-        date_published,
-        date_display,
-        body: serde_json::from_str(&body).unwrap_or_else(|_| Value::Array(vec![])),
-    }))
+    Ok(row.map(
+        |(slug, title, description, date_published, date_display, body)| PostFull {
+            slug,
+            title,
+            description,
+            date_published,
+            date_display,
+            body: serde_json::from_str(&body).unwrap_or_else(|_| Value::Array(vec![])),
+        },
+    ))
 }
