@@ -13,11 +13,11 @@ vegify-config = { path = "../../../crates/vegify-config", features = ["server"] 
 axum = { version = "0.8", features = ["ws"] }
 # `sync` = the broadcast channel that fans content-change signals to /ws clients; `time` = the keepalive ping interval.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
-# Must match vegify-core's rusqlite (0.32) so the Connection type unifies; `bundled` compiles SQLite in.
-rusqlite = { version = "0.32", features = ["bundled"] }
+# Must match vegify-core's rusqlite (0.40) so the Connection type unifies; `bundled` compiles SQLite in.
+rusqlite = { version = "0.40", features = ["bundled"] }
 # WAL connection pool: concurrent readers + a serialized writer (rusqlite is sync → spawn_blocking).
 r2d2 = "0.8"
-r2d2_sqlite = "0.25"
+r2d2_sqlite = "0.35"
 serde = { version = "1", features = ["derive"] }
 # The wire contract lives in its own crate (../types) — the shapes these modules construct.
 vegify-api-types = { path = "../types" }
