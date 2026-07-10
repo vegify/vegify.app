@@ -106,6 +106,25 @@ pub struct PullPayload {
     pub recipes: Vec<PullRecipe>,
     /// All visible ingredients, with their nutrient rows.
     pub ingredients: Vec<PullIngredient>,
+    /// The creators of the rows above — public identity only. The desktop mirrors these into its
+    /// local `users` cache so creator handles and `/<username>` profiles resolve on-device, logged
+    /// out included. Users without a username are omitted (their content renders creatorless,
+    /// exactly as the server serves it).
+    pub users: Vec<PullUser>,
+}
+
+#[derive(Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+/// One creator as pulled — the public identity surface for content in this payload.
+pub struct PullUser {
+    /// User id (what PullRecipe/PullIngredient `user_id` points at).
+    pub id: String,
+    /// Profile handle (the `/<username>` URL segment).
+    pub username: String,
+    /// Display name.
+    pub name: String,
+    /// Media key of the profile avatar; clients compose `<api base>/<key>`.
+    pub avatar_key: Option<String>,
 }
 
 #[derive(Serialize, specta::Type)]
