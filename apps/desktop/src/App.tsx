@@ -391,6 +391,7 @@ const profileQuery = (username: string) =>
       return {
         username: p.username,
         name: p.name,
+        avatarUrl: mediaUrl(p.avatarKey),
         recipes: p.recipes.map(toRecipeListItem),
         // id-only mapping (no slug/username): the desktop links by id everywhere — offline-first,
         // no slug-resolution routes in the shell.

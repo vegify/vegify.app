@@ -296,6 +296,13 @@ export type PullPayload = {
 	recipes: PullRecipe[],
 	/**  All visible ingredients, with their nutrient rows. */
 	ingredients: PullIngredient[],
+	/**
+	 *  The creators of the rows above — public identity only. The desktop mirrors these into its
+	 *  local `users` cache so creator handles and `/<username>` profiles resolve on-device, logged
+	 *  out included. Users without a username are omitted (their content renders creatorless,
+	 *  exactly as the server serves it).
+	 */
+	users: PullUser[],
 };
 
 /**  One nutrient reading as pulled, per 100 g. */
@@ -335,6 +342,18 @@ export type PullRecipe = {
 	slug: string | null,
 	/**  The recipe's lines, in order. */
 	items: PullItem[],
+};
+
+/**  One creator as pulled — the public identity surface for content in this payload. */
+export type PullUser = {
+	/**  User id (what PullRecipe/PullIngredient `user_id` points at). */
+	id: string,
+	/**  Profile handle (the `/<username>` URL segment). */
+	username: string,
+	/**  Display name. */
+	name: string,
+	/**  Media key of the profile avatar; clients compose `<api base>/<key>`. */
+	avatarKey: string | null,
 };
 
 /**  One nutrient measurement, normalized per 100 g. */

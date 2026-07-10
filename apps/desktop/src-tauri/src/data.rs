@@ -205,10 +205,17 @@ fn payload_id(p: &serde_json::Value) -> Result<&str, DataError> {
 
 /// Reconcile the local content cache to a server pull. Inside ONE transaction (FK already disabled by
 /// the caller — PRAGMA foreign_keys is a no-op mid-transaction), clear the content tables — keeping
-/// `users`, the `nutrients` name catalog, and the meta tables — then re-apply every pulled row via
+/// the `nutrients` name catalog and the meta tables — then re-apply every pulled row via
 /// vegify-core's do_save_* stamped with its REAL owner (so per-viewer gates mirror the server).
 /// Pruning falls out: anything the pull no longer returns simply isn't recreated. The caller pushes
 /// first, so no unpushed local create is lost. Atomic: any error rolls back, leaving the cache intact.
+///
+/// `users` is reconciled rather than wiped: pull-owned rows are the payload's creators (public
+/// identity; synthetic email = the user id, which never contains '@', marking them pull-owned under
+/// the cache's NOT NULL + UNIQUE email), replaced wholesale each pull so creator handles and
+/// `/<username>` profiles resolve on-device — logged out included. Auth-owned rows (a real email:
+/// the signed-in user via ensure_user_local, dev seeds) only ever get their public fields refreshed,
+/// never their email.
 fn apply_pull(
     conn: &mut Connection,
     payload: &vegify_client::PullPayload,
@@ -221,6 +228,15 @@ fn apply_pull(
          DELETE FROM ingredients;
          DELETE FROM amounts;",
     )?;
+    tx.execute("DELETE FROM users WHERE email NOT LIKE '%@%'", [])?;
+    for u in &payload.users {
+        tx.execute(
+            "INSERT INTO users(id, name, username, avatar_key, email) VALUES (?1, ?2, ?3, ?4, ?1)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username,
+                                           avatar_key = excluded.avatar_key",
+            params![u.id, u.name, u.username, u.avatar_key],
+        )?;
+    }
     for ing in &payload.ingredients {
         let input = SaveIngredientInput {
             id: Some(ing.id.clone()),
@@ -2206,6 +2222,128 @@ mod tests {
         drop(conn);
         let _ = fs::remove_file(&path);
         eprintln!("fresh DB accepted a content write: ingredient {id}");
+    }
+
+    /// The logged-out cache regression behind "@user" breadcrumbs + "No one goes by that handle":
+    /// the pull now carries creators, apply_pull mirrors them into `users` (placeholder email = the
+    /// id), so creator handles and profiles resolve on-device without a session — while an
+    /// auth-owned row (real email) keeps its email and stale placeholders vanish on the next pull.
+    #[test]
+    fn apply_pull_users_resolve_creators_and_profiles() {
+        let path = std::env::temp_dir().join(format!("vegify-pullusers-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = Db::open(path.to_str().unwrap()).expect("open fresh app-data DB");
+        let mut conn = db.conn.lock().unwrap();
+        // An auth-owned row, as ensure_user_local writes it on sign-in (real email).
+        conn.execute(
+            "INSERT INTO users(id, name, username, email) VALUES ('u-self', 'Old Name', 'self', 'self@example.com')",
+            [],
+        )
+        .unwrap();
+
+        let payload = vegify_client::PullPayload {
+            recipes: vec![vegify_client::PullRecipe {
+                id: "r1".into(),
+                as_ingredient_id: "r1-as".into(),
+                user_id: Some("u-ada".into()),
+                visibility: Visibility::Public,
+                name: "Ada's Porridge".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![],
+                slug: None,
+            }],
+            ingredients: vec![vegify_client::PullIngredient {
+                id: "i1".into(),
+                user_id: Some("u-ada".into()),
+                visibility: Visibility::Public,
+                name: "Ada's Oats".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(389.0),
+                serving_grams: None,
+                package_grams: None,
+                nutrients: vec![],
+                slug: None,
+                deleted_at: None,
+            }],
+            users: vec![
+                vegify_client::PullUser {
+                    id: "u-ada".into(),
+                    username: "ada".into(),
+                    name: "Ada".into(),
+                    avatar_key: Some("media/ada.jpg".into()),
+                },
+                // The signed-in user also appears in a pull (they own content) — public fields
+                // refresh, the auth-owned email must survive.
+                vegify_client::PullUser {
+                    id: "u-self".into(),
+                    username: "self".into(),
+                    name: "New Name".into(),
+                    avatar_key: None,
+                },
+            ],
+        };
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        apply_pull(&mut conn, &payload).expect("apply pull with users");
+
+        // Creator handle resolves on the recipe view (the "@user" breadcrumb regression).
+        let view = vegify_core::recipe(&conn, "r1".into(), None)
+            .unwrap()
+            .expect("pulled recipe readable");
+        assert_eq!(view.creator.as_deref(), Some("ada"));
+
+        // The creator's profile resolves logged-out, with both shelves + avatar.
+        let profile = vegify_core::get_profile(&conn, "ada", None)
+            .unwrap()
+            .expect("creator profile resolves from the cache");
+        assert_eq!(profile.name, "Ada");
+        assert_eq!(profile.avatar_key.as_deref(), Some("media/ada.jpg"));
+        assert_eq!(profile.recipes.len(), 1);
+        assert_eq!(profile.ingredients.len(), 1);
+
+        // Placeholder rows carry the synthetic id-email; auth-owned rows keep theirs (public
+        // fields refreshed).
+        let ada_email: String = conn
+            .query_row("SELECT email FROM users WHERE id = 'u-ada'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ada_email, "u-ada");
+        let (self_email, self_name): (String, String) = conn
+            .query_row(
+                "SELECT email, name FROM users WHERE id = 'u-self'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(self_email, "self@example.com");
+        assert_eq!(self_name, "New Name");
+
+        // A later pull that no longer lists ada prunes the placeholder; the auth-owned row stays.
+        let empty = vegify_client::PullPayload {
+            recipes: vec![],
+            ingredients: vec![],
+            users: vec![],
+        };
+        apply_pull(&mut conn, &empty).expect("apply empty pull");
+        let ada_left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE id = 'u-ada'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ada_left, 0, "stale placeholder pruned");
+        let self_left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE id = 'u-self'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(self_left, 1, "auth-owned row survives");
+
+        drop(conn);
+        let _ = fs::remove_file(&path);
     }
 
     /// Slug generation: kebab from name, per-scope uniqueness (global for leaf ingredients, per-user
