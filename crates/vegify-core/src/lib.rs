@@ -22,7 +22,7 @@ use ulid::Ulid;
 /// A fresh client-side ULID (text id). Minted on insert when no id is supplied; a supplied id is
 /// honored, so offline creates and sync re-applies stay authoritative.
 pub fn new_id() -> String {
-    Ulid::new().to_string()
+    Ulid::gen().to_string()
 }
 
 /// The crate error. `Db` = a SQLite/data failure (incl. the owner-guard messages); `Auth` is
