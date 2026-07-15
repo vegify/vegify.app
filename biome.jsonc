@@ -2,7 +2,7 @@
   // One lint/format layer for the workspace, single config at the root.
   // Formatter options match the incumbent style (prettier defaults) so the
   // adoption diff is lint value, not a reformat.
-  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
