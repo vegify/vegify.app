@@ -136,10 +136,30 @@ pub struct Session {
     pub user: AuthUser,
 }
 
+/// One bell notification, the wire shape. Hand-held (not in `generated.rs`) because its
+/// `payload: serde_json::Value` hits specta-rust's anonymous-inline-enum limit — the exporter
+/// errors loudly on `serde_json::Value.Number.0` until upstream can render `Value` as an
+/// opaque. Field idents follow the generated convention (wire names verbatim), so the eventual
+/// move into the generated module is a deletion here and nothing else.
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Notification {
+    /// Notification id.
+    pub id: String,
+    /// Kind tag (e.g. "ingredient-updated"); selects the payload shape.
+    pub kind: String,
+    /// Parsed per-kind payload, as the server serves it.
+    pub payload: serde_json::Value,
+    /// Creation timestamp, ms epoch.
+    pub createdAt: i64,
+    /// Whether the viewer has opened it.
+    pub read: bool,
+}
+
 /// One bell row, as CONSUMERS see it: `payload` is the server's per-kind JSON re-serialized to a
-/// RAW STRING (consumers parse it by `kind`). The wire shape itself is the generated
-/// [`Notification`] (`payload` as parsed JSON); this view exists so IPC/webview consumers get a
-/// string they can hand straight to `JSON.parse`.
+/// RAW STRING (consumers parse it by `kind`). The wire shape itself is [`Notification`]
+/// (`payload` as parsed JSON); this view exists so IPC/webview consumers get a string they can
+/// hand straight to `JSON.parse`.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
@@ -507,30 +527,26 @@ impl VegifyClient {
         format!("{}/api/notifications{path}", self.base)
     }
 
-    /// List the bell. The server sends `payload` as parsed JSON; it's re-serialized to a string for
-    /// [`DmNotification`] (consumers parse per kind).
-    pub fn notifications(&self, token: &str) -> Result<Vec<DmNotification>, Error> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct WireNotification {
-            id: String,
-            kind: String,
-            payload: serde_json::Value,
-            created_at: f64,
-            read: bool,
-        }
-        let rows: Vec<WireNotification> = read_json(
+    /// List the bell, in wire shape ([`Notification`], `payload` as parsed JSON).
+    pub fn notifications_wire(&self, token: &str) -> Result<Vec<Notification>, Error> {
+        read_json(
             Self::bearer(self.agent.get(self.notifications_url("")), token)
                 .call()
                 .map_err(net)?,
-        )?;
-        Ok(rows
+        )
+    }
+
+    /// List the bell as [`DmNotification`]s: `payload` re-serialized to a string (consumers parse
+    /// per kind), the timestamp as an f64 for the webview.
+    pub fn notifications(&self, token: &str) -> Result<Vec<DmNotification>, Error> {
+        Ok(self
+            .notifications_wire(token)?
             .into_iter()
             .map(|n| DmNotification {
                 id: n.id,
                 kind: n.kind,
                 payload: n.payload.to_string(),
-                created_at: n.created_at,
+                created_at: n.createdAt as f64,
                 read: n.read,
             })
             .collect())

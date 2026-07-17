@@ -4928,6 +4928,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta-util"
+version = "0.0.13"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+dependencies = [
+ "specta",
+]
+
+[[package]]
 name = "spin"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5370,7 +5378,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc"
 version = "0.1.5"
-source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=2328805995eda6a3931b5858408e67d1f9bdfb17#2328805995eda6a3931b5858408e67d1f9bdfb17"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=99f7fcfb2366aa4a1969d4e0938f26380f67ed32#99f7fcfb2366aa4a1969d4e0938f26380f67ed32"
 dependencies = [
  "serde",
  "serde_json",
@@ -5385,7 +5393,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc-macros"
 version = "0.1.5"
-source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=2328805995eda6a3931b5858408e67d1f9bdfb17#2328805995eda6a3931b5858408e67d1f9bdfb17"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=99f7fcfb2366aa4a1969d4e0938f26380f67ed32#99f7fcfb2366aa4a1969d4e0938f26380f67ed32"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -6220,6 +6228,7 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "specta-util",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -6323,6 +6332,7 @@ dependencies = [
  "specta-rust",
  "specta-serde",
  "specta-typescript",
+ "specta-util",
  "vegify-api-types",
 ]
 

@@ -264,7 +264,7 @@ fn apply_pull(
         if let Some(ts) = ing.deletedAt {
             tx.execute(
                 "UPDATE ingredients SET deleted_at = ?1 WHERE id = ?2",
-                params![ts as i64, ing.id],
+                params![ts, ing.id],
             )?;
         }
     }

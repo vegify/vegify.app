@@ -7,26 +7,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the
-/// rc.25 specta line can't export `serde_json::Value` — its Number variant carries i64 and trips
-/// the BigInt guard (fixed upstream by specta PR #505; when that lands, the `#[specta(type = …)]`
-/// overrides pointing here can drop away). Never constructed — a type-level wire declaration only.
-#[derive(Serialize, specta::Type)]
-#[serde(untagged)]
-pub enum JsonValue {
-    /// JSON null.
-    Null(()),
-    /// JSON boolean.
-    Bool(bool),
-    /// JSON number (f64 on this wire; the reason this type exists).
-    Number(f64),
-    /// JSON string.
-    String(String),
-    /// JSON array.
-    Array(Vec<JsonValue>),
-    /// JSON object.
-    Object(std::collections::HashMap<String, JsonValue>),
-}
+// This crate declares HONEST Rust widths (i64 ms epochs and counts, serde_json::Value for
+// opaque JSON) — no per-field `#[specta(type = …)]` narrowing. The JS-facing exporters
+// (vegify-typegen's TS emission, the desktop's ttipc bindings) apply specta-util's
+// `Remapper::dangerous_bigints_as_number()` at export, which is wire-sound: serde serializes
+// these i64s as JSON numbers and every live value sits far below 2^53. Exporters that can say
+// int64 (openapi.json) get the true widths.
 
 // ---- media ----
 
@@ -91,8 +77,7 @@ pub struct PostFull {
     pub date_published: String,
     /// Human-formatted publication date, preformatted server-side.
     pub date_display: String,
-    /// Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
-    #[specta(type = JsonValue)]
+    /// The parsed JSON block list, exported as specta's own `serde_json::Value` shape.
     pub body: Value,
 }
 
@@ -198,9 +183,8 @@ pub struct PullIngredient {
     pub package_grams: Option<f64>,
     /// Current slug; mirrored verbatim so local links match the server.
     pub slug: Option<String>,
-    /// Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
-    /// the data — and clients mirror the flag so their local list/search filtering matches.
-    #[specta(type = Option<f64>)] // ms epoch — f64-safe on the wire
+    /// Soft-delete tombstone (ms epoch). Tombstoned rows STAY in the pull — recipes that use them
+    /// need the data — and clients mirror the flag so their local list/search filtering matches.
     pub deleted_at: Option<i64>,
     /// Per-100 g nutrient rows.
     pub nutrients: Vec<PullReading>,
@@ -242,14 +226,11 @@ pub struct ConversationSummary {
     pub with: Party,
     /// Body of the newest message (the list's preview line).
     pub last_body: String,
-    // ms epoch — f64-safe on the wire (the desktop mirror declares f64).
-    #[specta(type = f64)]
     /// Newest message timestamp, ms epoch.
     pub last_at: i64,
     /// True when the last message is the viewer's own (the list renders "You: …").
     pub last_is_mine: bool,
-    #[specta(type = f64)] // a count (SQLite COUNT() is i64); wire-safe as number
-    /// Count of messages the viewer has not read.
+    /// Count of messages the viewer has not read (SQLite COUNT() is i64).
     pub unread: i64,
 }
 
@@ -261,7 +242,6 @@ pub struct Message {
     pub id: String,
     /// Message body (plain text).
     pub body: String,
-    #[specta(type = f64)] // ms epoch — f64-safe on the wire
     /// Send timestamp, ms epoch.
     pub created_at: i64,
     /// True when the viewer sent it (clients render alignment off this, not off raw ids).
@@ -290,12 +270,9 @@ pub struct Notification {
     /// Notification kind tag (e.g. "ingredient-updated"); selects the
     /// payload shape and the client-side renderer.
     pub kind: String,
-    /// Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`).
-    /// Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
-    #[specta(type = JsonValue)]
+    /// Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`),
+    /// exported as specta's own `serde_json::Value` shape.
     pub payload: Value,
-    // ms epoch — f64-safe on the wire until the year ~287,396 (the desktop mirror declares f64).
-    #[specta(type = f64)]
     /// Creation timestamp, ms epoch.
     pub created_at: i64,
     /// Whether the viewer has opened it.

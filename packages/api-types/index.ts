@@ -33,11 +33,11 @@ export type ConversationSummary = {
 	/**  Body of the newest message (the list's preview line). */
 	lastBody: string,
 	/**  Newest message timestamp, ms epoch. */
-	lastAt: number | null,
+	lastAt: number,
 	/**  True when the last message is the viewer's own (the list renders "You: …"). */
 	lastIsMine: boolean,
-	/**  Count of messages the viewer has not read. */
-	unread: number | null,
+	/**  Count of messages the viewer has not read (SQLite COUNT() is i64). */
+	unread: number,
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
@@ -127,26 +127,6 @@ export type IngredientSlugHit = {
 	username: string | null,
 };
 
-/**
- *  Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the
- *  rc.25 specta line can't export `serde_json::Value` — its Number variant carries i64 and trips
- *  the BigInt guard (fixed upstream by specta PR #505; when that lands, the `#[specta(type = …)]`
- *  overrides pointing here can drop away). Never constructed — a type-level wire declaration only.
- */
-export type JsonValue = 
-/**  JSON null. */
-null | 
-/**  JSON boolean. */
-boolean | 
-/**  JSON number (f64 on this wire; the reason this type exists). */
-number | null | 
-/**  JSON string. */
-string | 
-/**  JSON array. */
-JsonValue[] | 
-/**  JSON object. */
-{ [key in string]: JsonValue };
-
 /**  One DM as the thread screen renders it. */
 export type Message = {
 	/**  Message id. */
@@ -154,7 +134,7 @@ export type Message = {
 	/**  Message body (plain text). */
 	body: string,
 	/**  Send timestamp, ms epoch. */
-	createdAt: number | null,
+	createdAt: number,
 	/**  True when the viewer sent it (clients render alignment off this, not off raw ids). */
 	mine: boolean,
 };
@@ -169,12 +149,12 @@ export type Notification = {
 	 */
 	kind: string,
 	/**
-	 *  Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`).
-	 *  Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
+	 *  Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`),
+	 *  exported as specta's own `serde_json::Value` shape.
 	 */
-	payload: JsonValue,
+	payload: Value,
 	/**  Creation timestamp, ms epoch. */
-	createdAt: number | null,
+	createdAt: number,
 	/**  Whether the viewer has opened it. */
 	read: boolean,
 };
@@ -201,8 +181,8 @@ export type PostFull = {
 	datePublished: string,
 	/**  Human-formatted publication date, preformatted server-side. */
 	dateDisplay: string,
-	/**  Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs). */
-	body: JsonValue,
+	/**  The parsed JSON block list, exported as specta's own `serde_json::Value` shape. */
+	body: Value,
 };
 
 /**  Index-card shape (no body). */
@@ -269,8 +249,8 @@ export type PullIngredient = {
 	/**  Current slug; mirrored verbatim so local links match the server. */
 	slug: string | null,
 	/**
-	 *  Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
-	 *  the data — and clients mirror the flag so their local list/search filtering matches.
+	 *  Soft-delete tombstone (ms epoch). Tombstoned rows STAY in the pull — recipes that use them
+	 *  need the data — and clients mirror the flag so their local list/search filtering matches.
 	 */
 	deletedAt: number | null,
 	/**  Per-100 g nutrient rows. */
@@ -590,6 +570,8 @@ export type User = {
 	 */
 	email_verified: boolean,
 };
+
+export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };
 
 /**
  *  The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by

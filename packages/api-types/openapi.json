@@ -690,7 +690,9 @@
           },
           "lastAt": {
             "description": " Newest message timestamp, ms epoch.",
-            "type": "number"
+            "type": "integer",
+            "minimum": -9223372036854775808,
+            "maximum": 9223372036854775807
           },
           "lastBody": {
             "description": " Body of the newest message (the list's preview line).",
@@ -701,8 +703,10 @@
             "type": "boolean"
           },
           "unread": {
-            "description": " Count of messages the viewer has not read.",
-            "type": "number"
+            "description": " Count of messages the viewer has not read (SQLite COUNT() is i64).",
+            "type": "integer",
+            "minimum": -9223372036854775808,
+            "maximum": 9223372036854775807
           },
           "with": {
             "description": " The other party.",
@@ -931,40 +935,6 @@
         ],
         "additionalProperties": false
       },
-      "JsonValue": {
-        "nullable": true,
-        "title": "JsonValue",
-        "description": " Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the\n rc.25 specta line can't export `serde_json::Value` — its Number variant carries i64 and trips\n the BigInt guard (fixed upstream by specta PR #505; when that lands, the `#[specta(type = …)]`\n overrides pointing here can drop away). Never constructed — a type-level wire declaration only.",
-        "x-specta-nullable": true,
-        "anyOf": [
-          {
-            "description": " JSON boolean.",
-            "type": "boolean"
-          },
-          {
-            "description": " JSON number (f64 on this wire; the reason this type exists).",
-            "type": "number"
-          },
-          {
-            "description": " JSON string.",
-            "type": "string"
-          },
-          {
-            "description": " JSON array.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/JsonValue"
-            }
-          },
-          {
-            "description": " JSON object.",
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            }
-          }
-        ]
-      },
       "Message": {
         "title": "Message",
         "description": " One DM as the thread screen renders it.",
@@ -976,7 +946,9 @@
           },
           "createdAt": {
             "description": " Send timestamp, ms epoch.",
-            "type": "number"
+            "type": "integer",
+            "minimum": -9223372036854775808,
+            "maximum": 9223372036854775807
           },
           "id": {
             "description": " Message id.",
@@ -1002,7 +974,9 @@
         "properties": {
           "createdAt": {
             "description": " Creation timestamp, ms epoch.",
-            "type": "number"
+            "type": "integer",
+            "minimum": -9223372036854775808,
+            "maximum": 9223372036854775807
           },
           "id": {
             "description": " Notification id.",
@@ -1013,10 +987,10 @@
             "type": "string"
           },
           "payload": {
-            "description": " Parsed payload — per-kind (kind \"ingredient-updated\": `{ingredient: {id,name,slug}, by: {name,username}}`).\n Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).",
+            "description": " Parsed payload — per-kind (kind \"ingredient-updated\": `{ingredient: {id,name,slug}, by: {name,username}}`),\n exported as specta's own `serde_json::Value` shape.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/Value"
               }
             ]
           },
@@ -1065,10 +1039,10 @@
         "type": "object",
         "properties": {
           "body": {
-            "description": " Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).",
+            "description": " The parsed JSON block list, exported as specta's own `serde_json::Value` shape.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/Value"
               }
             ]
           },
@@ -1194,9 +1168,11 @@
           },
           "deletedAt": {
             "nullable": true,
-            "description": " Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need\n the data — and clients mirror the flag so their local list/search filtering matches.",
+            "description": " Soft-delete tombstone (ms epoch). Tombstoned rows STAY in the pull — recipes that use them\n need the data — and clients mirror the flag so their local list/search filtering matches.",
             "x-specta-nullable": true,
-            "type": "number"
+            "type": "integer",
+            "minimum": -9223372036854775808,
+            "maximum": 9223372036854775807
           },
           "description": {
             "nullable": true,
@@ -2004,6 +1980,48 @@
           "email_verified"
         ],
         "additionalProperties": false
+      },
+      "Value": {
+        "nullable": true,
+        "title": "Value",
+        "x-specta-nullable": true,
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer",
+                "minimum": -9223372036854775808,
+                "maximum": 9223372036854775807
+              },
+              {
+                "x-specta-maximum": 18446744073709551615,
+                "type": "integer",
+                "minimum": 0
+              }
+            ]
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Value"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Value"
+            }
+          }
+        ]
       },
       "Visibility": {
         "title": "Visibility",

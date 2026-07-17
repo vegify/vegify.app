@@ -15,46 +15,11 @@ pub struct ConversationSummary {
     /// Body of the newest message (the list's preview line).
     pub lastBody: ::std::string::String,
     /// Newest message timestamp, ms epoch.
-    pub lastAt: f64,
+    pub lastAt: i64,
     /// True when the last message is the viewer's own (the list renders "You: …").
     pub lastIsMine: bool,
-    /// Count of messages the viewer has not read.
-    pub unread: f64,
-}
-
-/// Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the
-/// rc.25 specta line can't export `serde_json::Value` — its Number variant carries i64 and trips
-/// the BigInt guard (fixed upstream by specta PR #505; when that lands, the `#[specta(type = …)]`
-/// overrides pointing here can drop away). Never constructed — a type-level wire declaration only.
-#[allow(deprecated, non_camel_case_types, non_snake_case)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-#[serde(untagged)]
-pub enum JsonValue {
-    /// JSON null.
-    Null(
-        (),
-    ),
-    /// JSON boolean.
-    Bool(
-        bool,
-    ),
-    /// JSON number (f64 on this wire; the reason this type exists).
-    Number(
-        f64,
-    ),
-    /// JSON string.
-    String(
-        ::std::string::String,
-    ),
-    /// JSON array.
-    Array(
-        ::std::vec::Vec<JsonValue>,
-    ),
-    /// JSON object.
-    Object(
-        ::std::collections::HashMap<::std::string::String, JsonValue>,
-    ),
+    /// Count of messages the viewer has not read (SQLite COUNT() is i64).
+    pub unread: i64,
 }
 
 /// One DM as the thread screen renders it.
@@ -67,28 +32,9 @@ pub struct Message {
     /// Message body (plain text).
     pub body: ::std::string::String,
     /// Send timestamp, ms epoch.
-    pub createdAt: f64,
+    pub createdAt: i64,
     /// True when the viewer sent it (clients render alignment off this, not off raw ids).
     pub mine: bool,
-}
-
-/// One bell notification.
-#[allow(deprecated, non_camel_case_types, non_snake_case)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-pub struct Notification {
-    /// Notification id.
-    pub id: ::std::string::String,
-    /// Notification kind tag (e.g. "ingredient-updated"); selects the
-    /// payload shape and the client-side renderer.
-    pub kind: ::std::string::String,
-    /// Parsed payload — per-kind (kind "ingredient-updated": `{ingredient: {id,name,slug}, by: {name,username}}`).
-    /// Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).
-    pub payload: JsonValue,
-    /// Creation timestamp, ms epoch.
-    pub createdAt: f64,
-    /// Whether the viewer has opened it.
-    pub read: bool,
 }
 
 /// The other party, as the conversation list + thread header shows them.
@@ -134,9 +80,9 @@ pub struct PullIngredient {
     pub packageGrams: ::std::option::Option<f64>,
     /// Current slug; mirrored verbatim so local links match the server.
     pub slug: ::std::option::Option<::std::string::String>,
-    /// Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need
-    /// the data — and clients mirror the flag so their local list/search filtering matches.
-    pub deletedAt: ::std::option::Option<f64>,
+    /// Soft-delete tombstone (ms epoch). Tombstoned rows STAY in the pull — recipes that use them
+    /// need the data — and clients mirror the flag so their local list/search filtering matches.
+    pub deletedAt: ::std::option::Option<i64>,
     /// Per-100 g nutrient rows.
     pub nutrients: ::std::vec::Vec<PullReading>,
 }
