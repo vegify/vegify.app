@@ -30,12 +30,20 @@ pub fn open_db() -> Result<data::Db, data::DataError> {
     data::Db::open(&path)
 }
 
+/// The DAL trait's bindings, with the contract's honest i64 ms-epochs/counts remapped to
+/// `number` for the webview (wire-sound: serde serializes them as JSON numbers, far below
+/// 2^53) — the same remap vegify-typegen applies to the TS artifacts.
+fn bindings() -> ttipc::Bindings {
+    let remapper = specta_util::Remapper::new().dangerous_bigints_as_number();
+    ttipc::Bindings::new()
+        .register::<data::VegifyDataProcedures>()
+        .map_datatypes(move |dt| remapper.remap_dt(dt))
+}
+
 /// Generate the typed TypeScript client from the DAL trait into src/bindings.ts.
 pub fn export_bindings() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts");
-    ttipc::Bindings::new()
-        .register::<data::VegifyDataProcedures>()
-        .export_to(out)?;
+    bindings().export_to(out)?;
     Ok(())
 }
 
@@ -156,8 +164,7 @@ mod bindings_tests {
             return;
         }
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts");
-        ttipc::Bindings::new()
-            .register::<crate::data::VegifyDataProcedures>()
+        crate::bindings()
             .check(path)
             .expect("bindings.ts drifted from the DAL trait — run `just bindings` and commit it");
     }

@@ -15,6 +15,8 @@ specta = "=2.0.0-rc.26"
 # Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
 specta-typescript = "=0.0.13"
 specta-serde = "=0.0.13"
+# The bigint remapper for the JS-facing TS emission (the contract declares honest i64s).
+specta-util = "=0.0.13"
 # Unpublished exporters (no crates.io release yet) — same rev the root [patch.crates-io] pins
 # specta itself to, so the whole graph shares one specta build.
 specta-rust = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }

@@ -386,18 +386,18 @@ export type ConversationSummary = {
 	/**  Body of the newest message (the list's preview line). */
 	lastBody: string,
 	/**  Newest message timestamp, ms epoch. */
-	lastAt: number | null,
+	lastAt: number,
 	/**  True when the last message is the viewer's own (the list renders "You: …"). */
 	lastIsMine: boolean,
-	/**  Count of messages the viewer has not read. */
-	unread: number | null,
+	/**  Count of messages the viewer has not read (SQLite COUNT() is i64). */
+	unread: number,
 };
 
 /**
  *  One bell row, as CONSUMERS see it: `payload` is the server's per-kind JSON re-serialized to a
- *  RAW STRING (consumers parse it by `kind`). The wire shape itself is the generated
- *  [`Notification`] (`payload` as parsed JSON); this view exists so IPC/webview consumers get a
- *  string they can hand straight to `JSON.parse`.
+ *  RAW STRING (consumers parse it by `kind`). The wire shape itself is [`Notification`]
+ *  (`payload` as parsed JSON); this view exists so IPC/webview consumers get a string they can
+ *  hand straight to `JSON.parse`.
  */
 export type DmNotification = {
 	/**  Notification id. */
@@ -516,7 +516,7 @@ export type Message = {
 	/**  Message body (plain text). */
 	body: string,
 	/**  Send timestamp, ms epoch. */
-	createdAt: number | null,
+	createdAt: number,
 	/**  True when the viewer sent it (clients render alignment off this, not off raw ids). */
 	mine: boolean,
 };
