@@ -32,7 +32,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                     id: row.get(0)?,
                     as_ingredient_id: row.get(1)?,
                     user_id: row.get(2)?,
-                    visibility: row.get(3)?,
+                    visibility: vegify_core::Visibility::from_db(&row.get::<_, String>(3)?),
                     name: row.get(4)?,
                     subtitle: row.get(5)?,
                     directions: row.get(6)?,
@@ -82,7 +82,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                 Ok(PullIngredient {
                     id: row.get(0)?,
                     user_id: row.get(1)?,
-                    visibility: row.get(2)?,
+                    visibility: vegify_core::Visibility::from_db(&row.get::<_, String>(2)?),
                     name: row.get(3)?,
                     description: row.get(4)?,
                     price: row.get(5)?,

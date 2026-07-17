@@ -3537,6 +3537,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "openapiv3"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c8d427828b22ae1fff2833a03d8486c2c881367f1c336349f307f321e7f4d05"
+dependencies = [
+ "indexmap 2.14.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4630,6 +4641,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serialize-to-javascript"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4833,9 +4857,8 @@ dependencies = [
 
 [[package]]
 name = "specta"
-version = "2.0.0-rc.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f9a30cbcbb7011f1da7d73483983bf838af123883e45f2b36ed76328df9c50"
+version = "2.0.0-rc.26"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
 dependencies = [
  "rustc_version",
  "serde_json",
@@ -4843,10 +4866,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta-jsonschema"
+version = "0.0.4"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+dependencies = [
+ "serde",
+ "serde_json",
+ "specta",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "specta-macros"
-version = "2.0.0-rc.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce14957ecc2897f1f848b8255b6531d13ddf49cbcf506b7c2c9fb1d005593bb"
+version = "2.0.0-rc.26"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -4855,10 +4888,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta-openapi"
+version = "0.0.4"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+dependencies = [
+ "indexmap 2.14.0",
+ "openapiv3",
+ "serde_json",
+ "serde_yaml",
+ "specta",
+ "specta-jsonschema",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "specta-rust"
+version = "0.0.1"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+dependencies = [
+ "specta",
+ "unicode-ident",
+]
+
+[[package]]
 name = "specta-serde"
-version = "0.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee8a72b755ddb8949fd8f17c5db43f0e8a806ea587d9bc602ee3f73240c00029"
+version = "0.0.13"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
 dependencies = [
  "specta",
  "specta-macros",
@@ -4866,9 +4921,8 @@ dependencies = [
 
 [[package]]
 name = "specta-typescript"
-version = "0.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "639404ee95557f2f8b7e4cb773ffefd45304c7ab8ba21ac83b69051595e083c0"
+version = "0.0.13"
+source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
 dependencies = [
  "specta",
 ]
@@ -5316,8 +5370,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd7bd46c38974306dc7286e7d5a505575f152898fd574dc09c7c260b4d2bd1b3"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=2328805995eda6a3931b5858408e67d1f9bdfb17#2328805995eda6a3931b5858408e67d1f9bdfb17"
 dependencies = [
  "serde",
  "serde_json",
@@ -5332,8 +5385,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc-macros"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e130988f044cdb1e202446ac8486f7cfd2d5bd8be669b40524cee0f417823f0d"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=2328805995eda6a3931b5858408e67d1f9bdfb17#2328805995eda6a3931b5858408e67d1f9bdfb17"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -6039,6 +6091,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6193,6 +6251,7 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "specta-openapi",
  "vegify-core",
 ]
 
@@ -6259,6 +6318,9 @@ dependencies = [
 name = "vegify-typegen"
 version = "0.1.0"
 dependencies = [
+ "specta",
+ "specta-openapi",
+ "specta-rust",
  "specta-serde",
  "specta-typescript",
  "vegify-api-types",

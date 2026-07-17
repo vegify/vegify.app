@@ -37,7 +37,7 @@ tracing = "0.1"
 # `bundled` compiles SQLite in. (The sqlite3session changeset feature was dropped with the S3 sync
 # mesh — the desktop is now an offline-first cache of the server, synced over the content API.)
 rusqlite = { version = "0.40", features = ["bundled"] }
-specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 ttipc = { package = "tauri-typed-ipc", version = "0.1.2", features = ["export"] }
 # OS deep links: vegify:// custom scheme (CFBundleURLTypes injected at bundle time from
 # tauri.conf.json) + vegify.app universal links (applinks entitlement + AASA). Delivers opened URLs

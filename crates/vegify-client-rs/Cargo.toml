@@ -4,7 +4,7 @@ name = "vegify-client-rs"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77.2"
-description = "The vegify HTTP API client SDK: blocking ureq transport for auth/content/messages/notifications + an OS-keychain session store. Extracted from the desktop app (which consumes this crate); types are the hand mirrors for now, swapping to specta-rust-generated from vegify-api-types when that lands."
+description = "The vegify HTTP API client SDK: blocking ureq transport for auth/content/messages/notifications + an OS-keychain session store. Extracted from the desktop app (which consumes this crate); wire types are GENERATED from vegify-api-types via specta-rust (drift-gated in CI), so the client cannot skew from the server's contract."
 license = "MIT"
 
 [lib]
@@ -23,7 +23,7 @@ tracing = "0.1"
 vegify-core = { path = "../vegify-core" }
 # Optional: specta Type derives on the wire types, so the desktop's ttipc bindings can register
 # them. Off by default — a plain consumer gets no specta in its tree.
-specta = { version = "=2.0.0-rc.25", features = ["derive"], optional = true }
+specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
 
 [features]
 specta = ["dep:specta"]

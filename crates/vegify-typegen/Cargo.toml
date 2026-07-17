@@ -8,10 +8,17 @@ description = "Generates packages/api-types/index.ts (the web's wire contract) f
 
 [dependencies]
 # The wire contract crate - its api_types() is the full HTTP contract, without the server's heft.
-vegify-api-types = { path = "../../services/api/types" }
+# The openapi feature adds api_operations(), the paths object for openapi.json.
+vegify-api-types = { path = "../../services/api/types", features = ["openapi"] }
+# Types (the collection) for assembling the SDK slice; same patched rc.26 as the whole graph.
+specta = "=2.0.0-rc.26"
 # Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
-specta-typescript = "=0.0.12"
-specta-serde = "=0.0.12"
+specta-typescript = "=0.0.13"
+specta-serde = "=0.0.13"
+# Unpublished exporters (no crates.io release yet) — same rev the root [patch.crates-io] pins
+# specta itself to, so the whole graph shares one specta build.
+specta-rust = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
+specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
 
 [lints]
 workspace = true

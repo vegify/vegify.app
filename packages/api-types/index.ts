@@ -245,8 +245,8 @@ export type PullIngredient = {
 	id: string,
 	/**  Owner id; None = the communal catalog. */
 	userId: string | null,
-	/**  Visibility as stored (public/private/unlisted). */
-	visibility: string,
+	/**  Visibility as stored — the shared enum, not a loose string (same wire bytes). */
+	visibility: Visibility,
 	/**  Ingredient name. */
 	name: string,
 	/**  Optional description. */
@@ -326,8 +326,11 @@ export type PullRecipe = {
 	asIngredientId: string,
 	/**  Owner id; None = ownerless seed content. */
 	userId: string | null,
-	/**  Visibility as stored (public/private/unlisted). */
-	visibility: string,
+	/**
+	 *  Visibility as stored — the shared enum, not a loose string (same wire bytes; the
+	 *  TS side tightens to the "public" | "private" | "unlisted" union).
+	 */
+	visibility: Visibility,
 	/**  Recipe title. */
 	name: string,
 	/**  Optional subtitle. */
@@ -488,6 +491,18 @@ export type RecipeView = {
 };
 
 /**
+ *  A DM send, as the client must state it. The server's own deserializer stays lenient (missing
+ *  fields answer 400 with a message rather than a deserialization error); the CONTRACT is that
+ *  both fields are required.
+ */
+export type SendMessageBody = {
+	/**  Recipient handle (a username). */
+	to: string,
+	/**  Message body (plain text). */
+	body: string,
+};
+
+/**
  *  The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes and
  *  OWNED ingredients carry their owner handle; unowned ingredients are the catalog namespace.
  */
@@ -516,6 +531,26 @@ export type SitemapRecipe = {
 	/**  The recipe's slug (second URL segment). */
 	slug: string,
 };
+
+/**
+ *  Recipe browser cards. isListed: public catalog + your own (any visibility). `user_id = NULL` never
+ *  matches, so a signed-out viewer (viewer = None) sees only public.
+ *  Public recipe catalog for `viewer` (public rows + the viewer's own), NEWEST FIRST by id — ids are
+ *  ULIDs, so id order is creation order. Keyset-paginated for infinite scroll: pass the last card's `id`
+ *  as `cursor` to get the page after it; `limit` caps the page (None = no limit, i.e. the full list).
+ *  Sort order for the catalog list reads. Recency sorts key on the id (ids are ULIDs, so id order is
+ *  creation order); name sorts use a composite (name, id) keyset since names are not unique. Default
+ *  = Newest (the catalog's first impression).
+ */
+export type Sort = 
+/**  Newest first (creation order). */
+"newest" | 
+/**  Oldest first. */
+"oldest" | 
+/**  Name A→Z. */
+"name_asc" | 
+/**  Name Z→A. */
+"name_desc";
 
 /**
  *  A thread as the thread screen consumes it: the other party (resolved even before any message

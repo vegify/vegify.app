@@ -282,17 +282,17 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
-  messageConversations(): Promise<DmConversation[]> {
+  messageConversations(): Promise<ConversationSummary[]> {
     return invoke("message_conversations");
   },
 
   /** @throws {DataError} */
-  messageThread(username: string): Promise<DmThread> {
+  messageThread(username: string): Promise<Thread> {
     return invoke("message_thread", { username });
   },
 
   /** @throws {DataError} */
-  sendMessage(input: SendMessageInput): Promise<DmMessage> {
+  sendMessage(input: SendMessageInput): Promise<Message> {
     return invoke("send_message", { input });
   },
 
@@ -377,37 +377,27 @@ export type AuthUser = {
 	emailVerified: boolean,
 };
 
-/**  One conversation row of the DM list. */
-export type DmConversation = {
+/**  One conversation row of the DM list, newest-message first. */
+export type ConversationSummary = {
 	/**  Conversation id. */
 	id: string,
 	/**  The other party. */
-	with: DmParty,
-	/**  Body of the newest message (the preview line). */
+	with: Party,
+	/**  Body of the newest message (the list's preview line). */
 	lastBody: string,
-	/**  Newest message timestamp, ms epoch (f64 on this wire). */
+	/**  Newest message timestamp, ms epoch. */
 	lastAt: number | null,
-	/**  True when the newest message is the viewer's own. */
+	/**  True when the last message is the viewer's own (the list renders "You: …"). */
 	lastIsMine: boolean,
-	/**  Count of unread messages (f64 on this wire). */
+	/**  Count of messages the viewer has not read. */
 	unread: number | null,
 };
 
-/**  One DM as the thread renders it. */
-export type DmMessage = {
-	/**  Message id. */
-	id: string,
-	/**  Message body (plain text). */
-	body: string,
-	/**  Send timestamp, ms epoch (f64 on this wire). */
-	createdAt: number | null,
-	/**  True when the viewer sent it. */
-	mine: boolean,
-};
-
 /**
- *  One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
- *  type on this line) — consumers parse it themselves.
+ *  One bell row, as CONSUMERS see it: `payload` is the server's per-kind JSON re-serialized to a
+ *  RAW STRING (consumers parse it by `kind`). The wire shape itself is the generated
+ *  [`Notification`] (`payload` as parsed JSON); this view exists so IPC/webview consumers get a
+ *  string they can hand straight to `JSON.parse`.
  */
 export type DmNotification = {
 	/**  Notification id. */
@@ -420,24 +410,6 @@ export type DmNotification = {
 	createdAt: number | null,
 	/**  Whether the viewer has opened it. */
 	read: boolean,
-};
-
-/**  The other party of a DM, as lists and headers show them. */
-export type DmParty = {
-	/**  User id. */
-	id: string,
-	/**  Display name. */
-	name: string,
-	/**  Public handle (`/<username>`). */
-	username: string,
-};
-
-/**  A DM thread: the other party plus the messages, oldest first. */
-export type DmThread = {
-	/**  The other party (resolved even for an empty thread). */
-	with: DmParty,
-	/**  The messages, oldest first. */
-	messages: DmMessage[],
 };
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
@@ -537,6 +509,18 @@ export type IngredientSlugHit = {
 	username: string | null,
 };
 
+/**  One DM as the thread screen renders it. */
+export type Message = {
+	/**  Message id. */
+	id: string,
+	/**  Message body (plain text). */
+	body: string,
+	/**  Send timestamp, ms epoch. */
+	createdAt: number | null,
+	/**  True when the viewer sent it (clients render alignment off this, not off raw ids). */
+	mine: boolean,
+};
+
 /**
  *  One page of a catalog list: the sort, a keyset cursor (the last card's id, plus its name for the
  *  name sorts), and a page size. `Default` = newest-first, no cursor, no limit (the whole list).
@@ -550,6 +534,16 @@ export type Page = {
 	cursorName?: string | null,
 	/**  Page size; None = unbounded. */
 	limit?: number | null,
+};
+
+/**  The other party, as the conversation list + thread header shows them. */
+export type Party = {
+	/**  User id. */
+	id: string,
+	/**  Display name. */
+	name: string,
+	/**  Public handle (`/<username>`). */
+	username: string,
 };
 
 /**
@@ -832,6 +826,17 @@ export type Sort =
 "name_asc" | 
 /**  Name Z→A. */
 "name_desc";
+
+/**
+ *  A thread as the thread screen consumes it: the other party (resolved even before any message
+ *  exists, so a profile's "Message" button lands on an empty composer) + the messages, oldest first.
+ */
+export type Thread = {
+	/**  The other party (resolved even for an empty thread). */
+	with: Party,
+	/**  The messages, oldest first. */
+	messages: Message[],
+};
 
 /**
  *  The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by

@@ -16,6 +16,7 @@
       "**",
       "!apps/desktop/src/bindings.ts",
       "!packages/api-types/index.ts",
+      "!packages/api-types/openapi.json",
       // TanStack Router output (tsr generate); linted at its route sources.
       "!**/*.gen.ts"
     ]
