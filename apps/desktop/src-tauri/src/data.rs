@@ -60,7 +60,7 @@ impl From<vegify_core::Error> for DataError {
 // types are re-exported under their original names so the IPC trait, the generated bindings, and
 // the tests are unchanged.
 pub use vegify_client::{
-    AuthUser, DmConversation, DmMessage, DmNotification, DmParty, DmThread, Session,
+    AuthUser, ConversationSummary, DmNotification, Message, Party, Session, Thread,
 };
 use vegify_client::{SessionStore, VegifyClient};
 
@@ -234,62 +234,62 @@ fn apply_pull(
             "INSERT INTO users(id, name, username, avatar_key, email) VALUES (?1, ?2, ?3, ?4, ?1)
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username,
                                            avatar_key = excluded.avatar_key",
-            params![u.id, u.name, u.username, u.avatar_key],
+            params![u.id, u.name, u.username, u.avatarKey],
         )?;
     }
     for ing in &payload.ingredients {
         let input = SaveIngredientInput {
             id: Some(ing.id.clone()),
-            visibility: Some(ing.visibility),
+            visibility: Some(ing.visibility.clone().into()),
             name: ing.name.clone(),
             description: ing.description.clone(),
             price: ing.price,
-            calories_per_100g: ing.calories_per_100g,
-            serving_grams: ing.serving_grams,
-            package_grams: ing.package_grams,
+            calories_per_100g: ing.caloriesPer100g,
+            serving_grams: ing.servingGrams,
+            package_grams: ing.packageGrams,
             nutrients: ing
                 .nutrients
                 .iter()
                 .map(|n| IngredientNutrientInput {
                     name: n.name.clone(),
-                    amount_per_100g: n.amount_per_100g,
+                    amount_per_100g: n.amountPer100g,
                     unit: n.unit.clone(),
                 })
                 .collect(),
             slug: ing.slug.clone(), // server-authoritative; store verbatim, don't regenerate
         };
-        do_save_ingredient(&tx, &input, ing.user_id.as_deref())?;
+        do_save_ingredient(&tx, &input, ing.userId.as_deref())?;
         // The tombstone rides OUTSIDE the mutation shape (user edits must never touch it) — stamp it
         // after the save, exactly as the server pull reported it.
-        if let Some(ts) = ing.deleted_at {
+        if let Some(ts) = ing.deletedAt {
             tx.execute(
                 "UPDATE ingredients SET deleted_at = ?1 WHERE id = ?2",
-                params![ts, ing.id],
+                params![ts as i64, ing.id],
             )?;
         }
     }
     for r in &payload.recipes {
         let input = SaveRecipeInput {
             id: Some(r.id.clone()),
-            as_ingredient_id: Some(r.as_ingredient_id.clone()),
-            visibility: Some(r.visibility),
+            as_ingredient_id: Some(r.asIngredientId.clone()),
+            visibility: Some(r.visibility.clone().into()),
             name: r.name.clone(),
             subtitle: r.subtitle.clone(),
             directions: r.directions.clone(),
-            serving_grams: r.serving_grams,
-            batch_grams: r.batch_grams,
+            serving_grams: r.servingGrams,
+            batch_grams: r.batchGrams,
             items: r
                 .items
                 .iter()
                 .map(|it| RecipeItemInput {
-                    ingredient_id: it.ingredient_id.clone(),
+                    ingredient_id: it.ingredientId.clone(),
                     grams: it.grams,
                     unit: it.unit.clone(),
                 })
                 .collect(),
             slug: r.slug.clone(), // server-authoritative
         };
-        do_save_recipe(&tx, &input, r.user_id.as_deref())?;
+        do_save_recipe(&tx, &input, r.userId.as_deref())?;
     }
     tx.commit()?;
     Ok(())
@@ -627,11 +627,11 @@ pub trait VegifyData {
     /// emailed link, exactly like reset). Always succeeds.
     fn request_email_verification(&self, input: ResetRequestInput) -> Result<(), DataError>;
     /// 1:1 DMs — online-only proxies to /api/messages/* (no local cache; auth required).
-    fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError>;
+    fn message_conversations(&self) -> Result<Vec<ConversationSummary>, DataError>;
     /// The DM thread with `username`, oldest first.
-    fn message_thread(&self, username: String) -> Result<DmThread, DataError>;
+    fn message_thread(&self, username: String) -> Result<Thread, DataError>;
     /// Send a DM; returns the created message.
-    fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError>;
+    fn send_message(&self, input: SendMessageInput) -> Result<Message, DataError>;
     /// Count of unread DMs (f64 mirrors the wire).
     fn messages_unread(&self) -> Result<f64, DataError>;
     /// The bell — online-only proxies to /api/notifications (auth required).
@@ -849,17 +849,17 @@ impl VegifyData for Db {
         Ok(())
     }
 
-    fn message_conversations(&self) -> Result<Vec<DmConversation>, DataError> {
+    fn message_conversations(&self) -> Result<Vec<ConversationSummary>, DataError> {
         let token = self.require_token()?;
         Ok(client().conversations(&token)?)
     }
 
-    fn message_thread(&self, username: String) -> Result<DmThread, DataError> {
+    fn message_thread(&self, username: String) -> Result<Thread, DataError> {
         let token = self.require_token()?;
         Ok(client().thread(&token, &username)?)
     }
 
-    fn send_message(&self, input: SendMessageInput) -> Result<DmMessage, DataError> {
+    fn send_message(&self, input: SendMessageInput) -> Result<Message, DataError> {
         let token = self.require_token()?;
         Ok(client().send_message(&token, &input.to, &input.body)?)
     }
@@ -1898,7 +1898,7 @@ mod tests {
             "seed content pulled"
         );
         assert!(
-            p.recipes.iter().all(|r| !r.as_ingredient_id.is_empty()),
+            p.recipes.iter().all(|r| !r.asIngredientId.is_empty()),
             "recipes carry as-ingredient id"
         );
 
@@ -2244,37 +2244,37 @@ mod tests {
         let payload = vegify_client::PullPayload {
             recipes: vec![vegify_client::PullRecipe {
                 id: "r1".into(),
-                as_ingredient_id: "r1-as".into(),
-                user_id: Some("u-ada".into()),
-                visibility: Visibility::Public,
+                asIngredientId: "r1-as".into(),
+                userId: Some("u-ada".into()),
+                visibility: vegify_client::Visibility::public,
                 name: "Ada's Porridge".into(),
                 subtitle: None,
                 directions: None,
-                serving_grams: None,
-                batch_grams: None,
+                servingGrams: None,
+                batchGrams: None,
                 items: vec![],
                 slug: None,
             }],
             ingredients: vec![vegify_client::PullIngredient {
                 id: "i1".into(),
-                user_id: Some("u-ada".into()),
-                visibility: Visibility::Public,
+                userId: Some("u-ada".into()),
+                visibility: vegify_client::Visibility::public,
                 name: "Ada's Oats".into(),
                 description: None,
                 price: None,
-                calories_per_100g: Some(389.0),
-                serving_grams: None,
-                package_grams: None,
+                caloriesPer100g: Some(389.0),
+                servingGrams: None,
+                packageGrams: None,
                 nutrients: vec![],
                 slug: None,
-                deleted_at: None,
+                deletedAt: None,
             }],
             users: vec![
                 vegify_client::PullUser {
                     id: "u-ada".into(),
                     username: "ada".into(),
                     name: "Ada".into(),
-                    avatar_key: Some("media/ada.jpg".into()),
+                    avatarKey: Some("media/ada.jpg".into()),
                 },
                 // The signed-in user also appears in a pull (they own content) — public fields
                 // refresh, the auth-owned email must survive.
@@ -2282,7 +2282,7 @@ mod tests {
                     id: "u-self".into(),
                     username: "self".into(),
                     name: "New Name".into(),
-                    avatar_key: None,
+                    avatarKey: None,
                 },
             ],
         };

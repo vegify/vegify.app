@@ -1,6 +1,7 @@
-//! vegify-typegen — regenerate packages/api-types/index.ts (the web's wire contract) from the
-//! server's TypeCollection (services/api/types). Run via `just bindings`; CI's build-types job
-//! reruns it and fails on drift.
+//! vegify-typegen — regenerate every committed artifact derived from the server's TypeCollection
+//! (services/api/types): `packages/api-types/index.ts` (the web's wire contract) and
+//! `crates/vegify-client-rs/src/generated.rs` (the SDK's wire types, via specta-rust). Run via
+//! `just bindings`; CI's build-types job reruns it and fails on drift.
 //!
 //! The desktop's bindings.ts deliberately does NOT come from here: the desktop is an APPLICATION —
 //! a leaf, never a dependency — so it regenerates/drift-checks its own bindings in-crate via
@@ -8,6 +9,13 @@
 use std::path::PathBuf;
 
 fn main() {
+    write_web_ts();
+    write_sdk_rust();
+    write_openapi();
+}
+
+/// `packages/api-types/index.ts` — the web's wire contract, from the FULL collection.
+fn write_web_ts() {
     let body = specta_typescript::Typescript::default()
         .export(&vegify_api_types::api_types(), specta_serde::Format)
         .expect("export api types");
@@ -19,4 +27,89 @@ fn main() {
     let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/api-types/index.ts");
     std::fs::write(&out, format!("{header}\n{body}")).expect("write api-types");
     println!("wrote packages/api-types/index.ts");
+}
+
+/// The slice of the contract the SDK speaks over HTTP: the /api/content/pull payload, the DM
+/// surface, and the bell. Auth stays hand-written in the SDK (its response is remapped
+/// client-side and isn't in the collection). Referenced types (Party, JsonValue, the shared
+/// Visibility enum) ride in transitively; the explicit registrations are the readable manifest.
+fn sdk_types() -> specta::Types {
+    specta::Types::default()
+        .register::<vegify_api_types::PullPayload>()
+        .register::<vegify_api_types::PullUser>()
+        .register::<vegify_api_types::PullRecipe>()
+        .register::<vegify_api_types::PullItem>()
+        .register::<vegify_api_types::PullIngredient>()
+        .register::<vegify_api_types::PullReading>()
+        .register::<vegify_api_types::Party>()
+        .register::<vegify_api_types::ConversationSummary>()
+        .register::<vegify_api_types::Message>()
+        .register::<vegify_api_types::Thread>()
+        .register::<vegify_api_types::Notification>()
+}
+
+/// `crates/vegify-client-rs/src/generated.rs` — the SDK's wire types, regenerated as Rust source
+/// from the same graph the TS artifacts come from. Field idents ARE the wire names (specta's
+/// graph is post-serde), so the plain serde derives reproduce the exact wire with no rename
+/// attributes to drift.
+fn write_sdk_rust() {
+    // The mod declaration in lib.rs carries #[rustfmt::skip], keeping the committed file
+    // byte-identical to this emission — otherwise the fmt gate (which would reformat it) and
+    // the drift gate (which regenerates it verbatim) would each fail the other's output.
+    let header = "\
+//! The SDK's wire types — GENERATED from the server's wire contract (vegify-api-types, via
+//! specta-rust). Do not edit; regenerate with `just bindings` (CI's build-types job fails on
+//! drift). Field idents are the wire names verbatim, so the serde derives carry no renames.
+";
+    let body = specta_rust::Rust::default()
+        .header(header)
+        .derive("serde::Serialize")
+        .derive("serde::Deserialize")
+        .derive("Clone")
+        .attribute("#[cfg_attr(feature = \"specta\", derive(specta::Type))]")
+        .export(&sdk_types(), specta_serde::Format)
+        .expect("export sdk types");
+    let out =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vegify-client-rs/src/generated.rs");
+    std::fs::write(&out, untagged_patch(body)).expect("write sdk generated types");
+    println!("wrote crates/vegify-client-rs/src/generated.rs");
+}
+
+/// `packages/api-types/openapi.json` — the OpenAPI document: schemas from the full collection,
+/// paths from the contract crate's route table (`api_operations`). Compatible mode: the contract
+/// has nullable named responses (`Option<RecipeView>` et al), which OpenAPI 3.0 can't express
+/// strictly — the exporter approximates and keeps the exact constraint in `x-specta-*` extensions.
+fn write_openapi() {
+    let doc = specta_openapi::OpenApi::default()
+        .title("vegify.app HTTP API")
+        .version("0.1.0")
+        .description(
+            "The typed surface of api.vegify.app: the public read endpoints, the content pull, \
+             messages, notifications, and the session probe. Auth flows and write acks still \
+             answer ad-hoc JSON and join this document as their shapes graduate into \
+             vegify-api-types. Endpoints marked 'Requires bearer' expect an Authorization: \
+             Bearer <token> header.",
+        )
+        .schema_mode(specta_openapi::SchemaMode::Compatible)
+        .operations(vegify_api_types::api_operations())
+        .export(&vegify_api_types::api_types(), specta_serde::Format)
+        .expect("export openapi document");
+    let out =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/api-types/openapi.json");
+    std::fs::write(&out, doc).expect("write openapi.json");
+    println!("wrote packages/api-types/openapi.json");
+}
+
+/// specta-rust does not (yet) re-emit serde enum reprs: the graph knows JsonValue is untagged —
+/// the TS export renders it as a union — but the Rust emission drops the attribute, which would
+/// tag the wire. Patch the repr back in until upstream emits it (filed from this dogfood run);
+/// the anchor assert fails the build the moment upstream starts emitting anything here.
+fn untagged_patch(src: String) -> String {
+    let anchor = "\npub enum JsonValue {";
+    assert_eq!(
+        src.matches(anchor).count(),
+        1,
+        "JsonValue anchor changed — re-audit the untagged patch against the specta-rust emission"
+    );
+    src.replace(anchor, "\n#[serde(untagged)]\npub enum JsonValue {")
 }

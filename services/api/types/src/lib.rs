@@ -4,7 +4,7 @@
 //! vegify-typegen generates packages/api-types (TS) from it today; openapi.json (specta #31) and
 //! vegify-client-rs type generation are the designated next consumers. The Rust twin of the
 //! generated @vegify/api-types package.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the
@@ -138,8 +138,9 @@ pub struct PullRecipe {
     pub as_ingredient_id: String,
     /// Owner id; None = ownerless seed content.
     pub user_id: Option<String>,
-    /// Visibility as stored (public/private/unlisted).
-    pub visibility: String,
+    /// Visibility as stored — the shared enum, not a loose string (same wire bytes; the
+    /// TS side tightens to the "public" | "private" | "unlisted" union).
+    pub visibility: vegify_core::Visibility,
     /// Recipe title.
     pub name: String,
     /// Optional subtitle.
@@ -176,8 +177,8 @@ pub struct PullIngredient {
     pub id: String,
     /// Owner id; None = the communal catalog.
     pub user_id: Option<String>,
-    /// Visibility as stored (public/private/unlisted).
-    pub visibility: String,
+    /// Visibility as stored — the shared enum, not a loose string (same wire bytes).
+    pub visibility: vegify_core::Visibility,
     /// Ingredient name.
     pub name: String,
     /// Optional description.
@@ -301,12 +302,24 @@ pub struct Notification {
     pub read: bool,
 }
 
+/// A DM send, as the client must state it. The server's own deserializer stays lenient (missing
+/// fields answer 400 with a message rather than a deserialization error); the CONTRACT is that
+/// both fields are required.
+#[derive(Deserialize, specta::Type)]
+pub struct SendMessageBody {
+    /// Recipient handle (a username).
+    pub to: String,
+    /// Message body (plain text).
+    pub body: String,
+}
+
 /// The FULL HTTP wire contract as one specta collection: vegify-core's shared shapes plus every
 /// server-local response shape above. Single source for every generated artifact of the API.
 pub fn api_types() -> specta::Types {
     specta::Types::default()
         // vegify-core (shared DAL shapes — the set the web consumes over /api/content/*)
         .register::<vegify_core::Visibility>()
+        .register::<vegify_core::Sort>()
         .register::<vegify_core::Reading>()
         .register::<vegify_core::Amount>()
         .register::<vegify_core::AggregatedNutrition>()
@@ -333,4 +346,127 @@ pub fn api_types() -> specta::Types {
         .register::<Message>()
         .register::<Thread>()
         .register::<Notification>()
+        .register::<SendMessageBody>()
+}
+
+/// The `paths` object for openapi.json: every endpoint whose request AND response shapes are typed
+/// in this crate's collection — currently the read surface, the pull, messages, notifications, and
+/// the session probe. The auth flows and the write acks still answer ad-hoc `{ok,…}`/`{token,…}`
+/// JSON; they join here as their shapes graduate into this crate (declaring them untyped would
+/// make the document lie). Bearer-auth requirements are stated in each description; the server
+/// enforces them regardless.
+#[cfg(feature = "openapi")]
+pub fn api_operations() -> Vec<specta_openapi::Operation> {
+    use specta_openapi::Operation;
+    use vegify_core as core;
+    vec![
+        Operation::get("/health")
+            .summary("Liveness probe")
+            .description("Plain-text ok; the deploy gate and uptime checks poll this.")
+            .response::<String>(200, "The literal string \"ok\""),
+        Operation::get("/api/content/recipes")
+            .summary("Recipe catalog, one keyset page")
+            .description(
+                "Public. Sort + keyset cursor; viewer's own non-public rows included when authed.",
+            )
+            .query_param::<core::Sort>("sort")
+            .query_param::<String>("cursor")
+            .query_param::<String>("cursor_name")
+            .query_param::<u32>("limit")
+            .response::<Vec<core::RecipeCard>>(200, "One page of recipe cards"),
+        Operation::get("/api/content/ingredients")
+            .summary("Ingredient catalog, one keyset page")
+            .description("Public. Same paging contract as /api/content/recipes.")
+            .query_param::<core::Sort>("sort")
+            .query_param::<String>("cursor")
+            .query_param::<String>("cursor_name")
+            .query_param::<u32>("limit")
+            .response::<Vec<core::IngredientCard>>(200, "One page of ingredient cards"),
+        Operation::get("/api/content/recipe-detail")
+            .summary("One recipe, render-ready")
+            .description(
+                "Public (visibility-gated). Null when absent or not visible to the viewer.",
+            )
+            .query_param::<String>("id")
+            .response::<Option<core::RecipeView>>(200, "The recipe view, or null"),
+        Operation::get("/api/content/recipe-edit")
+            .summary("One recipe, edit-mode source data")
+            .description("Requires bearer; owner-gated. Null when absent or not editable.")
+            .query_param::<String>("id")
+            .response::<Option<core::RecipeEditData>>(200, "The edit payload, or null"),
+        Operation::get("/api/content/ingredient-detail")
+            .summary("One ingredient, render-ready")
+            .description("Public (visibility-gated). Null when absent or not visible.")
+            .query_param::<String>("id")
+            .response::<Option<core::IngredientEditData>>(200, "The ingredient payload, or null"),
+        Operation::get("/api/content/ingredient-edit")
+            .summary("One ingredient, edit-mode source data")
+            .description("Requires bearer; owner-gated. Null when absent or not editable.")
+            .query_param::<String>("id")
+            .response::<Option<core::IngredientEditData>>(200, "The edit payload, or null"),
+        Operation::get("/api/content/search")
+            .summary("Ingredient search")
+            .description("Public. The recipe composer's search box.")
+            .query_param::<String>("q")
+            .response::<Vec<core::IngredientSearchResult>>(200, "Matching ingredients"),
+        Operation::get("/api/content/pull")
+            .summary("Full content sync pull")
+            .description(
+                "Public; optional bearer widens the payload to the viewer's own non-public rows.",
+            )
+            .response::<PullPayload>(200, "Every visible row, in mutation shape"),
+        Operation::get("/api/content/profile")
+            .summary("Public profile by handle")
+            .description("Public; optional bearer lets owners see their own non-public shelves.")
+            .query_param::<String>("username")
+            .response::<Option<core::Profile>>(200, "The profile, or null"),
+        Operation::get("/api/content/recipe-by-slug")
+            .summary("Resolve /<username>/<slug> to a recipe")
+            .description("Public. Null → 404; a canonicalSlug differing from the request → 301.")
+            .query_param::<String>("username")
+            .query_param::<String>("slug")
+            .response::<Option<core::RecipeSlugHit>>(200, "The resolution, or null"),
+        Operation::get("/api/content/ingredient-by-slug")
+            .summary("Resolve /ingredients/<slug> to an ingredient")
+            .description("Public. Null → 404; a canonicalSlug differing from the request → 301.")
+            .query_param::<String>("slug")
+            .response::<Option<core::IngredientSlugHit>>(200, "The resolution, or null"),
+        Operation::get("/api/content/sitemap")
+            .summary("Sitemap source data")
+            .description("Public. The web shell renders sitemap.xml from this.")
+            .response::<core::SitemapData>(200, "Every public canonical URL's source row"),
+        Operation::get("/api/content/blog")
+            .summary("Blog index")
+            .description("Public. Card shapes only, no bodies.")
+            .response::<Vec<PostSummary>>(200, "All published posts, newest first"),
+        Operation::get("/api/content/blog-detail")
+            .summary("One blog post")
+            .description("Public. Null when the slug matches nothing.")
+            .query_param::<String>("slug")
+            .response::<Option<PostFull>>(200, "The post with its block-list body, or null"),
+        Operation::get("/api/auth/session")
+            .summary("Who am I")
+            .description("Requires bearer. The signed-in user, or 401.")
+            .response::<User>(200, "The signed-in user"),
+        Operation::get("/api/messages/conversations")
+            .summary("DM conversation list")
+            .description("Requires bearer. Newest-message first.")
+            .response::<Vec<ConversationSummary>>(200, "The viewer's conversations"),
+        Operation::get("/api/messages/thread")
+            .summary("One DM thread")
+            .description(
+                "Requires bearer. Oldest message first; resolves the party even when empty.",
+            )
+            .query_param::<String>("with")
+            .response::<Thread>(200, "The thread with the named party"),
+        Operation::post("/api/messages/send")
+            .summary("Send a DM")
+            .description("Requires bearer. Blocked pairs answer 403.")
+            .request_body::<SendMessageBody>()
+            .response::<Message>(200, "The created message"),
+        Operation::get("/api/notifications")
+            .summary("The bell")
+            .description("Requires bearer. Per-kind payload parsed inline.")
+            .response::<Vec<Notification>>(200, "The viewer's notifications, newest first"),
+    ]
 }

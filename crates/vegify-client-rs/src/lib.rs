@@ -2,10 +2,12 @@
 //! content-sync, messages, and notifications routes, plus an OS-keychain [`SessionStore`].
 //!
 //! Extracted from the desktop app (step 2 of the SDK plan) — the desktop consumes THIS crate, never
-//! the other way around (applications are leaves). The wire types below are the hand mirrors moved
-//! verbatim (names preserved so the desktop's generated IPC bindings are byte-identical); step 3
-//! swaps this module to types GENERATED from `vegify-api-types`' TypeCollection via specta-rust,
-//! which is what makes drift between this client and the server impossible by construction.
+//! the other way around (applications are leaves). The wire types are GENERATED from
+//! `vegify-api-types`' TypeCollection via specta-rust (step 3; see `generated.rs` + the
+//! `just bindings` drift gate), which makes drift between this client and the server impossible by
+//! construction. Only client-side shapes stay hand-written: [`AuthUser`]/[`Session`] (the auth
+//! response is remapped client-side) and [`DmNotification`] (a consumer-facing view over the
+//! generated [`Notification`]).
 //!
 //! Transport is deliberately blocking: the desktop's sync engine runs sequential calls on its own
 //! thread — no async runtime in the SDK. The `specta` feature adds `Type` derives to the wire types
@@ -81,9 +83,30 @@ fn expect_ok(mut resp: ureq::http::Response<ureq::Body>) -> Result<(), Error> {
     }
 }
 
-// ---- wire types ----------------------------------------------------------------------------------
-// Moved verbatim from the desktop's hand mirrors (names/fields preserved → its IPC bindings are
-// byte-identical). Timestamps/counts are f64 so specta emits `number`, not bigint.
+// ---- wire types (generated) ----------------------------------------------------------------------
+
+// The contract slice this SDK speaks, regenerated from vegify-api-types by vegify-typegen
+// (`just bindings`; CI drift-fails). Field idents are the wire names verbatim. rustfmt::skip:
+// the file must stay byte-identical to the emission or the fmt and drift gates would fight.
+#[rustfmt::skip]
+mod generated;
+pub use generated::*;
+
+/// The wire's [`Visibility`] (generated, wire-string idents) into the DAL's
+/// (`vegify_core`, the desktop's local store). Same three states; one mapping, at the SDK seam.
+impl From<Visibility> for vegify_core::Visibility {
+    fn from(v: Visibility) -> Self {
+        match v {
+            Visibility::public => vegify_core::Visibility::Public,
+            Visibility::private => vegify_core::Visibility::Private,
+            Visibility::unlisted => vegify_core::Visibility::Unlisted,
+        }
+    }
+}
+
+// ---- client-side shapes (hand-written on purpose) ------------------------------------------------
+
+// Timestamps/counts are f64 so specta emits `number`, not bigint.
 
 /// The signed-in user, as the auth routes return it.
 #[derive(Serialize, Deserialize, Clone)]
@@ -113,64 +136,10 @@ pub struct Session {
     pub user: AuthUser,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-/// The other party of a DM, as lists and headers show them.
-pub struct DmParty {
-    /// User id.
-    pub id: String,
-    /// Display name.
-    pub name: String,
-    /// Public handle (`/<username>`).
-    pub username: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "camelCase")]
-/// One conversation row of the DM list.
-pub struct DmConversation {
-    /// Conversation id.
-    pub id: String,
-    /// The other party.
-    pub with: DmParty,
-    /// Body of the newest message (the preview line).
-    pub last_body: String,
-    /// Newest message timestamp, ms epoch (f64 on this wire).
-    pub last_at: f64,
-    /// True when the newest message is the viewer's own.
-    pub last_is_mine: bool,
-    /// Count of unread messages (f64 on this wire).
-    pub unread: f64,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "camelCase")]
-/// One DM as the thread renders it.
-pub struct DmMessage {
-    /// Message id.
-    pub id: String,
-    /// Message body (plain text).
-    pub body: String,
-    /// Send timestamp, ms epoch (f64 on this wire).
-    pub created_at: f64,
-    /// True when the viewer sent it.
-    pub mine: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-/// A DM thread: the other party plus the messages, oldest first.
-pub struct DmThread {
-    /// The other party (resolved even for an empty thread).
-    pub with: DmParty,
-    /// The messages, oldest first.
-    pub messages: Vec<DmMessage>,
-}
-
-/// One bell row. `payload` is the server's per-kind JSON as a RAW STRING (specta has no stable JSON
-/// type on this line) — consumers parse it themselves.
+/// One bell row, as CONSUMERS see it: `payload` is the server's per-kind JSON re-serialized to a
+/// RAW STRING (consumers parse it by `kind`). The wire shape itself is the generated
+/// [`Notification`] (`payload` as parsed JSON); this view exists so IPC/webview consumers get a
+/// string they can hand straight to `JSON.parse`.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
@@ -185,122 +154,6 @@ pub struct DmNotification {
     pub created_at: f64,
     /// Whether the viewer has opened it.
     pub read: bool,
-}
-
-// The /api/content/pull payload, in mutation shape + each row's owner. The desktop's sync engine
-// maps these onto vegify-core's Save*Input for the local re-apply.
-#[derive(Deserialize)]
-/// One full sync pull — every server row visible to this device's user.
-pub struct PullPayload {
-    /// All visible recipes, with their lines.
-    pub recipes: Vec<PullRecipe>,
-    /// All visible ingredients, with their nutrient rows.
-    pub ingredients: Vec<PullIngredient>,
-    /// The creators of the rows above (public identity only) — mirrored into the local `users`
-    /// cache so creator handles and profiles resolve on-device. Absent on pre-users servers.
-    #[serde(default)]
-    pub users: Vec<PullUser>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// One creator as pulled — the public identity surface for content in this payload.
-pub struct PullUser {
-    /// User id (what PullRecipe/PullIngredient `user_id` points at).
-    pub id: String,
-    /// Profile handle (the `/<username>` URL segment).
-    pub username: String,
-    /// Display name.
-    pub name: String,
-    /// Media key of the profile avatar; clients compose `<api base>/<key>`.
-    #[serde(default)]
-    pub avatar_key: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// One recipe row as pulled (mirrored verbatim into the local DB).
-pub struct PullRecipe {
-    /// Recipe id (stable cross-replica).
-    pub id: String,
-    /// The recipe's as-ingredient pair id; must survive the mirror so
-    /// consuming items' FKs stay intact.
-    pub as_ingredient_id: String,
-    /// Owner id; None = ownerless seed content.
-    pub user_id: Option<String>,
-    /// Visibility as stored.
-    pub visibility: vegify_core::Visibility,
-    /// Recipe title.
-    pub name: String,
-    /// Optional subtitle.
-    pub subtitle: Option<String>,
-    /// Free-text directions.
-    pub directions: Option<String>,
-    /// Serving size in grams, when declared.
-    pub serving_grams: Option<f64>,
-    /// Total batch mass in grams, when declared.
-    pub batch_grams: Option<f64>,
-    /// The recipe's lines, in order.
-    pub items: Vec<PullItem>,
-    #[serde(default)]
-    /// Current slug, mirrored verbatim so local links match the server.
-    pub slug: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// One recipe line as pulled.
-pub struct PullItem {
-    /// The ingredient the line references.
-    pub ingredient_id: String,
-    /// Line quantity in grams (canonical).
-    pub grams: f64,
-    /// Display unit the author picked; None = grams.
-    pub unit: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// One ingredient row as pulled (mirrored verbatim into the local DB).
-pub struct PullIngredient {
-    /// Ingredient id (stable cross-replica).
-    pub id: String,
-    /// Owner id; None = the communal catalog.
-    pub user_id: Option<String>,
-    /// Visibility as stored.
-    pub visibility: vegify_core::Visibility,
-    /// Ingredient name.
-    pub name: String,
-    /// Optional description.
-    pub description: Option<String>,
-    /// Cents (USD) — i32 end-to-end (the write path's width; see vegify-api-types).
-    pub price: Option<i32>,
-    /// Calories per 100 g, when known.
-    pub calories_per_100g: Option<f64>,
-    /// Serving size in grams, when declared.
-    pub serving_grams: Option<f64>,
-    /// Package mass in grams, when declared.
-    pub package_grams: Option<f64>,
-    /// Per-100 g nutrient rows.
-    pub nutrients: Vec<PullReading>,
-    #[serde(default)]
-    /// Current slug, mirrored verbatim so local links match the server.
-    pub slug: Option<String>,
-    /// Soft-delete tombstone (ms) — mirrored verbatim so local filtering matches the server.
-    #[serde(default)]
-    pub deleted_at: Option<i64>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-/// One nutrient reading as pulled, per 100 g.
-pub struct PullReading {
-    /// Nutrient name.
-    pub name: String,
-    /// Quantity per 100 g.
-    pub amount_per_100g: f64,
-    /// Unit for the quantity (g, mg, µg).
-    pub unit: String,
 }
 
 // ---- session store (OS keychain) -----------------------------------------------------------------
@@ -603,7 +456,7 @@ impl VegifyClient {
     }
 
     /// The viewer's conversation list, newest-message first.
-    pub fn conversations(&self, token: &str) -> Result<Vec<DmConversation>, Error> {
+    pub fn conversations(&self, token: &str) -> Result<Vec<ConversationSummary>, Error> {
         read_json(
             Self::bearer(self.agent.get(self.messages_url("conversations")), token)
                 .call()
@@ -612,7 +465,7 @@ impl VegifyClient {
     }
 
     /// The thread with `with` (a username), oldest message first.
-    pub fn thread(&self, token: &str, with: &str) -> Result<DmThread, Error> {
+    pub fn thread(&self, token: &str, with: &str) -> Result<Thread, Error> {
         read_json(
             Self::bearer(
                 self.agent
@@ -626,7 +479,7 @@ impl VegifyClient {
     }
 
     /// Send `body` to `to` (a username); returns the created message.
-    pub fn send_message(&self, token: &str, to: &str, body: &str) -> Result<DmMessage, Error> {
+    pub fn send_message(&self, token: &str, to: &str, body: &str) -> Result<Message, Error> {
         read_json(
             Self::bearer(self.agent.post(self.messages_url("send")), token)
                 .send_json(serde_json::json!({ "to": to, "body": body }))

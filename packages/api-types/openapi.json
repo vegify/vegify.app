@@ -1,0 +1,2034 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "vegify.app HTTP API",
+    "description": "The typed surface of api.vegify.app: the public read endpoints, the content pull, messages, notifications, and the session probe. Auth flows and write acks still answer ad-hoc JSON and join this document as their shapes graduate into vegify-api-types. Endpoints marked 'Requires bearer' expect an Authorization: Bearer <token> header.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Liveness probe",
+        "description": "Plain-text ok; the deploy gate and uptime checks poll this.",
+        "responses": {
+          "200": {
+            "description": "The literal string \"ok\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/recipes": {
+      "get": {
+        "summary": "Recipe catalog, one keyset page",
+        "description": "Public. Sort + keyset cursor; viewer's own non-public rows included when authed.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "$ref": "#/components/schemas/Sort"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "cursor_name",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of recipe cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecipeCard"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/ingredients": {
+      "get": {
+        "summary": "Ingredient catalog, one keyset page",
+        "description": "Public. Same paging contract as /api/content/recipes.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "$ref": "#/components/schemas/Sort"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "cursor_name",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of ingredient cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IngredientCard"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/recipe-detail": {
+      "get": {
+        "summary": "One recipe, render-ready",
+        "description": "Public (visibility-gated). Null when absent or not visible to the viewer.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The recipe view, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/RecipeView"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/recipe-edit": {
+      "get": {
+        "summary": "One recipe, edit-mode source data",
+        "description": "Requires bearer; owner-gated. Null when absent or not editable.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The edit payload, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/RecipeEditData"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/ingredient-detail": {
+      "get": {
+        "summary": "One ingredient, render-ready",
+        "description": "Public (visibility-gated). Null when absent or not visible.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ingredient payload, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/IngredientEditData"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/ingredient-edit": {
+      "get": {
+        "summary": "One ingredient, edit-mode source data",
+        "description": "Requires bearer; owner-gated. Null when absent or not editable.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The edit payload, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/IngredientEditData"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/search": {
+      "get": {
+        "summary": "Ingredient search",
+        "description": "Public. The recipe composer's search box.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching ingredients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IngredientSearchResult"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/pull": {
+      "get": {
+        "summary": "Full content sync pull",
+        "description": "Public; optional bearer widens the payload to the viewer's own non-public rows.",
+        "responses": {
+          "200": {
+            "description": "Every visible row, in mutation shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/profile": {
+      "get": {
+        "summary": "Public profile by handle",
+        "description": "Public; optional bearer lets owners see their own non-public shelves.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "username",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The profile, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/recipe-by-slug": {
+      "get": {
+        "summary": "Resolve /<username>/<slug> to a recipe",
+        "description": "Public. Null → 404; a canonicalSlug differing from the request → 301.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "username",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resolution, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/RecipeSlugHit"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/ingredient-by-slug": {
+      "get": {
+        "summary": "Resolve /ingredients/<slug> to an ingredient",
+        "description": "Public. Null → 404; a canonicalSlug differing from the request → 301.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resolution, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/IngredientSlugHit"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/sitemap": {
+      "get": {
+        "summary": "Sitemap source data",
+        "description": "Public. The web shell renders sitemap.xml from this.",
+        "responses": {
+          "200": {
+            "description": "Every public canonical URL's source row",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitemapData"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/blog": {
+      "get": {
+        "summary": "Blog index",
+        "description": "Public. Card shapes only, no bodies.",
+        "responses": {
+          "200": {
+            "description": "All published posts, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PostSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/content/blog-detail": {
+      "get": {
+        "summary": "One blog post",
+        "description": "Public. Null when the slug matches nothing.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The post with its block-list body, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "nullable": true,
+                  "x-specta-nullable": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PostFull"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "summary": "Who am I",
+        "description": "Requires bearer. The signed-in user, or 401.",
+        "responses": {
+          "200": {
+            "description": "The signed-in user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/conversations": {
+      "get": {
+        "summary": "DM conversation list",
+        "description": "Requires bearer. Newest-message first.",
+        "responses": {
+          "200": {
+            "description": "The viewer's conversations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/thread": {
+      "get": {
+        "summary": "One DM thread",
+        "description": "Requires bearer. Oldest message first; resolves the party even when empty.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "with",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread with the named party",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/send": {
+      "post": {
+        "summary": "Send a DM",
+        "description": "Requires bearer. Blocked pairs answer 403.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The created message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "summary": "The bell",
+        "description": "Requires bearer. Per-kind payload parsed inline.",
+        "responses": {
+          "200": {
+            "description": "The viewer's notifications, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Notification"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AggregatedNutrition": {
+        "title": "AggregatedNutrition",
+        "description": " A recipe's nutrition rolled up from its items, per 100 g.",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g; None when no item carries calorie data.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "readings": {
+            "description": " Per-100 g readings summed across items, keyed by nutrient name.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          }
+        },
+        "required": [
+          "caloriesPer100g",
+          "readings"
+        ],
+        "additionalProperties": false
+      },
+      "Amount": {
+        "title": "Amount",
+        "description": " A quantity as entered plus its canonical mass: `grams` is the ground\n truth all math runs on; `amount`/`unit` preserve how the user wrote it.",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "nullable": true,
+            "description": " Quantity in `unit`, as entered; None when only the mass is known.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "grams": {
+            "description": " Canonical mass in grams.",
+            "type": "number"
+          },
+          "unit": {
+            "nullable": true,
+            "description": " Display unit (cup, tbsp, g); None when only the mass is known.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "unit",
+          "grams"
+        ],
+        "additionalProperties": false
+      },
+      "ConversationSummary": {
+        "title": "ConversationSummary",
+        "description": " One conversation row of the DM list, newest-message first.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": " Conversation id.",
+            "type": "string"
+          },
+          "lastAt": {
+            "description": " Newest message timestamp, ms epoch.",
+            "type": "number"
+          },
+          "lastBody": {
+            "description": " Body of the newest message (the list's preview line).",
+            "type": "string"
+          },
+          "lastIsMine": {
+            "description": " True when the last message is the viewer's own (the list renders \"You: …\").",
+            "type": "boolean"
+          },
+          "unread": {
+            "description": " Count of messages the viewer has not read.",
+            "type": "number"
+          },
+          "with": {
+            "description": " The other party.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Party"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "with",
+          "lastBody",
+          "lastAt",
+          "lastIsMine",
+          "unread"
+        ],
+        "additionalProperties": false
+      },
+      "IngredientCard": {
+        "title": "IngredientCard",
+        "description": " Ingredient browser card (leaf ingredients — those not backing a recipe).",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g, when known (list-card badge).",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "description": " Ingredient id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient name.",
+            "type": "string"
+          },
+          "slug": {
+            "nullable": true,
+            "description": " Slug for the canonical link; fall back to `/ingredients/<id>`.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "username": {
+            "nullable": true,
+            "description": " Owner handle: an OWNED ingredient is canonical at `/<username>/ingredients/<slug>` (browsable\n under its creator); None = the communal catalog, canonical at `/ingredients/<slug>`.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "caloriesPer100g",
+          "slug",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "IngredientEditData": {
+        "title": "IngredientEditData",
+        "description": " IngredientForm edit-mode source data (per-100g; the frontend scales to per-serving).",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g, when known.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "canEdit": {
+            "description": " Whether the current viewer owns this ingredient — drives the edit affordance in the UI. Always\n true on the owner-only edit-load path; on the detail path it reflects ownership (false for\n anonymous + non-owner viewers). The real guard stays server-side.",
+            "type": "boolean"
+          },
+          "creator": {
+            "nullable": true,
+            "description": " Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "deleted": {
+            "description": " Soft-deleted (tombstoned) by its owner: delisted from browse/search but preserved for the\n recipes that use it. Detail renders a badge; lists never surface it.",
+            "type": "boolean"
+          },
+          "description": {
+            "nullable": true,
+            "description": " Optional description shown on the detail page.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " Ingredient id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient name.",
+            "type": "string"
+          },
+          "nutrients": {
+            "description": " Per-100 g nutrient rows as stored (the form scales to per-serving).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          },
+          "packageGrams": {
+            "nullable": true,
+            "description": " Package mass in grams, when declared (price-per-100 g math).",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": " Price in cents, when tracked.",
+            "x-specta-nullable": true,
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "servingGrams": {
+            "nullable": true,
+            "description": " Serving size in grams, when declared.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "slug": {
+            "nullable": true,
+            "description": " Canonical URL segment `/ingredients/<slug>`. None only pre-backfill.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "description": " Current visibility.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "price",
+          "caloriesPer100g",
+          "servingGrams",
+          "packageGrams",
+          "visibility",
+          "slug",
+          "canEdit",
+          "deleted",
+          "creator",
+          "nutrients"
+        ],
+        "additionalProperties": false
+      },
+      "IngredientSearchResult": {
+        "title": "IngredientSearchResult",
+        "description": " One ingredient hit in the recipe composer's search box.",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g, when known.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "description": " Ingredient id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient name.",
+            "type": "string"
+          },
+          "readings": {
+            "description": " Per-100 g nutrient readings, for the composer's live nutrition preview.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          },
+          "servingGrams": {
+            "nullable": true,
+            "description": " Serving size in grams, when the ingredient declares one (the composer's\n default line quantity).",
+            "x-specta-nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "servingGrams",
+          "caloriesPer100g",
+          "readings"
+        ],
+        "additionalProperties": false
+      },
+      "IngredientSlugHit": {
+        "title": "IngredientSlugHit",
+        "description": " Resolution of an ingredient slug (current or historical) to its row.",
+        "type": "object",
+        "properties": {
+          "canonicalSlug": {
+            "description": " The ingredient's CURRENT slug — differs when the hit came from slug\n history, in which case the caller 301s here.",
+            "type": "string"
+          },
+          "ingredientId": {
+            "description": " The ingredient the slug resolves to.",
+            "type": "string"
+          },
+          "username": {
+            "nullable": true,
+            "description": " Owner handle when the ingredient is user-owned: `/ingredients/<slug>` 301s to\n `/<username>/ingredients/<slug>` (the catalog stays at the global path).",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ingredientId",
+          "canonicalSlug",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "JsonValue": {
+        "nullable": true,
+        "title": "JsonValue",
+        "description": " Wire-facing JSON for opaque per-kind payloads (mirrors the UI's JsonValue). Exists because the\n rc.25 specta line can't export `serde_json::Value` — its Number variant carries i64 and trips\n the BigInt guard (fixed upstream by specta PR #505; when that lands, the `#[specta(type = …)]`\n overrides pointing here can drop away). Never constructed — a type-level wire declaration only.",
+        "x-specta-nullable": true,
+        "anyOf": [
+          {
+            "description": " JSON boolean.",
+            "type": "boolean"
+          },
+          {
+            "description": " JSON number (f64 on this wire; the reason this type exists).",
+            "type": "number"
+          },
+          {
+            "description": " JSON string.",
+            "type": "string"
+          },
+          {
+            "description": " JSON array.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          {
+            "description": " JSON object.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          }
+        ]
+      },
+      "Message": {
+        "title": "Message",
+        "description": " One DM as the thread screen renders it.",
+        "type": "object",
+        "properties": {
+          "body": {
+            "description": " Message body (plain text).",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": " Send timestamp, ms epoch.",
+            "type": "number"
+          },
+          "id": {
+            "description": " Message id.",
+            "type": "string"
+          },
+          "mine": {
+            "description": " True when the viewer sent it (clients render alignment off this, not off raw ids).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "createdAt",
+          "mine"
+        ],
+        "additionalProperties": false
+      },
+      "Notification": {
+        "title": "Notification",
+        "description": " One bell notification.",
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "description": " Creation timestamp, ms epoch.",
+            "type": "number"
+          },
+          "id": {
+            "description": " Notification id.",
+            "type": "string"
+          },
+          "kind": {
+            "description": " Notification kind tag (e.g. \"ingredient-updated\"); selects the\n payload shape and the client-side renderer.",
+            "type": "string"
+          },
+          "payload": {
+            "description": " Parsed payload — per-kind (kind \"ingredient-updated\": `{ingredient: {id,name,slug}, by: {name,username}}`).\n Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            ]
+          },
+          "read": {
+            "description": " Whether the viewer has opened it.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "payload",
+          "createdAt",
+          "read"
+        ],
+        "additionalProperties": false
+      },
+      "Party": {
+        "title": "Party",
+        "description": " The other party, as the conversation list + thread header shows them.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": " User id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Display name.",
+            "type": "string"
+          },
+          "username": {
+            "description": " Public handle (`/<username>`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "PostFull": {
+        "title": "PostFull",
+        "description": " Full post — `body` is the parsed JSON block list the web renders.",
+        "type": "object",
+        "properties": {
+          "body": {
+            "description": " Wire-declared as the crate's JsonValue: specta rc.25 can't export serde_json::Value (see lib.rs).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            ]
+          },
+          "dateDisplay": {
+            "description": " Human-formatted publication date, preformatted server-side.",
+            "type": "string"
+          },
+          "datePublished": {
+            "description": " RFC 3339 publication timestamp.",
+            "type": "string"
+          },
+          "description": {
+            "description": " One-to-two sentence summary (meta description + JSON-LD).",
+            "type": "string"
+          },
+          "slug": {
+            "description": " URL slug (`/blog/<slug>`).",
+            "type": "string"
+          },
+          "title": {
+            "description": " Post title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "datePublished",
+          "dateDisplay",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "PostSummary": {
+        "title": "PostSummary",
+        "description": " Index-card shape (no body).",
+        "type": "object",
+        "properties": {
+          "dateDisplay": {
+            "description": " Human-formatted publication date, preformatted server-side.",
+            "type": "string"
+          },
+          "datePublished": {
+            "description": " RFC 3339 publication timestamp (feeds `<time datetime>` + JSON-LD).",
+            "type": "string"
+          },
+          "description": {
+            "description": " One-to-two sentence summary (index cards + meta description).",
+            "type": "string"
+          },
+          "slug": {
+            "description": " URL slug (`/blog/<slug>`).",
+            "type": "string"
+          },
+          "title": {
+            "description": " Post title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "datePublished",
+          "dateDisplay"
+        ],
+        "additionalProperties": false
+      },
+      "Profile": {
+        "title": "Profile",
+        "description": " A public profile: the handle, the display name, and the user's visible recipes. Shared by the\n server's `/api/content/profile` endpoint and the desktop DAL so both render the identical screen.",
+        "type": "object",
+        "properties": {
+          "avatarKey": {
+            "nullable": true,
+            "description": " Media key of the profile avatar; clients compose `<api base>/<key>`.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "ingredients": {
+            "description": " The user's LEAF ingredients (created or imported by them), visible to the viewer and not\n tombstoned — browsable under `/<username>/ingredients/<slug>`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngredientCard"
+            }
+          },
+          "name": {
+            "description": " Display name.",
+            "type": "string"
+          },
+          "recipes": {
+            "description": " The user's recipes visible to the viewer, as cards.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeCard"
+            }
+          },
+          "username": {
+            "description": " The profile's handle (URL segment).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "name",
+          "recipes",
+          "ingredients",
+          "avatarKey"
+        ],
+        "additionalProperties": false
+      },
+      "PullIngredient": {
+        "title": "PullIngredient",
+        "description": " One ingredient row as pulled (server-authoritative mirror source).",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g, when known.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "deletedAt": {
+            "nullable": true,
+            "description": " Soft-delete tombstone (ms). Tombstoned rows STAY in the pull — recipes that use them need\n the data — and clients mirror the flag so their local list/search filtering matches.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "description": {
+            "nullable": true,
+            "description": " Optional description.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " Ingredient id (stable cross-replica).",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient name.",
+            "type": "string"
+          },
+          "nutrients": {
+            "description": " Per-100 g nutrient rows.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullReading"
+            }
+          },
+          "packageGrams": {
+            "nullable": true,
+            "description": " Package mass in grams, when declared.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": " Cents (USD). i32 END-TO-END: SaveIngredientInput (the only write path) is i32, the desktop\n mirror is i32, the TS side is number — an i64 here was silent width drift in the wire contract\n (found by the specta-side repo audit; the class of bug a generated client would make impossible).\n Cents (USD). i32 END-TO-END: SaveIngredientInput (the only write path) is i32, the desktop\n mirror is i32, the TS side is number — an i64 here was silent width drift in the wire\n contract (found by the specta-side repo audit; the class of bug a generated client kills).",
+            "x-specta-nullable": true,
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "servingGrams": {
+            "nullable": true,
+            "description": " Serving size in grams, when declared.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "slug": {
+            "nullable": true,
+            "description": " Current slug; mirrored verbatim so local links match the server.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "nullable": true,
+            "description": " Owner id; None = the communal catalog.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "description": " Visibility as stored — the shared enum, not a loose string (same wire bytes).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "visibility",
+          "name",
+          "description",
+          "price",
+          "caloriesPer100g",
+          "servingGrams",
+          "packageGrams",
+          "slug",
+          "deletedAt",
+          "nutrients"
+        ],
+        "additionalProperties": false
+      },
+      "PullItem": {
+        "title": "PullItem",
+        "description": " One recipe line as pulled.",
+        "type": "object",
+        "properties": {
+          "grams": {
+            "description": " Line quantity in grams (canonical).",
+            "type": "number"
+          },
+          "ingredientId": {
+            "description": " The ingredient the line references.",
+            "type": "string"
+          },
+          "unit": {
+            "nullable": true,
+            "description": " Display unit the author picked; None = grams.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ingredientId",
+          "grams",
+          "unit"
+        ],
+        "additionalProperties": false
+      },
+      "PullPayload": {
+        "title": "PullPayload",
+        "description": " One full sync pull: every server row visible to the device's user.\n Server-authoritative — the desktop mirrors these verbatim.",
+        "type": "object",
+        "properties": {
+          "ingredients": {
+            "description": " All visible ingredients, with their nutrient rows.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullIngredient"
+            }
+          },
+          "recipes": {
+            "description": " All visible recipes, with their lines.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRecipe"
+            }
+          },
+          "users": {
+            "description": " The creators of the rows above — public identity only. The desktop mirrors these into its\n local `users` cache so creator handles and `/<username>` profiles resolve on-device, logged\n out included. Users without a username are omitted (their content renders creatorless,\n exactly as the server serves it).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullUser"
+            }
+          }
+        },
+        "required": [
+          "recipes",
+          "ingredients",
+          "users"
+        ],
+        "additionalProperties": false
+      },
+      "PullReading": {
+        "title": "PullReading",
+        "description": " One nutrient reading as pulled, per 100 g.",
+        "type": "object",
+        "properties": {
+          "amountPer100g": {
+            "description": " Quantity per 100 g.",
+            "type": "number"
+          },
+          "name": {
+            "description": " Nutrient name.",
+            "type": "string"
+          },
+          "unit": {
+            "description": " Unit for the quantity (g, mg, µg).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "amountPer100g",
+          "unit"
+        ],
+        "additionalProperties": false
+      },
+      "PullRecipe": {
+        "title": "PullRecipe",
+        "description": " One recipe row as pulled (server-authoritative mirror source).",
+        "type": "object",
+        "properties": {
+          "asIngredientId": {
+            "description": " The recipe's as-ingredient pair id — must survive the mirror so\n consuming items' FKs stay intact.",
+            "type": "string"
+          },
+          "batchGrams": {
+            "nullable": true,
+            "description": " Total batch mass in grams, when declared.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "directions": {
+            "nullable": true,
+            "description": " Free-text directions.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " Recipe id (stable cross-replica).",
+            "type": "string"
+          },
+          "items": {
+            "description": " The recipe's lines, in order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullItem"
+            }
+          },
+          "name": {
+            "description": " Recipe title.",
+            "type": "string"
+          },
+          "servingGrams": {
+            "nullable": true,
+            "description": " Serving size in grams, when declared.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "slug": {
+            "nullable": true,
+            "description": " Current slug; mirrored verbatim so local links match the server.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": " Optional subtitle.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "nullable": true,
+            "description": " Owner id; None = ownerless seed content.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "description": " Visibility as stored — the shared enum, not a loose string (same wire bytes; the\n TS side tightens to the \"public\" | \"private\" | \"unlisted\" union).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "asIngredientId",
+          "userId",
+          "visibility",
+          "name",
+          "subtitle",
+          "directions",
+          "servingGrams",
+          "batchGrams",
+          "slug",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "PullUser": {
+        "title": "PullUser",
+        "description": " One creator as pulled — the public identity surface for content in this payload.",
+        "type": "object",
+        "properties": {
+          "avatarKey": {
+            "nullable": true,
+            "description": " Media key of the profile avatar; clients compose `<api base>/<key>`.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " User id (what PullRecipe/PullIngredient `user_id` points at).",
+            "type": "string"
+          },
+          "name": {
+            "description": " Display name.",
+            "type": "string"
+          },
+          "username": {
+            "description": " Profile handle (the `/<username>` URL segment).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "name",
+          "avatarKey"
+        ],
+        "additionalProperties": false
+      },
+      "Reading": {
+        "title": "Reading",
+        "description": " One nutrient measurement, normalized per 100 g.",
+        "type": "object",
+        "properties": {
+          "amountPer100g": {
+            "description": " Quantity per 100 g of the food.",
+            "type": "number"
+          },
+          "name": {
+            "description": " Nutrient name (e.g. \"Iron\").",
+            "type": "string"
+          },
+          "unit": {
+            "description": " Display unit for the quantity (g, mg, µg).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "amountPer100g",
+          "unit"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeCard": {
+        "title": "RecipeCard",
+        "description": " Recipe list/browse card — the light projection for grids.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": " Recipe id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Recipe title.",
+            "type": "string"
+          },
+          "photoKey": {
+            "nullable": true,
+            "description": " Media key of the hero photo (attached to the recipe's as-ingredient); clients compose the\n URL as `<api base>/<key>`. None = no photo yet (cards render the placeholder tile).",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "slug": {
+            "nullable": true,
+            "description": " The recipe's slug half of the canonical link (see `username`).",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": " Optional subtitle, shown under the title on cards.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "username": {
+            "nullable": true,
+            "description": " Owner handle + slug for the canonical `/<username>/<slug>` link. Optional (pre-backfill /\n ownerless rows); the UI falls back to `/recipes/<id>` when either is missing.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subtitle",
+          "username",
+          "slug",
+          "photoKey"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeEditData": {
+        "title": "RecipeEditData",
+        "description": " RecipeForm edit-mode source data (per-100 g; the frontend scales).",
+        "type": "object",
+        "properties": {
+          "directions": {
+            "nullable": true,
+            "description": " Free-text directions; None = none written.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " Recipe id.",
+            "type": "string"
+          },
+          "items": {
+            "description": " The recipe's lines in edit form.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeEditItem"
+            }
+          },
+          "name": {
+            "description": " Recipe title.",
+            "type": "string"
+          },
+          "servings": {
+            "nullable": true,
+            "description": " Declared servings per batch, when set.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": " Optional subtitle.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "description": " Current visibility.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subtitle",
+          "directions",
+          "servings",
+          "visibility",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeEditItem": {
+        "title": "RecipeEditItem",
+        "description": " RecipeForm edit-mode defaults: per-item nutrition included so each row shows live nutrition.",
+        "type": "object",
+        "properties": {
+          "caloriesPer100g": {
+            "nullable": true,
+            "description": " Calories per 100 g, when known — the edit screen's live math.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "grams": {
+            "description": " Line quantity in grams (canonical).",
+            "type": "number"
+          },
+          "ingredientId": {
+            "description": " The referenced ingredient's id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient display name.",
+            "type": "string"
+          },
+          "readings": {
+            "description": " Per-100 g readings for the edit screen's live nutrition roll-up.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          }
+        },
+        "required": [
+          "ingredientId",
+          "name",
+          "grams",
+          "caloriesPer100g",
+          "readings"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeItem": {
+        "title": "RecipeItem",
+        "description": " One recipe line as read: the ingredient, its display name, its amount.",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "description": " The line's quantity (display form + canonical grams).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Amount"
+              }
+            ]
+          },
+          "deleted": {
+            "description": " True only in the DELETER's own recipes: the ingredient is soft-deleted (tombstoned) AND its\n owner owns this recipe. Other users' recipes render the same ingredient normally — a soft\n delete disowns from the catalog without breaking anyone's recipe. Drives the greyed row +\n the \"restore?\" affordance.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": " The underlying ingredient's id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Ingredient display name at read time.",
+            "type": "string"
+          },
+          "recipeId": {
+            "nullable": true,
+            "description": " Set when this item is itself a recipe-as-ingredient (e.g. a Biga in a Dough),\n so the UI links to that recipe's page instead of a (sparse) ingredient page.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "amount",
+          "recipeId",
+          "deleted"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeSlugHit": {
+        "title": "RecipeSlugHit",
+        "description": " Resolution of a recipe slug (current or historical) to its row.",
+        "type": "object",
+        "properties": {
+          "canonicalSlug": {
+            "description": " The recipe's CURRENT slug. When it differs from the requested slug, the caller 301s to\n `/<username>/<canonical_slug>`.",
+            "type": "string"
+          },
+          "recipeId": {
+            "description": " The recipe the slug resolves to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipeId",
+          "canonicalSlug"
+        ],
+        "additionalProperties": false
+      },
+      "RecipeView": {
+        "title": "RecipeView",
+        "description": " Full recipe detail as rendered by the recipe page.",
+        "type": "object",
+        "properties": {
+          "batchGrams": {
+            "nullable": true,
+            "description": " Total batch mass in grams, when declared — the denominator that\n turns summed item nutrition into per-100 g.",
+            "x-specta-nullable": true,
+            "type": "number"
+          },
+          "canEdit": {
+            "description": " Whether the current viewer owns this recipe — drives the edit affordance in the UI. The real\n guard stays server-side (owner-only edit-load + mutation); false for anonymous + non-owner viewers.",
+            "type": "boolean"
+          },
+          "creator": {
+            "nullable": true,
+            "description": " The owner's username — also the first segment of the canonical URL `/<creator>/<slug>`.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "directions": {
+            "nullable": true,
+            "description": " Free-text directions (markdown-ish plain text); None = none written.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": " Recipe id.",
+            "type": "string"
+          },
+          "items": {
+            "description": " The recipe's lines, in order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeItem"
+            }
+          },
+          "name": {
+            "description": " Recipe title.",
+            "type": "string"
+          },
+          "nutrition": {
+            "description": " Nutrition rolled up from the items, per 100 g.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AggregatedNutrition"
+              }
+            ]
+          },
+          "photoKey": {
+            "nullable": true,
+            "description": " Media key of the hero photo — see [`RecipeCard::photo_key`].",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "serving": {
+            "nullable": true,
+            "description": " Serving size, when declared (drives per-serving nutrition).",
+            "x-specta-nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Amount"
+              }
+            ]
+          },
+          "slug": {
+            "nullable": true,
+            "description": " This recipe's current slug (the `/<creator>/<slug>` segment). None only pre-backfill.",
+            "x-specta-nullable": true,
+            "type": "string"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": " Optional subtitle under the title.",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subtitle",
+          "directions",
+          "creator",
+          "slug",
+          "canEdit",
+          "serving",
+          "batchGrams",
+          "items",
+          "nutrition",
+          "photoKey"
+        ],
+        "additionalProperties": false
+      },
+      "SendMessageBody": {
+        "title": "SendMessageBody",
+        "description": " A DM send, as the client must state it. The server's own deserializer stays lenient (missing\n fields answer 400 with a message rather than a deserialization error); the CONTRACT is that\n both fields are required.",
+        "type": "object",
+        "properties": {
+          "body": {
+            "description": " Message body (plain text).",
+            "type": "string"
+          },
+          "to": {
+            "description": " Recipient handle (a username).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "SitemapData": {
+        "title": "SitemapData",
+        "description": " The public, canonical, indexable URLs — everything with a slug that anyone can read. Recipes and\n OWNED ingredients carry their owner handle; unowned ingredients are the catalog namespace.",
+        "type": "object",
+        "properties": {
+          "ingredients": {
+            "description": " All indexable ingredient URLs.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SitemapIngredient"
+            }
+          },
+          "recipes": {
+            "description": " All indexable recipe URLs.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SitemapRecipe"
+            }
+          }
+        },
+        "required": [
+          "recipes",
+          "ingredients"
+        ],
+        "additionalProperties": false
+      },
+      "SitemapIngredient": {
+        "title": "SitemapIngredient",
+        "description": " One indexable ingredient URL for the sitemap.",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "description": " The ingredient's slug.",
+            "type": "string"
+          },
+          "username": {
+            "nullable": true,
+            "description": " Owner handle: owned rows are canonical at `/<username>/ingredients/<slug>`; None = catalog\n (`/ingredients/<slug>`).",
+            "x-specta-nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "slug"
+        ],
+        "additionalProperties": false
+      },
+      "SitemapRecipe": {
+        "title": "SitemapRecipe",
+        "description": " Owner handle (first segment of the canonical URL).",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "description": " The recipe's slug (second URL segment).",
+            "type": "string"
+          },
+          "username": {
+            "description": " Owner handle (first segment of the canonical URL).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "slug"
+        ],
+        "additionalProperties": false
+      },
+      "Sort": {
+        "title": "Sort",
+        "description": " Recipe browser cards. isListed: public catalog + your own (any visibility). `user_id = NULL` never\n matches, so a signed-out viewer (viewer = None) sees only public.\n Public recipe catalog for `viewer` (public rows + the viewer's own), NEWEST FIRST by id — ids are\n ULIDs, so id order is creation order. Keyset-paginated for infinite scroll: pass the last card's `id`\n as `cursor` to get the page after it; `limit` caps the page (None = no limit, i.e. the full list).\n Sort order for the catalog list reads. Recency sorts key on the id (ids are ULIDs, so id order is\n creation order); name sorts use a composite (name, id) keyset since names are not unique. Default\n = Newest (the catalog's first impression).",
+        "oneOf": [
+          {
+            "description": " Newest first (creation order).",
+            "enum": [
+              "newest"
+            ]
+          },
+          {
+            "description": " Oldest first.",
+            "enum": [
+              "oldest"
+            ]
+          },
+          {
+            "description": " Name A→Z.",
+            "enum": [
+              "name_asc"
+            ]
+          },
+          {
+            "description": " Name Z→A.",
+            "enum": [
+              "name_desc"
+            ]
+          }
+        ]
+      },
+      "Thread": {
+        "title": "Thread",
+        "description": " A thread as the thread screen consumes it: the other party (resolved even before any message\n exists, so a profile's \"Message\" button lands on an empty composer) + the messages, oldest first.",
+        "type": "object",
+        "properties": {
+          "messages": {
+            "description": " The messages, oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "with": {
+            "description": " The other party (resolved even for an empty thread).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Party"
+              }
+            ]
+          }
+        },
+        "required": [
+          "with",
+          "messages"
+        ],
+        "additionalProperties": false
+      },
+      "UploadTicket": {
+        "title": "UploadTicket",
+        "description": " An approved upload: PUT the bytes to `url` (presigned, short-lived), then attach `key`.",
+        "type": "object",
+        "properties": {
+          "key": {
+            "description": " Storage key to attach to the row once the PUT succeeds.",
+            "type": "string"
+          },
+          "url": {
+            "description": " Presigned, short-lived PUT URL for the bytes.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "User": {
+        "title": "User",
+        "description": " The signed-in user — the `{id, name, username, email}` the auth routes return, and the viewer the content\n gates scope to. Serializes with bare field names (matching the web's response).",
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": " Login/notification address; visible only to the account itself.",
+            "type": "string"
+          },
+          "email_verified": {
+            "description": " Whether `users.email_verified_at` is set — surfaced to the clients so they can prompt for\n verification (and gate verified-only actions later) without a second round trip.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": " User id.",
+            "type": "string"
+          },
+          "name": {
+            "description": " Display name.",
+            "type": "string"
+          },
+          "username": {
+            "description": " Public handle backing `/<username>`. Assigned at signup (see [`derive_unique_username`]).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username",
+          "email",
+          "email_verified"
+        ],
+        "additionalProperties": false
+      },
+      "Visibility": {
+        "title": "Visibility",
+        "description": " The app is public-default sharing: `public` = anyone lists+reads; `unlisted` = readable by\n direct id/link but not listed; `private` = owner only. Stored on `ingredients` — a recipe IS an\n ingredient (`as_ingredient_id`), so this one field covers both. Ownership (`user_id`) gates\n EDITING, not reading.",
+        "oneOf": [
+          {
+            "description": " Listed and readable by everyone.",
+            "enum": [
+              "public"
+            ]
+          },
+          {
+            "description": " Readable only by the owner.",
+            "enum": [
+              "private"
+            ]
+          },
+          {
+            "description": " Readable via direct link; never listed or searched.",
+            "enum": [
+              "unlisted"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

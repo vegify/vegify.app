@@ -279,7 +279,7 @@ jobs:
         run: |
           VEGIFY_REGEN_BINDINGS=1 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib bindings_ts_is_current
           cargo run -p vegify-typegen
-          git diff --quiet -- apps/desktop/src/bindings.ts packages/api-types \
+          git diff --quiet -- apps/desktop/src/bindings.ts packages/api-types crates/vegify-client-rs/src/generated.rs \
             || { echo "::error::generated types are stale — run 'just bindings' and commit the result."; exit 1; }
       - name: Typecheck the desktop frontend against the fresh types
         run: pnpm --filter desktop exec tsc --noEmit

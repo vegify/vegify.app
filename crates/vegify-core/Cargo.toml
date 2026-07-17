@@ -12,7 +12,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 # Pinned to match the desktop's ttipc/specta so the `Type` impls are the SAME trait the
 # `#[procedures]` macro consumes (a version skew would make them distinct traits and fail to compile).
-specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 ulid = "2"
 
 [lints]

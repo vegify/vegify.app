@@ -25,6 +25,18 @@ members = [
 [patch.crates-io]
 glib = { git = "https://github.com/johncarmack1984/gtk-rs-core", branch = "lux/glib-0.18-patch" }
 
+# specta 2.0.0-rc.26 + the 0.0.13 exporters are merged upstream but UNPUBLISHED (crates.io still
+# serves rc.25/0.0.12; the rc.26 release commit exists on main without a publish). The workspace
+# pins the rc.26 versions and resolves them from this upstream rev — which carries the OpenAPI
+# paths layer (specta-rs/specta#547/#548) and the specta-rust exporter that vegify-typegen
+# consumes. tauri-typed-ipc rides a branch bumped to the same pins (its crates.io release
+# exact-pins rc.25, which would split the graph into two spectas). When rc.26 publishes: drop
+# these five entries, swap typegen's git deps to versions, and move ttipc to its next release.
+specta = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
+specta-serde = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
+specta-typescript = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
+tauri-typed-ipc = { git = "https://github.com/johncarmack1984/tauri-typed-ipc", rev = "2328805995eda6a3931b5858408e67d1f9bdfb17" }
+
 # Workspace lint floor: no hand-written unsafe (deny, not forbid: FFI-adjacent
 # derive macros scope their own allows, which forbid would reject), and the
 # full clippy `all` group surfaces as warnings. Members opt in via
