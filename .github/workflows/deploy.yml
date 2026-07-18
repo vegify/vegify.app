@@ -395,7 +395,14 @@ jobs:
         run: |
           set -euo pipefail
           s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
+          # Register every sensitive field as a log mask BEFORE it can reach a
+          # log line (public repo): the Developer ID .p12 base64 cert leaked
+          # here previously. Line-by-line covers a multi-line base64 value.
+          # (The ASC .p8 api key is written to a file below, never a log.)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done < <(printf '%s' "$s" | jq -r '.certificate')
           echo "::add-mask::$(printf '%s' "$s" | jq -r '.certificate_password')"
+          echo "::add-mask::$(printf '%s' "$s" | jq -r '.api_key_id')"
+          echo "::add-mask::$(printf '%s' "$s" | jq -r '.api_issuer_id')"
           {
             echo "APPLE_CERTIFICATE=$(printf '%s' "$s" | jq -r '.certificate')"
             echo "APPLE_CERTIFICATE_PASSWORD=$(printf '%s' "$s" | jq -r '.certificate_password')"
