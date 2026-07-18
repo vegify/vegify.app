@@ -90,9 +90,9 @@ fn write_sdk_rust() {
 }
 
 /// `packages/api-types/openapi.json` — the OpenAPI document: schemas from the full collection,
-/// paths from the contract crate's route table (`api_operations`). Compatible mode: the contract
-/// has nullable named responses (`Option<RecipeView>` et al), which OpenAPI 3.0 can't express
-/// strictly — the exporter approximates and keeps the exact constraint in `x-specta-*` extensions.
+/// paths from the contract crate's route table (`api_operations`). The exporter targets OpenAPI
+/// 3.1, whose schema dialect expresses the contract's nullable named responses
+/// (`Option<RecipeView>` et al) natively, so no compatibility mode is needed.
 fn write_openapi() {
     let doc = specta_openapi::OpenApi::default()
         .title("vegify.app HTTP API")
@@ -104,7 +104,6 @@ fn write_openapi() {
              vegify-api-types. Endpoints marked 'Requires bearer' expect an Authorization: \
              Bearer <token> header.",
         )
-        .schema_mode(specta_openapi::SchemaMode::Compatible)
         .operations(vegify_api_types::api_operations())
         .export(&vegify_api_types::api_types(), specta_serde::Format)
         .expect("export openapi document");
