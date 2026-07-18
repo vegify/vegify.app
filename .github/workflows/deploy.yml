@@ -556,7 +556,27 @@ jobs:
           settings=$(xcodebuild -workspace vegify.xcodeproj/project.xcworkspace/ -scheme vegify_iOS -configuration release -sdk iphoneos -showBuildSettings 2>/dev/null)
           echo "$settings" | grep -q "CODE_SIGN_STYLE = Manual" || { echo "::error::manual signing did not resolve in build settings"; exit 1; }
           echo "$settings" | grep -q "PROVISIONING_PROFILE_SPECIFIER = $IOS_PROFILE_NAME" || { echo "::error::the provisioning profile specifier did not resolve in build settings"; exit 1; }
-          echo "signing resolved: Manual / $IOS_PROFILE_NAME"
+          # tauri merges a project-dir ExportOptions.plist with the options it computes, and its
+          # pbxproj PARSER cannot read these quoted values back (the archive signs, then the
+          # export dies with "requires a provisioning profile") — so hand it the manual-signing
+          # export options directly instead of hoping it re-derives them.
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>app.vegify.ios</key><string>$IOS_PROFILE_NAME</string>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint ExportOptions.plist
+          echo "signing resolved: Manual / $IOS_PROFILE_NAME (+ export options pinned)"
       - name: Inject the tag-derived version + signing team (via a --config merge)
         # Version comes from THIS run's release (no `gh release view` race against the draft flip);
         # the team id comes from the ASC secret. Committed version fields stay vestigial 0.0.0.
