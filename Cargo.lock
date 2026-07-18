@@ -1821,7 +1821,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2650,7 +2650,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3537,17 +3537,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "openapiv3"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c8d427828b22ae1fff2833a03d8486c2c881367f1c336349f307f321e7f4d05"
-dependencies = [
- "indexmap 2.14.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4244,7 +4233,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4858,7 +4847,7 @@ dependencies = [
 [[package]]
 name = "specta"
 version = "2.0.0-rc.26"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "rustc_version",
  "serde_json",
@@ -4868,7 +4857,7 @@ dependencies = [
 [[package]]
 name = "specta-jsonschema"
 version = "0.0.4"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "serde",
  "serde_json",
@@ -4879,7 +4868,7 @@ dependencies = [
 [[package]]
 name = "specta-macros"
 version = "2.0.0-rc.26"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -4890,21 +4879,21 @@ dependencies = [
 [[package]]
 name = "specta-openapi"
 version = "0.0.4"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
- "indexmap 2.14.0",
- "openapiv3",
+ "serde",
  "serde_json",
  "serde_yaml",
  "specta",
  "specta-jsonschema",
+ "specta-serde",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "specta-rust"
 version = "0.0.1"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "specta",
  "unicode-ident",
@@ -4913,7 +4902,7 @@ dependencies = [
 [[package]]
 name = "specta-serde"
 version = "0.0.13"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "specta",
  "specta-macros",
@@ -4922,7 +4911,7 @@ dependencies = [
 [[package]]
 name = "specta-typescript"
 version = "0.0.13"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "specta",
 ]
@@ -4930,7 +4919,7 @@ dependencies = [
 [[package]]
 name = "specta-util"
 version = "0.0.13"
-source = "git+https://github.com/specta-rs/specta?rev=ff7100c70f8a60a6336913fd5894c7527b9bc0ea#ff7100c70f8a60a6336913fd5894c7527b9bc0ea"
+source = "git+https://github.com/specta-rs/specta?rev=ef21f0544e153b944ff5d1b3afd20472afcf760c#ef21f0544e153b944ff5d1b3afd20472afcf760c"
 dependencies = [
  "specta",
 ]
@@ -5378,7 +5367,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc"
 version = "0.1.5"
-source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=99f7fcfb2366aa4a1969d4e0938f26380f67ed32#99f7fcfb2366aa4a1969d4e0938f26380f67ed32"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=d1a72e554890781c81d10878194ce8891f04c5c2#d1a72e554890781c81d10878194ce8891f04c5c2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5393,7 +5382,7 @@ dependencies = [
 [[package]]
 name = "tauri-typed-ipc-macros"
 version = "0.1.5"
-source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=99f7fcfb2366aa4a1969d4e0938f26380f67ed32#99f7fcfb2366aa4a1969d4e0938f26380f67ed32"
+source = "git+https://github.com/johncarmack1984/tauri-typed-ipc?rev=d1a72e554890781c81d10878194ce8891f04c5c2#d1a72e554890781c81d10878194ce8891f04c5c2"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -5471,7 +5460,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6628,7 +6617,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

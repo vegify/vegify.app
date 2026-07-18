@@ -16,7 +16,7 @@ vegify-core = { path = "../../../crates/vegify-core" }
 # Behind the `openapi` feature: the endpoint descriptions (paths object) for openapi.json.
 # Unpublished exporter — same rev the root [patch.crates-io] pins specta to. The server never
 # enables this feature; only vegify-typegen does, so the exporter stays out of the shipped binary.
-specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea", optional = true }
+specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c", optional = true }
 
 [features]
 # The route table (api_operations) for openapi.json generation — typegen-only.

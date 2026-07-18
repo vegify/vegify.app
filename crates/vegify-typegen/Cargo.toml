@@ -19,8 +19,8 @@ specta-serde = "=0.0.13"
 specta-util = "=0.0.13"
 # Unpublished exporters (no crates.io release yet) — same rev the root [patch.crates-io] pins
 # specta itself to, so the whole graph shares one specta build.
-specta-rust = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
-specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
+specta-rust = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
 
 [lints]
 workspace = true
