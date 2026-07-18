@@ -514,7 +514,7 @@ jobs:
           # which is tauri-action's macOS-notarization var).
           APPLE_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
           # ASC API key → automatic (cloud) signing: Xcode creates/fetches the App Store
-          # provisioning profile for app.vegify on the fly.
+          # provisioning profile for app.vegify.ios on the fly.
           APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
         run: |
@@ -619,7 +619,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_pw" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" login.keychain-db
       - name: Inject the Mac App Store provisioning profile + team-scoped entitlements
-        # The MAS profile is app-specific (app.vegify + Associated Domains) and rides the same
+        # The MAS profile is app-specific (app.vegify.ios + Associated Domains) and rides the same
         # channel as the Developer ID profile: a repository secret. Unlike the Developer ID
         # placeholder path, a store upload with a missing/garbage profile is a guaranteed rejection —
         # fail loudly HERE. The team id substitutes the committed __APPLE_TEAM_ID__ placeholder in
@@ -840,7 +840,7 @@ jobs:
   publish-mas:
     # The macOS twin of publish-ios: the sandboxed .pkg already exists (build-mas staged it) —
     # "publishing" is the altool push to App Store Connect (macOS TestFlight), behind the same gate.
-    # Universal purchase: the iOS and macOS builds land on the SAME app record (same app.vegify
+    # Universal purchase: the iOS and macOS builds land on the SAME app record (same app.vegify.ios
     # bundle id); each platform's store submission stays a deliberate ASC-side step.
     needs: [release, changes, build-types, build-server, build-web, build-desktop, build-ios, build-mas, deploy-server]
     if: ${{ always() && needs.release.outputs.released == 'true' && needs.build-types.result == 'success' && needs.build-server.result == 'success' && needs.build-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-ios.result == 'success' && needs.build-mas.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') }}

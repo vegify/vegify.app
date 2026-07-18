@@ -22,7 +22,8 @@
   <!-- Same associated domains as the Developer ID build (see Entitlements.plist for the rationale):
        webcredentials = Password AutoFill against vegify.app's saved logins, applinks = universal
        links into /recipes/* + /ingredients/*. The MAS provisioning profile must be generated with
-       the Associated Domains capability on the app.vegify App ID or ingestion rejects the build. -->
+       the Associated Domains capability on the app.vegify.ios App ID or ingestion rejects the
+       build (the capability is already on — the live iOS app ships these same domains). -->
   <key>com.apple.developer.associated-domains</key>
   <array>
     <string>webcredentials:vegify.app</string>
@@ -31,12 +32,12 @@
   <!-- MAS identity trio: ingestion validates these against the embedded provisioning profile. The
        keychain access group is where keyring's session item lives under the sandbox. -->
   <key>com.apple.application-identifier</key>
-  <string>__APPLE_TEAM_ID__.app.vegify</string>
+  <string>__APPLE_TEAM_ID__.app.vegify.ios</string>
   <key>com.apple.developer.team-identifier</key>
   <string>__APPLE_TEAM_ID__</string>
   <key>keychain-access-groups</key>
   <array>
-    <string>__APPLE_TEAM_ID__.app.vegify</string>
+    <string>__APPLE_TEAM_ID__.app.vegify.ios</string>
   </array>
 </dict>
 </plist>

@@ -73,9 +73,9 @@ impl From<vegify_client::Error> for DataError {
     }
 }
 
-// Opaque stable keychain key predating the unified `app.vegify` bundle identifier — renaming it
-// would log out every existing install for no functional gain (same rule as the config crate's
-// app-data dir name).
+// Opaque stable keychain key predating the bundle-identifier unification — renaming it would log
+// out every existing install for no functional gain (same rule as the config crate's app-data dir
+// name).
 const KEYCHAIN_SERVICE: &str = "app.vegify.desktop";
 const KEYCHAIN_ACCOUNT: &str = "session";
 

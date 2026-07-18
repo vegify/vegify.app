@@ -1,6 +1,6 @@
 name: vegify
 options:
-  bundleIdPrefix: app.vegify
+  bundleIdPrefix: app.vegify.ios
   deploymentTarget:
     iOS: 14.0
 fileGroups: [../../src]
@@ -11,7 +11,7 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: vegify
-      PRODUCT_BUNDLE_IDENTIFIER: app.vegify
+      PRODUCT_BUNDLE_IDENTIFIER: app.vegify.ios
 targetTemplates:
   app:
     type: application
