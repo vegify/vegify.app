@@ -7,6 +7,8 @@ interface CiStackProps extends StackProps {
   githubRepo: string
   /** Secrets Manager id of the shared Apple signing secret the release-signing role may read. */
   appleSecretId: string
+  /** Secrets Manager id of the shared Mac App Store signing secret (build-mas) — same read scope. */
+  masSecretId: string
 }
 
 /**
@@ -97,9 +99,12 @@ export class CiStack extends Stack {
       new iam.PolicyStatement({
         sid: "ReadSharedAppleSigningSecret",
         actions: ["secretsmanager:GetSecretValue"],
-        // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard.
+        // Secret ARNs carry a random 6-char suffix, hence the trailing wildcard. The MAS secret
+        // (Apple Distribution + Mac Installer Distribution certs for build-mas) rides the same
+        // read scope as the notarization/ASC secret.
         resources: [
-          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`
+          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.appleSecretId}-*`,
+          `arn:aws:secretsmanager:us-west-1:${this.account}:secret:${props.masSecretId}-*`
         ]
       })
     )
@@ -112,7 +117,8 @@ export class CiStack extends Stack {
         actions: ["ssm:GetParameter"],
         resources: [
           `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/api-url`,
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/apple-secret-id`
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/apple-secret-id`,
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/vegify/deploy/mas-secret-id`
         ]
       })
     )

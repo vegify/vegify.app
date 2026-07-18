@@ -1,6 +1,6 @@
 # iOS app (Tauri) — scaffold
 
-The iOS app is the same Tauri crate as the desktop app (`apps/desktop`), not a separate shell: one Rust core (`vegify_lib`), one set of shared `@vegify/ui` screens, with `gen/apple/` holding the generated Xcode project. Bundle identifier is **`app.vegify.ios`** (set in `src-tauri/tauri.ios.conf.json`, merged over `tauri.conf.json` — the desktop keeps `app.vegify.desktop`), and the AASA already authorizes it for webcredentials + applinks.
+The iOS app is the same Tauri crate as the desktop app (`apps/desktop`), not a separate shell: one Rust core (`vegify_lib`), one set of shared `@vegify/ui` screens, with `gen/apple/` holding the generated Xcode project. Bundle identifier is **`app.vegify`** — the ONE unified id every Apple artifact ships under (`tauri.conf.json`; the old `tauri.ios.conf.json` override is gone, and iOS + macOS sharing the id on one App Store Connect record is what makes the listing a universal purchase — see `docs/mac-app-store.md` for the id history and the record cutover). The AASA authorizes it for webcredentials + applinks (legacy `app.vegify.desktop`/`app.vegify.ios` entries remain for old installs).
 
 ## Running it
 
@@ -36,7 +36,7 @@ Prereqs (all present on this machine): full Xcode with an iOS runtime, CocoaPods
 iOS ships **on the release cascade** (`deploy.yml`, since the App Store Connect side proved out 2026-07-06): `build-ios` archives + exports the signed `.ipa` at build time and stages it as a workflow artifact, and `publish-ios` uploads it to TestFlight only after `deploy-server` is live — TestFlight has no draft state, so this sequencing is what keeps a failed deploy away from testers. It reuses the SAME Apple ASC API key the desktop notarization uses (Secrets Manager via SSM) — no new secret — and signs via Xcode **cloud (automatic) signing** keyed by the team id + ASC key, so there's no distribution cert/profile to manage in the repo. Builds skip the per-build export-compliance question via `ITSAppUsesNonExemptEncryption=false` in Info.plist (the app's only crypto is TLS + the OS keychain). `just redeploy vX.Y.Z` re-runs a tag end-to-end; a build already on ASC makes `publish-ios` a tolerated no-op.
 
 **One-time App Store Connect setup (John):**
-1. Create the app record for bundle id **`app.vegify.ios`**.
+1. Create the app record for bundle id **`app.vegify`** (the unified record — `docs/mac-app-store.md` owns the current runbook; the original `app.vegify.ios` record this section first shipped under was retired in the unification).
 2. Confirm the ASC API key in Secrets Manager has the **App Manager** role (it signs + uploads).
 3. Fill the App Store listing surface that lives outside code: **App Privacy** labels (email, user content, messages), screenshots, description, age rating, and set the **support/marketing URLs** to `https://vegify.app` (the /terms + /privacy pages are live). Provide a **demo account** or open signups for review.
 

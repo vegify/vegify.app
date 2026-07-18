@@ -1,6 +1,6 @@
 name: vegify
 options:
-  bundleIdPrefix: app.vegify.ios
+  bundleIdPrefix: app.vegify
   deploymentTarget:
     iOS: 14.0
 fileGroups: [../../src]
@@ -11,7 +11,7 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: vegify
-      PRODUCT_BUNDLE_IDENTIFIER: app.vegify.ios
+      PRODUCT_BUNDLE_IDENTIFIER: app.vegify
 targetTemplates:
   app:
     type: application
@@ -51,8 +51,11 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.8.0
-        CFBundleVersion: "0.8.0"
+        CFBundleShortVersionString: 0.0.0
+        CFBundleVersion: "0.0.0"
+        # xcodegen regenerates Info.plist from these properties on builds — a key present only in
+        # the generated plist gets silently wiped, so the export-compliance answer must live HERE.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: vegify_iOS/vegify_iOS.entitlements
     scheme:

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Mac App Store entitlements — used ONLY by the build-mas lane (tauri.mas.json swaps this file in
+    over Entitlements.plist). The Developer ID .dmg build stays UNSANDBOXED; store builds must be
+    sandboxed, and the identifier entitlements must exactly match the embedded Mac App Store
+    provisioning profile (mas/embedded.provisionprofile, injected in CI). __APPLE_TEAM_ID__ is a
+    placeholder the build-mas job substitutes from the VEGIFY_APPLE_TEAM_ID repository variable —
+    same pattern as the AASA; the open-source tree carries no account-specific value.
+  -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <!-- The app talks HTTPS to the standing backend (api origin baked at build time). -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- Powerbox-mediated open panels: the WKWebView file input (recipe photo upload) needs this
+       under the sandbox or picking a file is simply unavailable. -->
+  <key>com.apple.security.files.user-selected.read-only</key>
+  <true/>
+  <!-- Same associated domains as the Developer ID build (see Entitlements.plist for the rationale):
+       webcredentials = Password AutoFill against vegify.app's saved logins, applinks = universal
+       links into /recipes/* + /ingredients/*. The MAS provisioning profile must be generated with
+       the Associated Domains capability on the app.vegify App ID or ingestion rejects the build. -->
+  <key>com.apple.developer.associated-domains</key>
+  <array>
+    <string>webcredentials:vegify.app</string>
+    <string>applinks:vegify.app</string>
+  </array>
+  <!-- MAS identity trio: ingestion validates these against the embedded provisioning profile. The
+       keychain access group is where keyring's session item lives under the sandbox. -->
+  <key>com.apple.application-identifier</key>
+  <string>__APPLE_TEAM_ID__.app.vegify</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>__APPLE_TEAM_ID__</string>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>__APPLE_TEAM_ID__.app.vegify</string>
+  </array>
+</dict>
+</plist>

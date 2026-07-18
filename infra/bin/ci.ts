@@ -22,5 +22,6 @@ const cfg = await deployConfig({ ssm: false })
 new CiStack(app, "VegifyCi", {
   env: { account: cfg.account, region: cfg.region },
   githubRepo: cfg.githubRepo,
-  appleSecretId: cfg.appleSecretId
+  appleSecretId: cfg.appleSecretId,
+  masSecretId: cfg.masSecretId
 })

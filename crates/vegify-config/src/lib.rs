@@ -109,8 +109,9 @@ pub mod desktop {
 
     /// Path to the on-device SQLite DB. `DATABASE_PATH` overrides. Debug builds use the repo's
     /// seeded .data/vegify.db (sample content without a running server); release (shipped) builds
-    /// use the per-user OS app-data dir — `<data_dir>/app.vegify.desktop/vegify.db`, matching
-    /// Tauri's app_data_dir.
+    /// use the per-user OS app-data dir — `<data_dir>/app.vegify.desktop/vegify.db`. The dir name
+    /// is an OPAQUE STABLE KEY predating the unified `app.vegify` bundle identifier — renaming it
+    /// would strand every existing install's local cache for no functional gain, so it stays.
     pub fn db_path() -> String {
         if let Some(p) = non_empty("DATABASE_PATH") {
             return p;
