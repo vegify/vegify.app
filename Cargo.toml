@@ -32,11 +32,11 @@ glib = { git = "https://github.com/johncarmack1984/gtk-rs-core", branch = "lux/g
 # consumes. tauri-typed-ipc rides a branch bumped to the same pins (its crates.io release
 # exact-pins rc.25, which would split the graph into two spectas). When rc.26 publishes: drop
 # these five entries, swap typegen's git deps to versions, and move ttipc to its next release.
-specta = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
-specta-serde = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
-specta-typescript = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
-specta-util = { git = "https://github.com/specta-rs/specta", rev = "ff7100c70f8a60a6336913fd5894c7527b9bc0ea" }
-tauri-typed-ipc = { git = "https://github.com/johncarmack1984/tauri-typed-ipc", rev = "99f7fcfb2366aa4a1969d4e0938f26380f67ed32" }
+specta = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+specta-serde = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+specta-typescript = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+specta-util = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+tauri-typed-ipc = { git = "https://github.com/johncarmack1984/tauri-typed-ipc", rev = "d1a72e554890781c81d10878194ce8891f04c5c2" }
 
 # Workspace lint floor: no hand-written unsafe (deny, not forbid: FFI-adjacent
 # derive macros scope their own allows, which forbid would reject), and the
