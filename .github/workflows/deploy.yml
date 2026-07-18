@@ -439,10 +439,13 @@ jobs:
 
   build-ios:
     # The iOS App Store artifact, built at BUILD time like the desktop's .dmg: archive + export a
-    # signed .ipa (Xcode cloud/automatic signing keyed by the team id + the shared ASC API key — no
-    # cert or profile lives in the repo) and stage it as a workflow artifact. The ASC UPLOAD is
-    # deliberately deferred to publish-ios: TestFlight has no draft state, so uploading before
-    # deploy-server succeeds would put a build whose deploy failed in front of testers.
+    # signed .ipa and stage it as a workflow artifact. Signing is MANUAL, mirroring the MAS lane:
+    # the pinned IOS_APP_STORE provisioning profile rides a repository secret and the Apple
+    # Distribution cert comes from the shared MAS signing secret (certs are Apple-account-wide;
+    # only the profile is app-specific) — no cloud signing, so the vegify ASC key stays App
+    # Manager tier. The ASC UPLOAD is deliberately deferred to publish-ios: TestFlight has no
+    # draft state, so uploading before deploy-server succeeds would put a build whose deploy
+    # failed in front of testers.
     # [skip release] pushes have no version to stamp → the job skips (PR CI gates the compile).
     needs: [release]
     if: ${{ always() && needs.release.outputs.released == 'true' && needs.release.result == 'success' }}
@@ -483,27 +486,46 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
-      - name: Resolve the backend origin + Apple secret id (from the account, not GitHub)
+      - name: Resolve the backend origin + signing secret ids (from the account, not GitHub)
         run: |
           set -euo pipefail
           region="${{ vars.AWS_REGION || 'us-east-1' }}"
           api_url=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/api-url --query Parameter.Value --output text)
           apple_secret_id=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/apple-secret-id --query Parameter.Value --output text)
-          echo "VEGIFY_API_URL=$api_url" >> "$GITHUB_ENV"
-          echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id" >> "$GITHUB_ENV"
-      - name: Load the Apple ASC API key (cloud signing)
-        # Same Secrets Manager JSON the desktop uses; iOS App Store signing needs only the ASC API
-        # key + the team id (Xcode's automatic/cloud signing mints the distribution cert & profile).
+          mas_secret_id=$(aws ssm get-parameter --region "$region" --name /vegify/deploy/mas-secret-id --query Parameter.Value --output text)
+          {
+            echo "VEGIFY_API_URL=$api_url"
+            echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id"
+            echo "MAS_SIGNING_SECRET_ID=$mas_secret_id"
+          } >> "$GITHUB_ENV"
+      - name: Load the signing assets (team id, Apple Distribution cert, pinned profile)
+        # The vegify secret contributes only the team id here — its App Manager ASC key does the
+        # UPLOAD in publish-ios and cannot cloud-sign, by design. The Apple Distribution .p12 is
+        # the same account-wide identity that signs the MAS .pkg, read from the shared MAS signing
+        # secret; tauri imports it into its own ephemeral keychain from IOS_CERTIFICATE and
+        # switches the export to manual signing. The pinned App Store profile (app.vegify.ios)
+        # rides a repository secret like the other two profiles — a store export with a
+        # missing/garbage profile is a guaranteed failure, so fail loudly HERE. Cert and password
+        # are masked before anything reaches GITHUB_ENV (the #158 rule).
+        env:
+          VEGIFY_IOS_PROVISION_PROFILE_B64: ${{ secrets.VEGIFY_IOS_PROVISION_PROFILE_B64 }}
         run: |
           set -euo pipefail
+          test -n "$VEGIFY_IOS_PROVISION_PROFILE_B64" || { echo "::error::VEGIFY_IOS_PROVISION_PROFILE_B64 secret is unset — the iOS build cannot sign without the pinned App Store profile"; exit 1; }
           s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
+          echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')" >> "$GITHUB_ENV"
+          mas=$(aws secretsmanager get-secret-value --secret-id "$MAS_SIGNING_SECRET_ID" --query SecretString --output text)
+          cert=$(printf '%s' "$mas" | jq -r '.certificate')
+          cert_pw=$(printf '%s' "$mas" | jq -r '.certificate_password')
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$cert"
+          echo "::add-mask::$cert_pw"
           {
-            echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')"
-            echo "APPLE_API_ISSUER=$(printf '%s' "$s" | jq -r '.api_issuer_id')"
-            echo "APPLE_API_KEY=$(printf '%s' "$s" | jq -r '.api_key_id')"
+            echo "IOS_CERTIFICATE<<VEGIFY_CERT_EOF"
+            printf '%s\n' "$cert"
+            echo "VEGIFY_CERT_EOF"
+            echo "IOS_CERTIFICATE_PASSWORD=$cert_pw"
+            echo "IOS_MOBILE_PROVISION=$VEGIFY_IOS_PROVISION_PROFILE_B64"
           } >> "$GITHUB_ENV"
-          printf '%s' "$s" | jq -r '.api_key' > "$RUNNER_TEMP/asc_api_key.p8"
-          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
       - name: Inject the tag-derived version + signing team (via a --config merge)
         # Version comes from THIS run's release (no `gh release view` race against the draft flip);
         # the team id comes from the ASC secret. Committed version fields stay vestigial 0.0.0.
@@ -520,10 +542,12 @@ jobs:
           # `tauri ios build` reads the Apple team from APPLE_DEVELOPMENT_TEAM (NOT APPLE_TEAM_ID,
           # which is tauri-action's macOS-notarization var).
           APPLE_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
-          # ASC API key → automatic (cloud) signing: Xcode creates/fetches the App Store
-          # provisioning profile for app.vegify.ios on the fly.
-          APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
+          # Manual signing: tauri imports the cert into an ephemeral keychain, installs the
+          # pinned profile, and writes signingStyle=manual into its export options — no ASC key
+          # is involved at build time.
+          IOS_CERTIFICATE: ${{ env.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ env.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ env.IOS_MOBILE_PROVISION }}
         run: |
           set -euo pipefail
           cd apps/desktop
@@ -532,7 +556,7 @@ jobs:
           test -n "$ipa" || { echo "::error::tauri ios build produced no .ipa"; exit 1; }
           # Prove which identity actually signed the shipped app: tauri's interim codesign uses a
           # placeholder ("Apple Distribution: Tauri (unset)") that the App Store export re-signs
-          # with the cloud-managed distribution identity.
+          # with the Apple Distribution identity from the pinned profile.
           unzip -qo "$ipa" -d "$RUNNER_TEMP/ipa-inspect"
           codesign -dvv "$RUNNER_TEMP/ipa-inspect/Payload/"*.app 2>&1 | grep -E 'Authority|TeamIdentifier' \
             || echo "::warning::could not read the ipa's code signature"
