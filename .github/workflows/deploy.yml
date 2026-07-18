@@ -498,15 +498,15 @@ jobs:
             echo "APPLE_SIGNING_SECRET_ID=$apple_secret_id"
             echo "MAS_SIGNING_SECRET_ID=$mas_secret_id"
           } >> "$GITHUB_ENV"
-      - name: Load the signing assets (team id, Apple Distribution cert, pinned profile)
-        # The vegify secret contributes only the team id here — its App Manager ASC key does the
-        # UPLOAD in publish-ios and cannot cloud-sign, by design. The Apple Distribution .p12 is
-        # the same account-wide identity that signs the MAS .pkg, read from the shared MAS signing
-        # secret; tauri imports it into its own ephemeral keychain from IOS_CERTIFICATE and
-        # switches the export to manual signing. The pinned App Store profile (app.vegify.ios)
-        # rides a repository secret like the other two profiles — a store export with a
-        # missing/garbage profile is a guaranteed failure, so fail loudly HERE. Cert and password
-        # are masked before anything reaches GITHUB_ENV (the #158 rule).
+      - name: Import the Apple Distribution identity + install the pinned profile
+        # Mirrors build-mas exactly: the account-wide Apple Distribution .p12 from the shared
+        # MAS signing secret goes into an ephemeral keychain that IS added to the search list.
+        # (tauri 2.11's own IOS_CERTIFICATE lane creates a keychain xcodebuild cannot see, and
+        # its pbxproj writer drops brand-new keys outside buildSettings — both verified against
+        # this project — so this job signs the explicit way instead.) The pinned App Store
+        # profile is installed under BOTH profile directories (Xcode 16+ reads UserData). Cert
+        # and password are masked before anything can reach a log (the #158 rule); only the
+        # identity and profile NAMES travel via GITHUB_ENV.
         env:
           VEGIFY_IOS_PROVISION_PROFILE_B64: ${{ secrets.VEGIFY_IOS_PROVISION_PROFILE_B64 }}
         run: |
@@ -515,17 +515,48 @@ jobs:
           s=$(aws secretsmanager get-secret-value --secret-id "$APPLE_SIGNING_SECRET_ID" --query SecretString --output text)
           echo "APPLE_TEAM_ID=$(printf '%s' "$s" | jq -r '.team_id')" >> "$GITHUB_ENV"
           mas=$(aws secretsmanager get-secret-value --secret-id "$MAS_SIGNING_SECRET_ID" --query SecretString --output text)
-          cert=$(printf '%s' "$mas" | jq -r '.certificate')
           cert_pw=$(printf '%s' "$mas" | jq -r '.certificate_password')
-          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$cert"
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done < <(printf '%s' "$mas" | jq -r '.certificate')
           echo "::add-mask::$cert_pw"
-          {
-            echo "IOS_CERTIFICATE<<VEGIFY_CERT_EOF"
-            printf '%s\n' "$cert"
-            echo "VEGIFY_CERT_EOF"
-            echo "IOS_CERTIFICATE_PASSWORD=$cert_pw"
-            echo "IOS_MOBILE_PROVISION=$VEGIFY_IOS_PROVISION_PROFILE_B64"
-          } >> "$GITHUB_ENV"
+          printf '%s' "$mas" | jq -r '.certificate' | openssl base64 -d -A > "$RUNNER_TEMP/ios-dist.p12"
+          echo "IOS_SIGNING_IDENTITY=$(printf '%s' "$mas" | jq -r '.signing_identity')" >> "$GITHUB_ENV"
+          keychain="$RUNNER_TEMP/ios-signing.keychain-db"
+          keychain_pw=$(openssl rand -hex 16)
+          security create-keychain -p "$keychain_pw" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_pw" "$keychain"
+          security import "$RUNNER_TEMP/ios-dist.p12" -k "$keychain" -P "$cert_pw" -T /usr/bin/codesign
+          # What lets codesign use the key without a UI prompt no runner could answer.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_pw" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          profile="$RUNNER_TEMP/vegify-ios.mobileprovision"
+          printf '%s' "$VEGIFY_IOS_PROVISION_PROFILE_B64" | openssl base64 -d -A > "$profile"
+          uuid=$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)
+          name=$(security cms -D -i "$profile" | plutil -extract Name raw -o - -)
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          cp "$profile" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"
+          cp "$profile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
+          echo "IOS_PROFILE_NAME=$name" >> "$GITHUB_ENV"
+          echo "installed profile '$name' ($uuid)"
+      - name: Pin manual signing into the Xcode project (build-time only, asserted)
+        # tauri 2.11's pbxproj writer inserts NEW keys outside buildSettings (verified against
+        # this xcodegen-generated project), so the signing settings are patched here with a
+        # tightly anchored substitution and then ASSERTED via -showBuildSettings — a silently
+        # missed patch must fail the job here, not surface as xcodebuild's misleading
+        # "requires a provisioning profile with the Associated Domains feature". The committed
+        # project stays untouched; this rewrite exists only in the runner's checkout.
+        run: |
+          set -euo pipefail
+          pb=apps/desktop/src-tauri/gen/apple/vegify.xcodeproj/project.pbxproj
+          IDENT="$IOS_SIGNING_IDENTITY" PROF="$IOS_PROFILE_NAME" TEAM="$APPLE_TEAM_ID" perl -0777 -pi -e '
+            my $n = s/(CODE_SIGN_ENTITLEMENTS = vegify_iOS\/vegify_iOS\.entitlements;\n(\t+))CODE_SIGN_IDENTITY = "iPhone Developer";\n\t+CODE_SIGN_STYLE = Automatic;/$1CODE_SIGN_IDENTITY = "$ENV{IDENT}";\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM};\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{PROF}";/g;
+            die "expected to patch 2 target configurations, patched $n\n" unless $n == 2;
+          ' "$pb"
+          cd apps/desktop/src-tauri/gen/apple
+          settings=$(xcodebuild -workspace vegify.xcodeproj/project.xcworkspace/ -scheme vegify_iOS -configuration release -sdk iphoneos -showBuildSettings 2>/dev/null)
+          echo "$settings" | grep -q "CODE_SIGN_STYLE = Manual" || { echo "::error::manual signing did not resolve in build settings"; exit 1; }
+          echo "$settings" | grep -q "PROVISIONING_PROFILE_SPECIFIER = $IOS_PROFILE_NAME" || { echo "::error::the provisioning profile specifier did not resolve in build settings"; exit 1; }
+          echo "signing resolved: Manual / $IOS_PROFILE_NAME"
       - name: Inject the tag-derived version + signing team (via a --config merge)
         # Version comes from THIS run's release (no `gh release view` race against the draft flip);
         # the team id comes from the ASC secret. Committed version fields stay vestigial 0.0.0.
@@ -542,12 +573,9 @@ jobs:
           # `tauri ios build` reads the Apple team from APPLE_DEVELOPMENT_TEAM (NOT APPLE_TEAM_ID,
           # which is tauri-action's macOS-notarization var).
           APPLE_DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
-          # Manual signing: tauri imports the cert into an ephemeral keychain, installs the
-          # pinned profile, and writes signingStyle=manual into its export options — no ASC key
-          # is involved at build time.
-          IOS_CERTIFICATE: ${{ env.IOS_CERTIFICATE }}
-          IOS_CERTIFICATE_PASSWORD: ${{ env.IOS_CERTIFICATE_PASSWORD }}
-          IOS_MOBILE_PROVISION: ${{ env.IOS_MOBILE_PROVISION }}
+          # No signing env vars on purpose: the identity lives in the search-listed keychain,
+          # the profile is installed on disk, and the project already says Manual + specifier
+          # (previous step, asserted). tauri reads those settings into its export options.
         run: |
           set -euo pipefail
           cd apps/desktop
