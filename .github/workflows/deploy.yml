@@ -82,10 +82,15 @@ jobs:
           set -euo pipefail
           out() { { echo "ref=$1"; echo "version=${2#v}"; echo "released=$3"; } >> "$GITHUB_OUTPUT"; echo "→ ref=$1 version=${2#v} released=$3"; }
 
-          # Recovery path: (re)deploy an existing tag — no new release is cut.
+          # Recovery path: (re)deploy an existing tag — no new release is cut, but the tag's
+          # Release id must still flow downstream: without it, build-desktop's tauri-action
+          # builds and signs a .dmg it can attach to nothing (found the hard way — v1.0.2
+          # first published with zero assets).
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             tag="${{ github.event.inputs.tag }}"
             git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "::error::tag $tag not found"; exit 1; }
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --verify-tag --generate-notes --title "$tag"
+            echo "release_id=$(gh release view "$tag" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
             out "$tag" "$tag" "true"
             exit 0
           fi
