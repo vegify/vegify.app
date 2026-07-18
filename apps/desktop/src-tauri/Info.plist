@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged by the tauri bundler into the macOS app's Info.plist (both the Developer ID .dmg and
+       the Mac App Store build). The iOS twin of these keys lives in gen/apple/project.yml. -->
+  <!-- Only standard-exempt TLS — answers App Store Connect's export-compliance question up front. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+  <!-- Mac App Store uploads are rejected without an app category; set the raw macOS value here
+       rather than through bundle.category so exactly this string lands in the plist. -->
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.food-and-drink</string>
+</dict>
+</plist>

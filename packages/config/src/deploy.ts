@@ -102,6 +102,10 @@ export interface DeployConfig {
   /** Secrets Manager id of the shared Apple signing secret (desktop notarization) —
    *  env APPLE_SIGNING_SECRET_ID → SSM apple-secret-id → placeholder. */
   appleSecretId: string
+  /** Secrets Manager id of the shared Mac App Store signing secret (Apple Distribution + Mac
+   *  Installer Distribution certs for the sandboxed store build) —
+   *  env MAS_SIGNING_SECRET_ID → SSM mas-secret-id → placeholder. */
+  masSecretId: string
   /** Where CloudWatch alarm notifications are emailed — env VEGIFY_ALARM_EMAIL → SSM alarm-email →
    *  derived hello@<email domain> (the mailbox the domain forwarder already catches). */
   alarmEmail: string
@@ -163,6 +167,8 @@ export async function deployConfig(
     appleSecretId:
       pick("APPLE_SIGNING_SECRET_ID", "apple-secret-id") ??
       "your-org/apple-signing",
+    masSecretId:
+      pick("MAS_SIGNING_SECRET_ID", "mas-secret-id") ?? "your-org/mas-signing",
     alarmEmail:
       pick("VEGIFY_ALARM_EMAIL", "alarm-email") ?? `hello@${emailDomain}`
   }

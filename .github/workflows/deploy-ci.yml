@@ -45,8 +45,9 @@ jobs:
       - name: Deploy VegifyCi
         # Bootstrap is env-driven ON PURPOSE (bin/ci.ts synths with ssm:false): this deploy creates
         # the very grant that lets the deploy role read /vegify/deploy/*, so it must never depend on
-        # that grant existing. The Apple secret id rides a repository VARIABLE here (it's an id, not
-        # a secret); everything downstream reads the SSM decision instead.
+        # that grant existing. The Apple/MAS secret ids ride repository VARIABLES here (they're ids,
+        # not secrets); everything downstream reads the SSM decisions instead.
         env:
           APPLE_SIGNING_SECRET_ID: ${{ vars.APPLE_SIGNING_SECRET_ID }}
+          MAS_SIGNING_SECRET_ID: ${{ vars.MAS_SIGNING_SECRET_ID }}
         run: pnpm --filter @vegify/infra exec cdk --app 'tsx bin/ci.ts' deploy VegifyCi --require-approval never

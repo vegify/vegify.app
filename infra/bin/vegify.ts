@@ -92,7 +92,8 @@ new WebStartStack(app, "VegifyWebStart", {
 new CiStack(app, "VegifyCi", {
   env,
   githubRepo: cfg.githubRepo,
-  appleSecretId: cfg.appleSecretId
+  appleSecretId: cfg.appleSecretId,
+  masSecretId: cfg.masSecretId
 })
 
 // DNS: vegify.app's hosted zone + records, adopted (cdk import) from johncarmack1984/my-infra-private's

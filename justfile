@@ -99,7 +99,7 @@ deploy_region := env_var_or_default("AWS_REGION", "us-east-1")
 init domains signups="0":
     aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/domain-names --type String --overwrite --value "{{domains}}"
     aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/signups-open --type String --overwrite --value "{{signups}}"
-    @echo "Recorded in {{deploy_region}}. Optional extras: just config-set email-from 'You <hello@your.domain>' | email-domain | mail-from-domain | cert-arn | apple-secret-id"
+    @echo "Recorded in {{deploy_region}}. Optional extras: just config-set email-from 'You <hello@your.domain>' | email-domain | mail-from-domain | cert-arn | apple-secret-id | mas-secret-id"
     @echo "Next: cdk bootstrap (once), then cdk deploy VegifyVpc VegifyServer && cdk deploy VegifyWebStart VegifyClientLogs"
 
 # Show the recorded deploy decisions.

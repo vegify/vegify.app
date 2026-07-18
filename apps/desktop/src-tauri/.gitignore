@@ -6,3 +6,9 @@
 # Developer ID provisioning profile — injected in CI from the VEGIFY_PROVISION_PROFILE_B64 secret;
 # never commit it (it authorizes the associated-domains entitlement and is account-specific).
 /embedded.provisionprofile
+
+# Mac App Store provisioning profile + the build-mas job's merged config — injected/composed in CI
+# (VEGIFY_MAS_PROVISION_PROFILE_B64 secret; tauri.version.json × tauri.mas.json). Account-specific,
+# never committed.
+/mas/
+/tauri.mas.merged.json

@@ -96,13 +96,15 @@ Repository **variables** (none are sensitive):
 - `AWS_ACCOUNT_ID` — your 12-digit account id; the workflows construct the two fixed-name role ARNs (`vegify-github-deploy`, `vegify-release-signing`) from it.
 - `AWS_REGION` — your deploy region if not `us-east-1`.
 - `APPLE_SIGNING_SECRET_ID` — only for the one-time `VegifyCi` bootstrap via deploy-ci (the release flow reads the SSM decision instead).
-- `VEGIFY_APPLE_TEAM_ID` — only for desktop publishing; public by construction (it's served in the AASA).
+- `MAS_SIGNING_SECRET_ID` — same bootstrap-only role, for the Mac App Store cert secret (skip it if you don't ship to the Mac App Store).
+- `VEGIFY_APPLE_TEAM_ID` — only for desktop/store publishing; public by construction (it's served in the AASA and substituted into the MAS entitlements at build time).
 
 Repository **secrets**:
 
-- `VEGIFY_PROVISION_PROFILE_B64` — only for desktop publishing (the embedded provisioning profile). If you skip the desktop app, CI needs **zero secrets**.
+- `VEGIFY_PROVISION_PROFILE_B64` — only for desktop publishing (the embedded Developer ID provisioning profile). If you skip the desktop app, CI needs **zero secrets**.
+- `VEGIFY_MAS_PROVISION_PROFILE_B64` — only for Mac App Store publishing (the embedded Mac App Store provisioning profile for your bundle id; profiles are app-specific, unlike the team-wide certs in the signing secrets).
 
-Everything else CI needs comes from your account at run time: the domain list and Apple secret id from the `/vegify/deploy/*` decisions, the backend origin from the parameter `VegifyServer` publishes, and the origin-verify secret generated in-account.
+Everything else CI needs comes from your account at run time: the domain list and the Apple/MAS secret ids from the `/vegify/deploy/*` decisions, the backend origin from the parameter `VegifyServer` publishes, and the origin-verify secret generated in-account.
 
 ## What's vegify-specific (and safe to ignore)
 

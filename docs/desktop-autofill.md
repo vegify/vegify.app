@@ -32,7 +32,7 @@ Universal Autofill also requires the 1Password desktop app to be running and unl
 The desktop carries the pieces that make autofill work *where the platform allows it* — these are done and shouldn't be re-investigated:
 
 - **Associated Domains entitlement** `webcredentials:vegify.app` on the signed, notarized build (authorized by an embedded Developer ID provisioning profile).
-- **AASA** served at `https://vegify.app/.well-known/apple-app-site-association` as `application/json` (a CloudFront response-headers policy forces the content-type; Apple's CDN serves it correctly), authorizing `T3UN6N5K6Z.app.vegify.desktop`.
+- **AASA** served at `https://vegify.app/.well-known/apple-app-site-association` as `application/json` (a CloudFront response-headers policy forces the content-type; Apple's CDN serves it correctly), authorizing `T3UN6N5K6Z.app.vegify.ios` (the unified bundle id — desktop, iOS, and Mac App Store builds alike) plus the legacy `T3UN6N5K6Z.app.vegify.desktop` so pre-unification desktop installs keep autofill + universal links.
 - The shared sign-in form carries proper `autocomplete` attributes (`email` + `current-password`).
 
 This config is also exactly what a future **native iOS app** needs, where WKWebView *does* surface autofill — so it pays forward rather than being macOS-only effort.
