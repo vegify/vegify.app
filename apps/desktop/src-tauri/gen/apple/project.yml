@@ -72,6 +72,14 @@ targets:
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
         DEVELOPMENT_TEAM: T3UN6N5K6Z
+        # Device builds sign manually with the pinned App Store profile (the vegify ASC key is
+        # App Manager tier and cannot cloud-sign, by design). Scoped to iphoneos so simulator
+        # dev builds stay on automatic signing. Committed HERE so xcodegen regeneration
+        # carries the settings (the lux #138 lesson: keys living only in generated files get
+        # wiped); deploy.yml asserts they resolve before every CI build.
+        CODE_SIGN_IDENTITY[sdk=iphoneos*]: "Apple Distribution: John Carmack (T3UN6N5K6Z)"
+        CODE_SIGN_STYLE[sdk=iphoneos*]: Manual
+        PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]: "vegify iOS App Store 2026-07-18"
       groups: [app]
     dependencies:
       - framework: libapp.a

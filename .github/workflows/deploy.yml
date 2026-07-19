@@ -543,20 +543,14 @@ jobs:
           cp "$profile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
           echo "IOS_PROFILE_NAME=$name" >> "$GITHUB_ENV"
           echo "installed profile '$name' ($uuid)"
-      - name: Pin manual signing into the Xcode project (build-time only, asserted)
-        # tauri 2.11's pbxproj writer inserts NEW keys outside buildSettings (verified against
-        # this xcodegen-generated project), so the signing settings are patched here with a
-        # tightly anchored substitution and then ASSERTED via -showBuildSettings — a silently
-        # missed patch must fail the job here, not surface as xcodebuild's misleading
-        # "requires a provisioning profile with the Associated Domains feature". The committed
-        # project stays untouched; this rewrite exists only in the runner's checkout.
+      - name: Assert manual signing resolves + pin the export options
+        # The manual-signing settings are COMMITTED, sdk-scoped, in gen/apple/project.yml and
+        # the generated project (simulator dev stays automatic). This step only ASSERTS they
+        # resolve via -showBuildSettings — a regeneration that drops them must fail the job
+        # here, not surface as xcodebuild's misleading "requires a provisioning profile with
+        # the Associated Domains feature".
         run: |
           set -euo pipefail
-          pb=apps/desktop/src-tauri/gen/apple/vegify.xcodeproj/project.pbxproj
-          IDENT="$IOS_SIGNING_IDENTITY" PROF="$IOS_PROFILE_NAME" TEAM="$APPLE_TEAM_ID" perl -0777 -pi -e '
-            my $n = s/(CODE_SIGN_ENTITLEMENTS = vegify_iOS\/vegify_iOS\.entitlements;\n(\t+))CODE_SIGN_IDENTITY = "iPhone Developer";\n\t+CODE_SIGN_STYLE = Automatic;/$1CODE_SIGN_IDENTITY = "$ENV{IDENT}";\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM};\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{PROF}";/g;
-            die "expected to patch 2 target configurations, patched $n\n" unless $n == 2;
-          ' "$pb"
           cd apps/desktop/src-tauri/gen/apple
           settings=$(xcodebuild -workspace vegify.xcodeproj/project.xcworkspace/ -scheme vegify_iOS -configuration release -sdk iphoneos -showBuildSettings 2>/dev/null)
           echo "$settings" | grep -q "CODE_SIGN_STYLE = Manual" || { echo "::error::manual signing did not resolve in build settings"; exit 1; }
@@ -565,6 +559,9 @@ jobs:
           # pbxproj PARSER cannot read these quoted values back (the archive signs, then the
           # export dies with "requires a provisioning profile") — so hand it the manual-signing
           # export options directly instead of hoping it re-derives them.
+          # TRIPWIRE: if a future @tauri-apps/cli bump fixes tauri#15741 (the parser), its
+          # computed options will overlap this file — re-test the merge interplay on that bump
+          # before trusting a release.
           cat > ExportOptions.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
