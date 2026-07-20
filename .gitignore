@@ -33,9 +33,11 @@ cdk.out/
 cdk.context.json
 .cdk.staging/
 
+# Local agent context — working notes, not for the public repo
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+AGENTS.md
 
 # CI-generated tauri version override (deploy.yml injects the tag-derived version)
 tauri.version.json
