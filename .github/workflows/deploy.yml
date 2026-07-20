@@ -20,6 +20,12 @@ name: deploy
 # server/web without cutting a version (and thus without a desktop artifact); `just release
 # minor|major` dispatches a bigger bump from main HEAD; `just redeploy vX.Y.Z` re-runs an existing
 # tag (the recovery path). Docs-only merges never get here (workflow-level paths filter).
+#
+# REDEPLOY CAVEAT: a redeploy builds the TAG's tree under MAIN's workflow. Redeploying a tag cut
+# before the sdk-scoped signing settings were committed (v1.0.0–v1.0.3) therefore fails at the
+# build-ios "assert manual signing resolves" step, because that tree has no committed settings for
+# the assert to find. That is the assert doing its job, not a regression — cut a fresh release
+# rather than chasing it.
 on:
   push:
     branches: [main]
