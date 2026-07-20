@@ -318,7 +318,8 @@
 				CODE_SIGN_ENTITLEMENTS = vegify_iOS/vegify_iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution: John Carmack (T3UN6N5K6Z)";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
+				"CODE_SIGN_STYLE[sdk=iphonesimulator*]" = Automatic;
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Manual;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "vegify iOS App Store 2026-07-18";
 				ENABLE_BITCODE = NO;
@@ -430,7 +431,8 @@
 				CODE_SIGN_ENTITLEMENTS = vegify_iOS/vegify_iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution: John Carmack (T3UN6N5K6Z)";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
+				"CODE_SIGN_STYLE[sdk=iphonesimulator*]" = Automatic;
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Manual;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "vegify iOS App Store 2026-07-18";
 				ENABLE_BITCODE = NO;

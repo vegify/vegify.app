@@ -73,11 +73,21 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
         DEVELOPMENT_TEAM: T3UN6N5K6Z
         # Device builds sign manually with the pinned App Store profile (the vegify ASC key is
-        # App Manager tier and cannot cloud-sign, by design). Scoped to iphoneos so simulator
-        # dev builds stay on automatic signing. Committed HERE so xcodegen regeneration
-        # carries the settings (the lux #138 lesson: keys living only in generated files get
-        # wiped); deploy.yml asserts they resolve before every CI build.
+        # App Manager tier and cannot cloud-sign, by design). Committed HERE so xcodegen
+        # regeneration carries the settings (the lux #138 lesson: keys living only in generated
+        # files get wiped); deploy.yml asserts they resolve before every CI build.
+        #
+        # The UNSCOPED CODE_SIGN_STYLE is load-bearing and must stay Manual: the tauri CLI reads
+        # exactly that key — unscoped, no sdk fallback — to compute the export options it merges
+        # over our pinned ExportOptions.plist (tauri-cli 2.11.4 mobile/ios/mod.rs, the
+        # `get_build_setting("CODE_SIGN_STYLE")` branch). Leaving it Automatic makes the archive
+        # sign manually and then the EXPORT fall back to cloud signing, which dies as
+        # "exportArchive No Accounts / No profiles for app.vegify.ios were found" — the vegify ASC
+        # key is App Manager tier and cannot cloud-sign. Simulator keeps its own scoped Automatic
+        # so `tauri ios dev` is unaffected (simulator signs: CODE_SIGNING_REQUIRED = YES).
         CODE_SIGN_IDENTITY[sdk=iphoneos*]: "Apple Distribution: John Carmack (T3UN6N5K6Z)"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_STYLE[sdk=iphonesimulator*]: Automatic
         CODE_SIGN_STYLE[sdk=iphoneos*]: Manual
         PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]: "vegify iOS App Store 2026-07-18"
       groups: [app]
