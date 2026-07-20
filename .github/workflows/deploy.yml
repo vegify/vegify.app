@@ -26,6 +26,14 @@ name: deploy
 # build-ios "assert manual signing resolves" step, because that tree has no committed settings for
 # the assert to find. That is the assert doing its job, not a regression — cut a fresh release
 # rather than chasing it.
+#
+# RECOVERY ORDER when a cascade dies at a publish or export step: reach for
+# `gh run rerun <run-id> --failed` FIRST. It re-runs only the failed jobs inside the ORIGINAL run,
+# so the artifacts the build jobs already staged (the signed .ipa/.dmg/.pkg) are reused and the
+# run's own workflow file still applies — which sidesteps the tag-tree-vs-main-workflow mismatch
+# above entirely, and never re-signs anything that already shipped. `just redeploy` is for when a
+# genuine REBUILD is wanted. Neither helps a defect that needs a code change — that wants a fresh
+# release off main.
 on:
   push:
     branches: [main]
@@ -561,6 +569,14 @@ jobs:
           settings=$(xcodebuild -workspace vegify.xcodeproj/project.xcworkspace/ -scheme vegify_iOS -configuration release -sdk iphoneos -showBuildSettings 2>/dev/null)
           echo "$settings" | grep -q "CODE_SIGN_STYLE = Manual" || { echo "::error::manual signing did not resolve in build settings"; exit 1; }
           echo "$settings" | grep -q "PROVISIONING_PROFILE_SPECIFIER = $IOS_PROFILE_NAME" || { echo "::error::the provisioning profile specifier did not resolve in build settings"; exit 1; }
+          # The two asserts above read RESOLVED settings, so an sdk-scoped key satisfies them —
+          # which is exactly how v1.0.4 passed this step and then died at export. tauri computes
+          # its export options from the UNSCOPED CODE_SIGN_STYLE alone (tauri-cli 2.11.4
+          # mobile/ios/mod.rs: `get_build_setting("CODE_SIGN_STYLE")`, no sdk fallback), so if the
+          # unscoped value drifts back to Automatic, tauri emits signingStyle=automatic over the
+          # pinned plist and the export attempts cloud signing the App-Manager ASC key cannot do
+          # ("No Accounts" / "No profiles for app.vegify.ios were found"). Assert the raw value.
+          grep -qE '^[[:space:]]*CODE_SIGN_STYLE = Manual;' vegify.xcodeproj/project.pbxproj || { echo "::error::the UNSCOPED CODE_SIGN_STYLE is not Manual — tauri will compute automatic export options and the export will fail"; exit 1; }
           # tauri merges a project-dir ExportOptions.plist with the options it computes, and its
           # pbxproj PARSER cannot read these quoted values back (the archive signs, then the
           # export dies with "requires a provisioning profile") — so hand it the manual-signing
