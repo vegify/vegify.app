@@ -527,6 +527,27 @@ impl Db {
         res
     }
 
+    /// Pull the viewer's authoritative diary into the local cache — a SEPARATE authed channel from
+    /// `pull()` (the anonymous /api/content/pull never carries private log data). Runs only when signed
+    /// in. Reconciles via `vegify_core::apply_log_pull` — its OWN rebuild, deliberately NOT folded into
+    /// `apply_pull` (which wipes the shared `amounts` table wholesale; the diary references it). MUST run
+    /// AFTER `pull()` so a logged food's ingredient is already in the local cache when the diary's
+    /// RESTRICT FK resolves. FK off during the rebuild so an entry whose ingredient hasn't synced yet
+    /// doesn't block the apply (log_day simply omits it until the next content pull catches up).
+    fn pull_diary(&self) -> Result<(), DataError> {
+        let Some(token) = self.current_token() else {
+            return Ok(()); // signed out: no private diary to pull
+        };
+        let uid = self.require_uid()?;
+        let pull = client().log_pull(&token)?;
+        tracing::info!(entries = pull.entries.len(), "pull: rebuilding local diary");
+        let conn = self.conn();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").ok();
+        let res = vegify_core::apply_log_pull(&conn, &uid, &pull).map_err(Into::into);
+        conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
+        res
+    }
+
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
     /// recipe `creator`) resolve on-device. Identity is auth state, not synced content.
     ///
@@ -835,7 +856,9 @@ impl VegifyData for Db {
     /// and the manual Sync button all call it.
     fn sync_now(&self) -> Result<(), DataError> {
         self.push()?;
-        self.pull()
+        self.pull()?;
+        // Diary last: its entries reference content ingredients, so the content pull must land first.
+        self.pull_diary()
     }
 
     fn media_base(&self) -> Result<String, DataError> {

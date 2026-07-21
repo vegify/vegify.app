@@ -1141,8 +1141,9 @@ async fn ws_loop(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver
 }
 
 // ---- diary (log_entries): the PRIVATE food log. Every endpoint is hard-authed to the owner and the
-// diary is NEVER in the anonymous content pull or the sitemap. WS push for the diary is deferred to
-// P1.2 (the desktop's local-first sync), so these writes intentionally do not notify_change. ----
+// diary is NEVER in the anonymous content pull or the sitemap; authed device sync is GET /api/log/pull.
+// Writes fan a WS "diary" change so the owner's other signed-in devices re-pull (the /ws connection is
+// per-user, so this only nudges the owner — no one else learns anything). ----
 
 /// POST/PATCH /api/log/entries — create or update a diary entry (upsert-by-id; owner-gated on update).
 async fn save_log_entry(
@@ -1156,6 +1157,7 @@ async fn save_log_entry(
         vegify_core::do_save_log_entry(conn, &input, &me.id).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("diary");
     Ok(Json(json!({ "id": id })))
 }
 
@@ -1173,6 +1175,7 @@ async fn delete_log_entry(
         vegify_core::do_delete_log_entry(conn, &id, &me.id).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("diary");
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1208,6 +1211,22 @@ async fn log_recents(
     })
     .await?;
     Ok(Json(recents))
+}
+
+/// GET /api/log/pull — the viewer's ENTIRE diary (each entry with its frozen snapshot) for authed
+/// device sync. The desktop reconciles this into its local-first cache; a separate channel from the
+/// anonymous /api/content/pull, which never carries private log data.
+async fn log_pull(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<vegify_core::LogPull>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let pull = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::log_pull(conn, &me.id).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(pull))
 }
 
 /// Idempotent additive migration applied on boot. The live EBS DB predates the password-reset table
@@ -1526,6 +1545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/api/log/day", get(log_day))
         .route("/api/log/recents", get(log_recents))
+        .route("/api/log/pull", get(log_pull))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.

@@ -334,6 +334,9 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::NutrientTotal>()
         .register::<vegify_core::DayLog>()
         .register::<vegify_core::RecentIngredient>()
+        .register::<vegify_core::LogPullNutrient>()
+        .register::<vegify_core::LogPullEntry>()
+        .register::<vegify_core::LogPull>()
         // this crate (server-local wire shapes)
         .register::<UploadTicket>()
         .register::<User>()
@@ -505,5 +508,13 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             )
             .query_param::<u32>("limit")
             .response::<Vec<core::RecentIngredient>>(200, "The viewer's recents, newest first"),
+        Operation::get("/api/log/pull")
+            .summary("Full diary pull (authed device sync)")
+            .description(
+                "Requires bearer; PRIVATE to the viewer. The viewer's ENTIRE diary, each entry with its \
+                 frozen snapshot — the desktop's local-first cache sync channel, never the anonymous \
+                 content pull.",
+            )
+            .response::<core::LogPull>(200, "Every live diary entry with its frozen snapshot"),
     ]
 }
