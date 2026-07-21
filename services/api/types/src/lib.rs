@@ -290,6 +290,22 @@ pub struct SendMessageBody {
     pub body: String,
 }
 
+// ---- write acks (the first typed write responses — the diary graduates them; see api_operations) ----
+
+/// A create/update ack carrying the affected row's id (the `{ id }` shape the content writes return).
+#[derive(Serialize, specta::Type)]
+pub struct SavedId {
+    /// The created or updated row's id.
+    pub id: String,
+}
+
+/// A minimal ok ack for a mutation with no return payload (the `{ ok: true }` shape a delete returns).
+#[derive(Serialize, specta::Type)]
+pub struct Ack {
+    /// Always true on success (failures answer a non-200 with `{ error }`).
+    pub ok: bool,
+}
+
 /// The FULL HTTP wire contract as one specta collection: vegify-core's shared shapes plus every
 /// server-local response shape above. Single source for every generated artifact of the API.
 pub fn api_types() -> specta::Types {
@@ -312,6 +328,12 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::RecipeSlugHit>()
         .register::<vegify_core::IngredientSlugHit>()
         .register::<vegify_core::SitemapData>()
+        // vegify-core diary shapes (the private food log — P1.1)
+        .register::<vegify_core::SaveLogEntryInput>()
+        .register::<vegify_core::LogEntryView>()
+        .register::<vegify_core::NutrientTotal>()
+        .register::<vegify_core::DayLog>()
+        .register::<vegify_core::RecentIngredient>()
         // this crate (server-local wire shapes)
         .register::<UploadTicket>()
         .register::<User>()
@@ -324,14 +346,17 @@ pub fn api_types() -> specta::Types {
         .register::<Thread>()
         .register::<Notification>()
         .register::<SendMessageBody>()
+        .register::<SavedId>()
+        .register::<Ack>()
 }
 
 /// The `paths` object for openapi.json: every endpoint whose request AND response shapes are typed
-/// in this crate's collection — currently the read surface, the pull, messages, notifications, and
-/// the session probe. The auth flows and the write acks still answer ad-hoc `{ok,…}`/`{token,…}`
-/// JSON; they join here as their shapes graduate into this crate (declaring them untyped would
-/// make the document lie). Bearer-auth requirements are stated in each description; the server
-/// enforces them regardless.
+/// in this crate's collection — the read surface, the pull, messages, notifications, the session
+/// probe, and (as of P1.1) the private diary's full write+read surface, whose acks are the first
+/// typed write responses (`SavedId`/`Ack`). The auth flows and the older content write acks still
+/// answer ad-hoc `{ok,…}`/`{token,…}` JSON; they join here as their shapes graduate into this crate
+/// (declaring them untyped would make the document lie). Bearer-auth requirements are stated in each
+/// description; the server enforces them regardless.
 #[cfg(feature = "openapi")]
 pub fn api_operations() -> Vec<specta_openapi::Operation> {
     use specta_openapi::Operation;
@@ -445,5 +470,40 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             .summary("The bell")
             .description("Requires bearer. Per-kind payload parsed inline.")
             .response::<Vec<Notification>>(200, "The viewer's notifications, newest first"),
+        Operation::post("/api/log/entries")
+            .summary("Log a diary entry")
+            .description(
+                "Requires bearer; PRIVATE to the viewer. Logs `grams` of an ingredient (or a recipe \
+                 via its as-ingredient id) against a client-chosen calendar date. Upsert-by-id: a body \
+                 id updates that entry (owner-gated), else a new one is minted.",
+            )
+            .request_body::<core::SaveLogEntryInput>()
+            .response::<SavedId>(200, "The created/updated entry's id"),
+        Operation::patch("/api/log/entries")
+            .summary("Update a diary entry")
+            .description("Requires bearer; owner-gated. Same body as POST, with the entry id set.")
+            .request_body::<core::SaveLogEntryInput>()
+            .response::<SavedId>(200, "The updated entry's id"),
+        Operation::delete("/api/log/entries")
+            .summary("Delete a diary entry")
+            .description("Requires bearer; owner-gated. Soft-deletes by id (the row survives).")
+            .query_param::<String>("id")
+            .response::<Ack>(200, "Deletion acknowledged"),
+        Operation::get("/api/log/day")
+            .summary("One diary day + rolled-up totals")
+            .description(
+                "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed \
+                 nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use).",
+            )
+            .query_param::<String>("date")
+            .response::<core::DayLog>(200, "The day's entries + nutrient totals"),
+        Operation::get("/api/log/recents")
+            .summary("Recently logged ingredients")
+            .description(
+                "Requires bearer; PRIVATE to the viewer. Distinct ingredients the viewer has logged, \
+                 newest first, to prepend the add-flow's search.",
+            )
+            .query_param::<u32>("limit")
+            .response::<Vec<core::RecentIngredient>>(200, "The viewer's recents, newest first"),
     ]
 }

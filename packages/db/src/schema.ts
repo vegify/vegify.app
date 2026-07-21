@@ -207,6 +207,85 @@ export const ingredientInRecipe = sqliteTable(
   (t) => [index("iir_recipe_idx").on(t.recipeId)]
 )
 
+// The food DIARY — a user's dated log of what they ate. PRIVATE, full stop: unlike the public-default
+// content tables above, log entries are personal data — never listed, never in the anonymous content
+// pull or the sitemap; the server's every /api/log/* endpoint is hard-authed to the owner. The privacy
+// carve-out is enforced at the query/endpoint layer; this table just stores the rows.
+//
+// A row logs `grams` of an ingredient against a user-local calendar `date` ('YYYY-MM-DD', chosen
+// client-side — no server timezone modeling). Because a recipe IS an ingredient (recipes.as_ingredient_id),
+// logging a recipe serving is just logging its as-ingredient id: the SAME recursive nutrition CTE that
+// rolls up recipes rolls up a logged recipe, so day totals need no parallel math. Quantity mirrors
+// ingredient_in_recipe's amount pattern (an `amounts` row via amountId — grams canonical, display unit
+// preserved). `slot` (breakfast/lunch/dinner/snack) is a cheap column the UI ignores for now.
+//
+// Historical integrity: each entry FREEZES the food's nutrition at log time into a snapshot
+// (calories_per_100g here + log_entry_nutrient rows), so editing a referenced recipe/ingredient later
+// never rewrites a past day. Ingredient VERSIONING (copy-on-edit) is a separate provenance concern
+// parked at P2.5 — not needed for log integrity, which the snapshot already guarantees.
+export const logEntries = sqliteTable(
+  "log_entries",
+  {
+    id: pk(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // User-local calendar date 'YYYY-MM-DD' the food is logged against (client-chosen).
+    date: text("date").notNull(),
+    // Meal slot (breakfast/lunch/dinner/snack); nullable, UI-ignored until a later phase.
+    slot: text("slot"),
+    // The logged ingredient — or a recipe's as_ingredient_id (logging a recipe). RESTRICT mirrors
+    // ingredient_in_recipe: a logged ingredient can't be hard-deleted out from under history (the DAL
+    // soft-deletes/tombstones it instead), so a day always resolves.
+    ingredientId: text("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "restrict" }),
+    // Quantity as an amounts row (grams canonical + display unit) — the ingredient_in_recipe pattern.
+    amountId: text("amount_id")
+      .notNull()
+      .references(() => amounts.id, { onDelete: "cascade" }),
+    // Snapshotted nutrition, FROZEN at log time so a later recipe/ingredient edit never rewrites a past
+    // day (the immutable half of the diary record): calories per 100 g of the logged food. The
+    // per-nutrient rows live in log_entry_nutrient. grams stays editable on the entry and rescales this
+    // frozen per-100g profile; the snapshot is re-taken only when the entry's ingredient itself changes.
+    caloriesPer100g: real("calories_per_100g"),
+    // When the entry was recorded (ms epoch); orders "recents" and the day list. May be client-supplied
+    // on offline create / sync replay so ordering survives round-trips.
+    loggedAt: integer("logged_at", { mode: "timestamp_ms" }).$defaultFn(
+      () => new Date()
+    ),
+    // Soft-delete tombstone (ms epoch); NULL = live. Kept (not hard-deleted) so an undo/versioning
+    // story stays possible and sync can propagate the deletion.
+    deletedAt: integer("deleted_at"),
+    ...timestamps
+  },
+  (t) => [
+    index("log_entries_user_date_idx").on(t.userId, t.date),
+    index("log_entries_user_logged_idx").on(t.userId, t.loggedAt)
+  ]
+)
+
+// The per-nutrient half of a log entry's FROZEN nutrition snapshot (per 100 g of the logged food),
+// captured at log time via the same recursive rollup recipes use. This is what makes a logged day an
+// immutable record: day totals read these rows (scaled by the entry's grams), NOT the live ingredient
+// graph, so editing a recipe or ingredient later never moves a past day. Rewritten only when the
+// entry's ingredient changes (do_save_log_entry), never on a grams/date edit or a source-food edit.
+export const logEntryNutrient = sqliteTable(
+  "log_entry_nutrient",
+  {
+    id: pk(),
+    logEntryId: text("log_entry_id")
+      .notNull()
+      .references(() => logEntries.id, { onDelete: "cascade" }),
+    // Nutrient display name at log time (denormalized — the snapshot is self-contained, not a live FK).
+    name: text("name").notNull(),
+    amountPer100g: real("amount_per_100g").notNull(),
+    unit: text("unit").notNull(),
+    ...timestamps
+  },
+  (t) => [index("log_entry_nutrient_entry_idx").on(t.logEntryId)]
+)
+
 export const nutrients = sqliteTable("nutrients", {
   id: pk(),
   name: text("name").notNull(),
@@ -291,8 +370,35 @@ export const products = sqliteTable("products", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   ingredients: many(ingredients),
-  sessions: many(sessions)
+  sessions: many(sessions),
+  logEntries: many(logEntries)
 }))
+
+export const logEntriesRelations = relations(logEntries, ({ one, many }) => ({
+  user: one(users, {
+    fields: [logEntries.userId],
+    references: [users.id]
+  }),
+  ingredient: one(ingredients, {
+    fields: [logEntries.ingredientId],
+    references: [ingredients.id]
+  }),
+  amount: one(amounts, {
+    fields: [logEntries.amountId],
+    references: [amounts.id]
+  }),
+  nutrients: many(logEntryNutrient)
+}))
+
+export const logEntryNutrientRelations = relations(
+  logEntryNutrient,
+  ({ one }) => ({
+    logEntry: one(logEntries, {
+      fields: [logEntryNutrient.logEntryId],
+      references: [logEntries.id]
+    })
+  })
+)
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {

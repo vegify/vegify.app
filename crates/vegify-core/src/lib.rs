@@ -828,12 +828,15 @@ pub fn do_delete_ingredient(
             "This is a recipe's ingredient card — delete the recipe instead.".into(),
         ));
     }
-    // In use by any recipe → SOFT delete (tombstone). The row, amounts, and readings all survive so
-    // every recipe that references it keeps working at full fidelity; it just leaves browse/search
-    // (list/search/sitemap filter the tombstone) and greys out in the owner's own recipes with a
-    // restore affordance (do_restore_ingredient). Unreferenced → hard delete, as before.
+    // In use by any recipe OR any live diary entry → SOFT delete (tombstone). The row, amounts, and
+    // readings all survive so every recipe that references it keeps working at full fidelity and every
+    // logged day still resolves; it just leaves browse/search (list/search/sitemap filter the tombstone)
+    // and greys out in the owner's own recipes with a restore affordance (do_restore_ingredient).
+    // Counting log_entries here is also what keeps the log_entries RESTRICT FK from ever firing.
+    // Unreferenced → hard delete, as before.
     let used_by: i64 = conn.query_row(
-        "SELECT COUNT(DISTINCT recipe_id) FROM ingredient_in_recipe WHERE ingredient_id = ?1",
+        "SELECT (SELECT COUNT(DISTINCT recipe_id) FROM ingredient_in_recipe WHERE ingredient_id = ?1)
+              + (SELECT COUNT(*) FROM log_entries WHERE ingredient_id = ?1 AND deleted_at IS NULL)",
         [id],
         |r| r.get(0),
     )?;
@@ -1077,6 +1080,391 @@ pub fn aggregate_per100g(
         calories_per_100g,
         readings,
     })
+}
+
+// ---- diary (log_entries): a user's PRIVATE food log; day totals reuse aggregate_per100g ----
+
+/// Current time in Unix milliseconds — log timestamps + soft-delete tombstones.
+fn now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// Create-or-update payload for a diary entry. `id: Some` + an existing row updates it (owner-gated);
+/// `id: Some` + no such row inserts WITH that id (an offline create's client ULID / a sync replay);
+/// `id: None` mints a fresh ULID. Logging a recipe = passing its as-ingredient id as `ingredientId`.
+pub struct SaveLogEntryInput {
+    /// Existing entry to update, or None to create (id minted). Client ids are honored so replays
+    /// stay idempotent cross-replica.
+    pub id: Option<String>,
+    /// The ingredient — or a recipe's as_ingredient_id — being logged.
+    pub ingredient_id: String,
+    /// User-local calendar date 'YYYY-MM-DD', chosen client-side (no server timezone modeling).
+    pub date: String,
+    /// Meal slot (breakfast/lunch/dinner/snack); currently ignored by the UI. Serde-default so
+    /// slot-less payloads deserialize.
+    #[serde(default)]
+    pub slot: Option<String>,
+    /// Amount logged, canonical grams.
+    pub grams: f64,
+    /// Display unit the user picked; None = grams. Mirrors RecipeItemInput.
+    #[serde(default)]
+    pub unit: Option<String>,
+    /// When it was logged (ms epoch); None ⇒ now. Set by a sync replay to preserve ordering.
+    #[serde(default)]
+    pub logged_at: Option<i64>,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// One diary entry as read: what was logged, how much, and — when the logged row is itself a
+/// recipe-as-ingredient — a link to that recipe (mirrors RecipeItem.recipe_id). `calories` is this
+/// entry's own contribution (its per-100g rollup × grams/100), for the row display.
+pub struct LogEntryView {
+    /// The entry id.
+    pub id: String,
+    /// User-local calendar date 'YYYY-MM-DD'.
+    pub date: String,
+    /// Meal slot; currently unused by the UI.
+    pub slot: Option<String>,
+    /// The logged ingredient's id (a recipe's as-ingredient id when a recipe was logged).
+    pub ingredient_id: String,
+    /// Ingredient (or recipe) display name at read time.
+    pub name: String,
+    /// Set when the logged row is itself a recipe-as-ingredient, so the UI links to the recipe page.
+    pub recipe_id: Option<String>,
+    /// The amount logged (display form + canonical grams).
+    pub amount: Amount,
+    /// This entry's calorie contribution (per-100g rollup × grams/100), when calorie data exists.
+    pub calories: Option<f64>,
+    /// When it was logged (ms epoch).
+    pub logged_at: i64,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// One nutrient's ABSOLUTE total for a day (summed across entries), keyed by name + unit. Distinct
+/// from `Reading`, which is per-100g.
+pub struct NutrientTotal {
+    /// Nutrient name (e.g. "Iron").
+    pub name: String,
+    /// Absolute amount for the day, in `unit`.
+    pub amount: f64,
+    /// Display unit (g, mg, µg).
+    pub unit: String,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// One diary day: the entries plus server-computed nutrient totals, each rolled up from its entry via
+/// the SAME recursive CTE recipes use (so a logged recipe expands through its nesting). PRIVATE — only
+/// ever returned to its owner, never listed, never in the anonymous pull.
+pub struct DayLog {
+    /// The 'YYYY-MM-DD' this day covers (echoes the request).
+    pub date: String,
+    /// The day's live entries, newest logged first.
+    pub entries: Vec<LogEntryView>,
+    /// Total calories for the day; None when no entry carries calorie data.
+    pub calories: Option<f64>,
+    /// Per-nutrient absolute totals for the day, ordered by nutrient name.
+    pub totals: Vec<NutrientTotal>,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// A recently/frequently logged ingredient, surfaced so re-logging is fast (the add-flow prepends
+/// these before global search — personal ranking beats global relevance for logging speed).
+pub struct RecentIngredient {
+    /// The ingredient's id (a recipe's as-ingredient id when a recipe).
+    pub ingredient_id: String,
+    /// Display name.
+    pub name: String,
+    /// Set when it's a recipe-as-ingredient (the UI can badge/link it).
+    pub recipe_id: Option<String>,
+    /// How many times the user has logged it (lifetime, non-deleted).
+    pub count: i64,
+    /// The most recent log's grams, to prefill the amount on re-log.
+    pub last_grams: f64,
+    /// The most recent log's display unit, if any.
+    pub last_unit: Option<String>,
+    /// When it was last logged (ms epoch).
+    pub last_logged_at: i64,
+}
+
+/// Freeze a log entry's nutrition into its immutable snapshot: compute the logged food's CURRENT
+/// per-100g rollup (the same recursive CTE recipes use) and store it — calories on the entry plus one
+/// `log_entry_nutrient` row per reading — replacing any prior snapshot. This is what makes a logged day
+/// permanent: `log_day` reads THIS, never the live graph, so a later edit to the source recipe/ingredient
+/// can't rewrite a past day. Called at create and whenever the entry's ingredient itself changes.
+fn snapshot_log_entry_nutrition(
+    conn: &Connection,
+    log_entry_id: &str,
+    ingredient_id: &str,
+) -> Result<(), Error> {
+    let agg = aggregate_per100g(conn, ingredient_id)?;
+    conn.execute(
+        "UPDATE log_entries SET calories_per_100g = ?2 WHERE id = ?1",
+        params![log_entry_id, agg.calories_per_100g],
+    )?;
+    conn.execute(
+        "DELETE FROM log_entry_nutrient WHERE log_entry_id = ?1",
+        [log_entry_id],
+    )?;
+    for r in &agg.readings {
+        conn.execute(
+            "INSERT INTO log_entry_nutrient(id, log_entry_id, name, amount_per_100g, unit)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![new_id(), log_entry_id, r.name, r.amount_per_100g, r.unit],
+        )?;
+    }
+    Ok(())
+}
+
+/// Create or update a diary entry (owner-guarded on update). Mints the entry's `amounts` row on create
+/// — the ingredient_in_recipe amount pattern, grams canonical — and FREEZES the food's nutrition into
+/// the entry's snapshot (see `snapshot_log_entry_nutrition`), re-freezing only when the logged food
+/// itself changes. Returns the entry id.
+pub fn do_save_log_entry(
+    conn: &Connection,
+    input: &SaveLogEntryInput,
+    user_id: &str,
+) -> Result<String, Error> {
+    // Require a finite, strictly-positive mass (rejects 0, negatives, and any NaN/inf).
+    if !(input.grams.is_finite() && input.grams > 0.0) {
+        return Err(Error::Db(
+            "A log entry needs a positive gram amount.".into(),
+        ));
+    }
+    let date = input.date.trim();
+    if date.is_empty() {
+        return Err(Error::Db("A log entry needs a date.".into()));
+    }
+    // The logged item must exist (a recipe is logged via its as-ingredient id). A clean message beats
+    // the raw FK error the INSERT would otherwise raise.
+    let item_exists = conn
+        .query_row(
+            "SELECT 1 FROM ingredients WHERE id = ?1",
+            [&input.ingredient_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !item_exists {
+        return Err(Error::Db("That ingredient no longer exists.".into()));
+    }
+    let unit = input.unit.as_deref().unwrap_or("");
+    let logged_at = input.logged_at.unwrap_or_else(now_ms);
+
+    // Upsert by id (see do_save_ingredient): fetch the row's owner, its amount, and its CURRENT
+    // ingredient (to detect a food change) only when an id was supplied.
+    let existing: Option<(String, String, String)> = match &input.id {
+        Some(id) => conn
+            .query_row(
+                "SELECT user_id, amount_id, ingredient_id FROM log_entries WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?,
+        None => None,
+    };
+
+    if let Some((owner, amount_id, prev_ingredient)) = existing {
+        let id = input
+            .id
+            .as_deref()
+            .expect("existing row implies a supplied id");
+        if owner != user_id {
+            return Err(Error::Db("You can only edit your own log entries.".into()));
+        }
+        upsert_amount(conn, Some(&amount_id), Some(input.grams), unit)?;
+        // A re-save makes the row live again (there's no separate restore for logs; a sync replay of a
+        // create arrives here as an update).
+        conn.execute(
+            "UPDATE log_entries SET date = ?2, slot = ?3, ingredient_id = ?4, logged_at = ?5,
+             deleted_at = NULL WHERE id = ?1",
+            params![
+                id,
+                date,
+                input.slot.as_deref(),
+                input.ingredient_id,
+                logged_at
+            ],
+        )?;
+        // Re-freeze the snapshot ONLY when the logged food itself changed. A grams/date/slot edit keeps
+        // the original frozen profile (grams rescales it in log_day); a passive edit to the source
+        // ingredient/recipe never reaches here, so a past day never moves.
+        if prev_ingredient != input.ingredient_id {
+            snapshot_log_entry_nutrition(conn, id, &input.ingredient_id)?;
+        }
+        Ok(id.to_string())
+    } else {
+        let amount_id = upsert_amount(conn, None, Some(input.grams), unit)?
+            .expect("grams present ⇒ an amount id is minted");
+        let id = input.id.clone().unwrap_or_else(new_id);
+        conn.execute(
+            "INSERT INTO log_entries(id, user_id, date, slot, ingredient_id, amount_id, logged_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                user_id,
+                date,
+                input.slot.as_deref(),
+                input.ingredient_id,
+                amount_id,
+                logged_at
+            ],
+        )?;
+        // Freeze the food's nutrition at log time (the immutable half of the record).
+        snapshot_log_entry_nutrition(conn, &id, &input.ingredient_id)?;
+        Ok(id)
+    }
+}
+
+/// Soft-delete a diary entry (owner-guarded). Sets deleted_at; the row + its amount survive so an
+/// undo/versioning story and sync propagation stay possible. A missing row is a no-op; a foreign row
+/// is refused.
+pub fn do_delete_log_entry(conn: &Connection, id: &str, user_id: &str) -> Result<(), Error> {
+    let owner: Option<String> = conn
+        .query_row(
+            "SELECT user_id FROM log_entries WHERE id = ?1 AND deleted_at IS NULL",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(owner) = owner else {
+        return Ok(()); // already gone or never existed
+    };
+    if owner != user_id {
+        return Err(Error::Db(
+            "You can only delete your own log entries.".into(),
+        ));
+    }
+    conn.execute(
+        "UPDATE log_entries SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+        params![id, now_ms()],
+    )?;
+    Ok(())
+}
+
+/// One day's entries + server-computed nutrient totals for `user_id`, read from each entry's FROZEN
+/// snapshot (the per-100g values captured at log time), NOT the live ingredient graph — so a later edit
+/// to a recipe/ingredient can't move a past day. Each entry's grams (still editable) rescales its frozen
+/// per-100g profile; totals sum across entries keyed by (nutrient name, unit), ordered by name.
+pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, Error> {
+    // 1. The day's entries, enriched with the ingredient's display name + a recipe link when the logged
+    // row is itself a recipe. `calories` = the entry's frozen calories_per_100g scaled by grams. (name +
+    // recipe link stay LIVE — they're presentational; only the NUMBERS are snapshotted.)
+    let mut stmt = conn.prepare(
+        "SELECT le.id, le.date, le.slot, le.ingredient_id, i.name, r.id AS recipe_id,
+                a.amount, a.unit, a.grams, le.logged_at, le.calories_per_100g
+         FROM log_entries le
+         JOIN ingredients i ON i.id = le.ingredient_id
+         JOIN amounts a ON a.id = le.amount_id
+         LEFT JOIN recipes r ON r.as_ingredient_id = le.ingredient_id
+         WHERE le.user_id = ?1 AND le.date = ?2 AND le.deleted_at IS NULL
+         ORDER BY le.logged_at DESC",
+    )?;
+    let entries = stmt
+        .query_map(params![user_id, date], |row| {
+            let grams: f64 = row.get::<_, Option<f64>>(8)?.unwrap_or(0.0);
+            let cal_per_100g: Option<f64> = row.get(10)?;
+            Ok(LogEntryView {
+                id: row.get(0)?,
+                date: row.get(1)?,
+                slot: row.get(2)?,
+                ingredient_id: row.get(3)?,
+                name: row.get(4)?,
+                recipe_id: row.get(5)?,
+                amount: Amount {
+                    amount: row.get(6)?,
+                    unit: row.get(7)?,
+                    grams,
+                },
+                calories: cal_per_100g.map(|c| c * grams / 100.0),
+                logged_at: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    // Day calories = sum of the entries' scaled snapshots; None only when no entry carries calorie data.
+    let day_calories = entries
+        .iter()
+        .filter_map(|e| e.calories)
+        .fold(None, |acc, c| Some(acc.unwrap_or(0.0) + c));
+
+    // 2. Day nutrient totals: sum each entry's FROZEN per-nutrient snapshot, scaled by that entry's grams,
+    // in one grouped pass. Reads only log_entry_nutrient — never the live graph. Ordered by nutrient name.
+    let mut tstmt = conn.prepare(
+        "SELECT len.name, len.unit, SUM(len.amount_per_100g * a.grams / 100.0) AS total
+         FROM log_entry_nutrient len
+         JOIN log_entries le ON le.id = len.log_entry_id
+         JOIN amounts a ON a.id = le.amount_id
+         WHERE le.user_id = ?1 AND le.date = ?2 AND le.deleted_at IS NULL
+         GROUP BY len.name, len.unit
+         ORDER BY len.name",
+    )?;
+    let totals = tstmt
+        .query_map(params![user_id, date], |row| {
+            Ok(NutrientTotal {
+                name: row.get(0)?,
+                unit: row.get(1)?,
+                amount: row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(DayLog {
+        date: date.to_string(),
+        entries,
+        calories: day_calories,
+        totals,
+    })
+}
+
+/// Distinct ingredients the user has logged, most-recent-logged first (capped at `limit`). Powers the
+/// add-flow's personal "recents" that prepend global search; each carries the latest log's amount to
+/// prefill a re-log. One window-function pass: rn=1 picks each ingredient's newest entry, the partition
+/// COUNT gives its lifetime frequency.
+pub fn log_recents(
+    conn: &Connection,
+    user_id: &str,
+    limit: i64,
+) -> Result<Vec<RecentIngredient>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT ingredient_id, name, recipe_id, cnt, last_grams, last_unit, last_logged_at FROM (
+           SELECT le.ingredient_id AS ingredient_id, i.name AS name, r.id AS recipe_id,
+                  COUNT(*) OVER (PARTITION BY le.ingredient_id) AS cnt,
+                  a.grams AS last_grams, a.unit AS last_unit, le.logged_at AS last_logged_at,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY le.ingredient_id ORDER BY le.logged_at DESC, le.id DESC
+                  ) AS rn
+           FROM log_entries le
+           JOIN ingredients i ON i.id = le.ingredient_id
+           JOIN amounts a ON a.id = le.amount_id
+           LEFT JOIN recipes r ON r.as_ingredient_id = le.ingredient_id
+           WHERE le.user_id = ?1 AND le.deleted_at IS NULL
+         ) WHERE rn = 1
+         ORDER BY last_logged_at DESC
+         LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id, limit], |row| {
+            Ok(RecentIngredient {
+                ingredient_id: row.get(0)?,
+                name: row.get(1)?,
+                recipe_id: row.get(2)?,
+                count: row.get(3)?,
+                last_grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+                last_unit: row.get(5)?,
+                last_logged_at: row.get::<_, Option<i64>>(6)?.unwrap_or(0),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 /// Load an ingredient's edit-shape data + its owner id (for the visibility gate). Shared by the
@@ -2031,5 +2419,456 @@ mod delete_guard_tests {
             recipes_left, 1,
             "the recipe must survive the refused card delete"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::float_cmp, missing_docs)] // test code: the asserts ARE the checks
+mod log_tests {
+    use super::*;
+
+    /// The REAL client schema (drift-test-pinned to the drizzle source), so the test DB has log_entries.
+    const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it.
+        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
+            .unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')",
+            [],
+        )
+        .unwrap();
+        c
+    }
+
+    fn ingredient_with(
+        c: &Connection,
+        name: &str,
+        calories: Option<f64>,
+        nutrients: Vec<(&str, f64, &str)>,
+    ) -> String {
+        do_save_ingredient(
+            c,
+            &SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Public),
+                name: name.into(),
+                description: None,
+                price: None,
+                calories_per_100g: calories,
+                serving_grams: None,
+                package_grams: None,
+                nutrients: nutrients
+                    .into_iter()
+                    .map(|(n, a, u)| IngredientNutrientInput {
+                        name: n.into(),
+                        amount_per_100g: a,
+                        unit: u.into(),
+                    })
+                    .collect(),
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap()
+    }
+
+    fn log(c: &Connection, ingredient_id: &str, date: &str, grams: f64, logged_at: i64) -> String {
+        do_save_log_entry(
+            c,
+            &SaveLogEntryInput {
+                id: None,
+                ingredient_id: ingredient_id.into(),
+                date: date.into(),
+                slot: None,
+                grams,
+                unit: None,
+                logged_at: Some(logged_at),
+            },
+            "u1",
+        )
+        .unwrap()
+    }
+
+    fn total(day: &DayLog, name: &str) -> f64 {
+        day.totals
+            .iter()
+            .find(|t| t.name == name)
+            .map(|t| t.amount)
+            .unwrap_or(0.0)
+    }
+
+    #[test]
+    fn day_totals_sum_a_leaf_and_a_nested_recipe_entry() {
+        let c = conn();
+        // Tofu: 100 cal/100g, 10 g protein/100g, 5 mg iron/100g. Oil: 900 cal/100g, no micros.
+        let tofu = ingredient_with(
+            &c,
+            "Tofu",
+            Some(100.0),
+            vec![("Protein", 10.0, "g"), ("Iron", 5.0, "mg")],
+        );
+        let oil = ingredient_with(&c, "Oil", Some(900.0), vec![]);
+        // Scramble = 100 g Tofu + 100 g Oil (batch 200 g) ⇒ per-100g: 500 cal, 5 g protein, 2.5 mg iron.
+        let scramble = do_save_recipe(
+            &c,
+            &SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: "Scramble".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![
+                    RecipeItemInput {
+                        ingredient_id: tofu.clone(),
+                        grams: 100.0,
+                        unit: None,
+                    },
+                    RecipeItemInput {
+                        ingredient_id: oil.clone(),
+                        grams: 100.0,
+                        unit: None,
+                    },
+                ],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+        let scramble_card: String = c
+            .query_row(
+                "SELECT as_ingredient_id FROM recipes WHERE id = ?1",
+                [&scramble],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        // Log 150 g Tofu (leaf) and 200 g Scramble (nested recipe) on the same day.
+        log(&c, &tofu, "2026-07-20", 150.0, 1000);
+        log(&c, &scramble_card, "2026-07-20", 200.0, 2000);
+
+        let day = log_day(&c, "u1", "2026-07-20").unwrap();
+
+        // Newest-logged first: the scramble (logged_at 2000) precedes the tofu (1000).
+        assert_eq!(day.entries.len(), 2);
+        assert_eq!(day.entries[0].ingredient_id, scramble_card);
+        assert_eq!(day.entries[0].name, "Scramble");
+        assert_eq!(day.entries[0].recipe_id.as_deref(), Some(scramble.as_str()));
+        assert_eq!(day.entries[1].name, "Tofu");
+        assert!(day.entries[1].recipe_id.is_none());
+
+        // Hand-computed: Tofu 150 g → 150 cal / 15 g protein / 7.5 mg iron;
+        //                Scramble 200 g → 1000 cal / 10 g protein / 5 mg iron.
+        let approx = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        assert!(
+            approx(day.entries[0].calories.unwrap(), 1000.0),
+            "scramble entry calories"
+        );
+        assert!(
+            approx(day.entries[1].calories.unwrap(), 150.0),
+            "tofu entry calories"
+        );
+        assert!(
+            approx(day.calories.unwrap(), 1150.0),
+            "day calories = 1150, got {:?}",
+            day.calories
+        );
+        assert!(
+            approx(total(&day, "Protein"), 25.0),
+            "protein = 25 g, got {}",
+            total(&day, "Protein")
+        );
+        assert!(
+            approx(total(&day, "Iron"), 12.5),
+            "iron = 12.5 mg, got {}",
+            total(&day, "Iron")
+        );
+        // Totals come out ordered by nutrient name (the BTreeMap key order).
+        assert_eq!(
+            day.totals
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Iron", "Protein"]
+        );
+        // A different day is empty.
+        assert!(log_day(&c, "u1", "2026-07-21").unwrap().entries.is_empty());
+    }
+
+    #[test]
+    fn recents_are_distinct_newest_first_with_frequency_and_last_amount() {
+        let c = conn();
+        let tofu = ingredient_with(&c, "Tofu", Some(100.0), vec![]);
+        let rice = ingredient_with(&c, "Rice", Some(130.0), vec![]);
+        // Log tofu twice, rice once; tofu's latest is the newest overall.
+        log(&c, &tofu, "2026-07-19", 100.0, 1000);
+        log(&c, &rice, "2026-07-19", 200.0, 1500);
+        log(&c, &tofu, "2026-07-20", 175.0, 3000);
+
+        let recents = log_recents(&c, "u1", 10).unwrap();
+        assert_eq!(recents.len(), 2, "distinct ingredients");
+        assert_eq!(recents[0].ingredient_id, tofu, "tofu logged most recently");
+        assert_eq!(recents[0].count, 2, "tofu logged twice");
+        assert_eq!(recents[0].last_grams, 175.0, "prefill from the latest log");
+        assert_eq!(recents[1].ingredient_id, rice);
+        assert_eq!(recents[1].count, 1);
+        assert_eq!(
+            log_recents(&c, "u1", 1).unwrap().len(),
+            1,
+            "limit is honored"
+        );
+    }
+
+    #[test]
+    fn entries_are_owner_guarded_and_soft_deleted() {
+        let c = conn();
+        c.execute(
+            "INSERT INTO users (id, name, email, username) VALUES ('u2','Bob','b@x','bob')",
+            [],
+        )
+        .unwrap();
+        let tofu = ingredient_with(&c, "Tofu", Some(100.0), vec![]);
+        let id = log(&c, &tofu, "2026-07-20", 100.0, 1000);
+
+        // Another user can neither edit nor delete it.
+        let hijack = do_save_log_entry(
+            &c,
+            &SaveLogEntryInput {
+                id: Some(id.clone()),
+                ingredient_id: tofu.clone(),
+                date: "2026-07-20".into(),
+                slot: None,
+                grams: 999.0,
+                unit: None,
+                logged_at: Some(1000),
+            },
+            "u2",
+        );
+        assert!(hijack.is_err(), "only the owner edits");
+        assert!(
+            do_delete_log_entry(&c, &id, "u2").is_err(),
+            "only the owner deletes"
+        );
+
+        // Owner soft-deletes → it leaves the day, but the row survives tombstoned.
+        do_delete_log_entry(&c, &id, "u1").unwrap();
+        assert!(
+            log_day(&c, "u1", "2026-07-20").unwrap().entries.is_empty(),
+            "deleted entry leaves the day"
+        );
+        let tomb: bool = c
+            .query_row(
+                "SELECT deleted_at IS NOT NULL FROM log_entries WHERE id = ?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(tomb, "soft-deleted, not destroyed");
+
+        // Re-saving with the same id restores it (there's no separate restore for logs).
+        do_save_log_entry(
+            &c,
+            &SaveLogEntryInput {
+                id: Some(id.clone()),
+                ingredient_id: tofu,
+                date: "2026-07-20".into(),
+                slot: None,
+                grams: 120.0,
+                unit: None,
+                logged_at: Some(1000),
+            },
+            "u1",
+        )
+        .unwrap();
+        assert_eq!(
+            log_day(&c, "u1", "2026-07-20").unwrap().entries.len(),
+            1,
+            "re-save makes it live again"
+        );
+    }
+
+    #[test]
+    fn logging_rejects_bad_input_and_deleting_a_logged_ingredient_tombstones_it() {
+        let c = conn();
+        let tofu = ingredient_with(&c, "Tofu", Some(100.0), vec![]);
+        let bad = |grams: f64, date: &str, ing: &str| {
+            do_save_log_entry(
+                &c,
+                &SaveLogEntryInput {
+                    id: None,
+                    ingredient_id: ing.into(),
+                    date: date.into(),
+                    slot: None,
+                    grams,
+                    unit: None,
+                    logged_at: None,
+                },
+                "u1",
+            )
+            .is_err()
+        };
+        assert!(bad(0.0, "2026-07-20", &tofu), "non-positive grams rejected");
+        assert!(bad(100.0, "  ", &tofu), "empty date rejected");
+        assert!(
+            bad(100.0, "2026-07-20", "nope"),
+            "unknown ingredient rejected"
+        );
+
+        // A logged (but recipe-unused) ingredient must SOFT-delete: the log_entries RESTRICT FK would
+        // otherwise block a hard delete. History still resolves the name afterward.
+        log(&c, &tofu, "2026-07-20", 100.0, 1000);
+        do_delete_ingredient(&c, &tofu, Some("u1")).unwrap();
+        let (alive, tomb): (i64, bool) = c
+            .query_row(
+                "SELECT COUNT(*), MAX(deleted_at IS NOT NULL) FROM ingredients WHERE id = ?1",
+                [&tofu],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (alive, tomb),
+            (1, true),
+            "logged ingredient tombstones, not destroyed"
+        );
+        assert_eq!(
+            log_day(&c, "u1", "2026-07-20").unwrap().entries[0].name,
+            "Tofu",
+            "history still resolves the tombstoned ingredient"
+        );
+    }
+
+    fn edit_ingredient(
+        c: &Connection,
+        id: &str,
+        name: &str,
+        calories: Option<f64>,
+        nutrients: Vec<(&str, f64, &str)>,
+    ) {
+        do_save_ingredient(
+            c,
+            &SaveIngredientInput {
+                id: Some(id.to_string()),
+                visibility: Some(Visibility::Public),
+                name: name.into(),
+                description: None,
+                price: None,
+                calories_per_100g: calories,
+                serving_grams: None,
+                package_grams: None,
+                nutrients: nutrients
+                    .into_iter()
+                    .map(|(n, a, u)| IngredientNutrientInput {
+                        name: n.into(),
+                        amount_per_100g: a,
+                        unit: u.into(),
+                    })
+                    .collect(),
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_source_edit_never_moves_a_past_days_snapshot() {
+        let c = conn();
+        // Oats: 100 cal/100g, 5 mg iron/100g. Log 200 g → 200 cal, 10 mg iron (frozen at log time).
+        let oats = ingredient_with(&c, "Oats", Some(100.0), vec![("Iron", 5.0, "mg")]);
+        log(&c, &oats, "2026-07-20", 200.0, 1000);
+        let before = log_day(&c, "u1", "2026-07-20").unwrap();
+        let approx = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        assert!(approx(before.calories.unwrap(), 200.0));
+        assert!(approx(total(&before, "Iron"), 10.0));
+
+        // Passively rewrite the SOURCE ingredient: 100→500 cal, iron 5→50 mg.
+        edit_ingredient(&c, &oats, "Oats", Some(500.0), vec![("Iron", 50.0, "mg")]);
+
+        // THE FIX: the past day is UNCHANGED — it reads the frozen snapshot, not the live ingredient.
+        let after = log_day(&c, "u1", "2026-07-20").unwrap();
+        assert!(
+            approx(after.calories.unwrap(), 200.0),
+            "calories held at 200, got {:?}",
+            after.calories
+        );
+        assert!(
+            approx(total(&after, "Iron"), 10.0),
+            "iron held at 10 mg, got {}",
+            total(&after, "Iron")
+        );
+
+        // A NEW log of the same food captures the CURRENT values (each entry snapshots at its own log time).
+        log(&c, &oats, "2026-07-21", 100.0, 2000);
+        let fresh = log_day(&c, "u1", "2026-07-21").unwrap();
+        assert!(
+            approx(fresh.calories.unwrap(), 500.0),
+            "a fresh log uses the current values"
+        );
+        assert!(approx(total(&fresh, "Iron"), 50.0));
+    }
+
+    #[test]
+    fn editing_grams_rescales_the_frozen_snapshot_but_changing_the_food_re_snapshots() {
+        let c = conn();
+        let oats = ingredient_with(&c, "Oats", Some(100.0), vec![("Iron", 5.0, "mg")]);
+        let rice = ingredient_with(&c, "Rice", Some(130.0), vec![("Iron", 1.0, "mg")]);
+        let id = log(&c, &oats, "2026-07-20", 200.0, 1000); // frozen at 100 cal, 5 mg iron / 100 g
+        let approx = |a: f64, b: f64| (a - b).abs() < 1e-6;
+
+        // Poison the source, THEN edit ONLY the grams (200 → 50). The frozen profile is used, not the
+        // poisoned live one: 50 g → 50 cal, 2.5 mg iron.
+        edit_ingredient(&c, &oats, "Oats", Some(999.0), vec![("Iron", 99.0, "mg")]);
+        do_save_log_entry(
+            &c,
+            &SaveLogEntryInput {
+                id: Some(id.clone()),
+                ingredient_id: oats.clone(),
+                date: "2026-07-20".into(),
+                slot: None,
+                grams: 50.0,
+                unit: None,
+                logged_at: Some(1000),
+            },
+            "u1",
+        )
+        .unwrap();
+        let d = log_day(&c, "u1", "2026-07-20").unwrap();
+        assert!(
+            approx(d.calories.unwrap(), 50.0),
+            "a grams edit rescales the FROZEN profile, got {:?}",
+            d.calories
+        );
+        assert!(approx(total(&d, "Iron"), 2.5), "iron {}", total(&d, "Iron"));
+
+        // Now change the FOOD itself (oats → rice). THAT re-snapshots to rice's current values:
+        // 100 g → 130 cal, 1 mg iron.
+        do_save_log_entry(
+            &c,
+            &SaveLogEntryInput {
+                id: Some(id.clone()),
+                ingredient_id: rice.clone(),
+                date: "2026-07-20".into(),
+                slot: None,
+                grams: 100.0,
+                unit: None,
+                logged_at: Some(1000),
+            },
+            "u1",
+        )
+        .unwrap();
+        let d2 = log_day(&c, "u1", "2026-07-20").unwrap();
+        assert!(
+            approx(d2.calories.unwrap(), 130.0),
+            "changing the food re-snapshots, got {:?}",
+            d2.calories
+        );
+        assert!(approx(total(&d2, "Iron"), 1.0));
     }
 }

@@ -1,11 +1,16 @@
+import { eq } from "drizzle-orm"
+
 import { hashPassword } from "./auth"
 import { client, db } from "./index"
+import { getIngredientNutrition } from "./nutrition"
 import { one } from "./rows"
 import {
   amounts,
   ingredientInRecipe,
   ingredientNutrient,
   ingredients,
+  logEntries,
+  logEntryNutrient,
   nutrients,
   recipes,
   users
@@ -17,6 +22,8 @@ import {
 
 async function main() {
   // wipe (dev only — order respects FKs)
+  await db.delete(logEntryNutrient)
+  await db.delete(logEntries)
   await db.delete(ingredientInRecipe)
   await db.delete(recipes)
   await db.delete(ingredientNutrient)
@@ -291,10 +298,47 @@ async function main() {
     })
   }
 
+  // A seeded day in the dev user's PRIVATE diary: a plain ingredient + a nested recipe (the dough,
+  // logged via its as-ingredient id), so P1.2's Day screen has real data and the day-totals rollup
+  // has a nested entry to expand. `date` is a local calendar day (no tz math), matching the client.
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD (UTC date is fine for a dev seed)
+  const logEntry = async (
+    ingredientId: string,
+    [unit, qty, grams]: [string, number, number]
+  ) => {
+    const a = await amount(unit, qty, grams)
+    const entry = one(
+      await db
+        .insert(logEntries)
+        .values({ userId: john.id, date: today, ingredientId, amountId: a.id })
+        .returning()
+    )
+    // Freeze the food's nutrition onto the entry (mirrors the DAL's do_save_log_entry) so the seeded
+    // day reads an immutable snapshot, not the live graph.
+    const n = await getIngredientNutrition(ingredientId)
+    await db
+      .update(logEntries)
+      .set({ caloriesPer100g: n.caloriesPer100g })
+      .where(eq(logEntries.id, entry.id))
+    if (n.readings.length) {
+      await db.insert(logEntryNutrient).values(
+        n.readings.map((r) => ({
+          logEntryId: entry.id,
+          name: r.name,
+          amountPer100g: r.amountPer100g,
+          unit: r.unit
+        }))
+      )
+    }
+  }
+  await logEntry(blackBeans.id, ["cup", 0.5, 130])
+  await logEntry(doughIngredient.id, ["dough ball", 1, 260])
+
   const counts = {
     users: 1,
     ingredients: (await db.select().from(ingredients)).length,
-    recipes: (await db.select().from(recipes)).length
+    recipes: (await db.select().from(recipes)).length,
+    logEntries: (await db.select().from(logEntries)).length
   }
   console.log("seeded:", counts)
   client.close()

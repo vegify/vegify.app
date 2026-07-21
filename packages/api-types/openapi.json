@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "Ack": {
+        "additionalProperties": false,
+        "description": " A minimal ok ack for a mutation with no return payload (the `{ ok: true }` shape a delete returns).",
+        "properties": {
+          "ok": {
+            "description": " Always true on success (failures answer a non-200 with `{ error }`).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "Ack",
+        "type": "object"
+      },
       "AggregatedNutrition": {
         "additionalProperties": false,
         "description": " A recipe's nutrition rolled up from its items, per 100 g.",
@@ -117,6 +132,50 @@
           "unread"
         ],
         "title": "ConversationSummary",
+        "type": "object"
+      },
+      "DayLog": {
+        "additionalProperties": false,
+        "description": " One diary day: the entries plus server-computed nutrient totals, each rolled up from its entry via\n the SAME recursive CTE recipes use (so a logged recipe expands through its nesting). PRIVATE — only\n ever returned to its owner, never listed, never in the anonymous pull.",
+        "properties": {
+          "calories": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Total calories for the day; None when no entry carries calorie data."
+          },
+          "date": {
+            "description": " The 'YYYY-MM-DD' this day covers (echoes the request).",
+            "type": "string"
+          },
+          "entries": {
+            "description": " The day's live entries, newest logged first.",
+            "items": {
+              "$ref": "#/components/schemas/LogEntryView"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "description": " Per-nutrient absolute totals for the day, ordered by nutrient name.",
+            "items": {
+              "$ref": "#/components/schemas/NutrientTotal"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "entries",
+          "calories",
+          "totals"
+        ],
+        "title": "DayLog",
         "type": "object"
       },
       "IngredientCard": {
@@ -395,6 +454,86 @@
         "title": "IngredientSlugHit",
         "type": "object"
       },
+      "LogEntryView": {
+        "additionalProperties": false,
+        "description": " One diary entry as read: what was logged, how much, and — when the logged row is itself a\n recipe-as-ingredient — a link to that recipe (mirrors RecipeItem.recipe_id). `calories` is this\n entry's own contribution (its per-100g rollup × grams/100), for the row display.",
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Amount",
+            "description": " The amount logged (display form + canonical grams)."
+          },
+          "calories": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " This entry's calorie contribution (per-100g rollup × grams/100), when calorie data exists."
+          },
+          "date": {
+            "description": " User-local calendar date 'YYYY-MM-DD'.",
+            "type": "string"
+          },
+          "id": {
+            "description": " The entry id.",
+            "type": "string"
+          },
+          "ingredientId": {
+            "description": " The logged ingredient's id (a recipe's as-ingredient id when a recipe was logged).",
+            "type": "string"
+          },
+          "loggedAt": {
+            "description": " When it was logged (ms epoch).",
+            "format": "int64",
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "name": {
+            "description": " Ingredient (or recipe) display name at read time.",
+            "type": "string"
+          },
+          "recipeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Set when the logged row is itself a recipe-as-ingredient, so the UI links to the recipe page."
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Meal slot; currently unused by the UI."
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "slot",
+          "ingredientId",
+          "name",
+          "recipeId",
+          "amount",
+          "calories",
+          "loggedAt"
+        ],
+        "title": "LogEntryView",
+        "type": "object"
+      },
       "Message": {
         "additionalProperties": false,
         "description": " One DM as the thread screen renders it.",
@@ -464,6 +603,32 @@
           "read"
         ],
         "title": "Notification",
+        "type": "object"
+      },
+      "NutrientTotal": {
+        "additionalProperties": false,
+        "description": " One nutrient's ABSOLUTE total for a day (summed across entries), keyed by name + unit. Distinct\n from `Reading`, which is per-100g.",
+        "properties": {
+          "amount": {
+            "description": " Absolute amount for the day, in `unit`.",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": " Nutrient name (e.g. \"Iron\").",
+            "type": "string"
+          },
+          "unit": {
+            "description": " Display unit (g, mg, µg).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "amount",
+          "unit"
+        ],
+        "title": "NutrientTotal",
         "type": "object"
       },
       "Party": {
@@ -1020,6 +1185,72 @@
         "title": "Reading",
         "type": "object"
       },
+      "RecentIngredient": {
+        "additionalProperties": false,
+        "description": " A recently/frequently logged ingredient, surfaced so re-logging is fast (the add-flow prepends\n these before global search — personal ranking beats global relevance for logging speed).",
+        "properties": {
+          "count": {
+            "description": " How many times the user has logged it (lifetime, non-deleted).",
+            "format": "int64",
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "ingredientId": {
+            "description": " The ingredient's id (a recipe's as-ingredient id when a recipe).",
+            "type": "string"
+          },
+          "lastGrams": {
+            "description": " The most recent log's grams, to prefill the amount on re-log.",
+            "format": "double",
+            "type": "number"
+          },
+          "lastLoggedAt": {
+            "description": " When it was last logged (ms epoch).",
+            "format": "int64",
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "lastUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The most recent log's display unit, if any."
+          },
+          "name": {
+            "description": " Display name.",
+            "type": "string"
+          },
+          "recipeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Set when it's a recipe-as-ingredient (the UI can badge/link it)."
+          }
+        },
+        "required": [
+          "ingredientId",
+          "name",
+          "recipeId",
+          "count",
+          "lastGrams",
+          "lastUnit",
+          "lastLoggedAt"
+        ],
+        "title": "RecentIngredient",
+        "type": "object"
+      },
       "RecipeCard": {
         "additionalProperties": false,
         "description": " Recipe list/browse card — the light projection for grids.",
@@ -1388,6 +1619,95 @@
           "photoKey"
         ],
         "title": "RecipeView",
+        "type": "object"
+      },
+      "SaveLogEntryInput": {
+        "additionalProperties": false,
+        "description": " Create-or-update payload for a diary entry. `id: Some` + an existing row updates it (owner-gated);\n `id: Some` + no such row inserts WITH that id (an offline create's client ULID / a sync replay);\n `id: None` mints a fresh ULID. Logging a recipe = passing its as-ingredient id as `ingredientId`.",
+        "properties": {
+          "date": {
+            "description": " User-local calendar date 'YYYY-MM-DD', chosen client-side (no server timezone modeling).",
+            "type": "string"
+          },
+          "grams": {
+            "description": " Amount logged, canonical grams.",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Existing entry to update, or None to create (id minted). Client ids are honored so replays\n stay idempotent cross-replica."
+          },
+          "ingredientId": {
+            "description": " The ingredient — or a recipe's as_ingredient_id — being logged.",
+            "type": "string"
+          },
+          "loggedAt": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "maximum": 9223372036854775807,
+                "minimum": -9223372036854775808,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " When it was logged (ms epoch); None ⇒ now. Set by a sync replay to preserve ordering."
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Meal slot (breakfast/lunch/dinner/snack); currently ignored by the UI. Serde-default so\n slot-less payloads deserialize."
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Display unit the user picked; None = grams. Mirrors RecipeItemInput."
+          }
+        },
+        "required": [
+          "id",
+          "ingredientId",
+          "date",
+          "grams"
+        ],
+        "title": "SaveLogEntryInput",
+        "type": "object"
+      },
+      "SavedId": {
+        "additionalProperties": false,
+        "description": " A create/update ack carrying the affected row's id (the `{ id }` shape the content writes return).",
+        "properties": {
+          "id": {
+            "description": " The created or updated row's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "SavedId",
         "type": "object"
       },
       "SendMessageBody": {
@@ -2138,6 +2458,145 @@
           }
         },
         "summary": "Sitemap source data"
+      }
+    },
+    "/api/log/day": {
+      "get": {
+        "description": "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayLog"
+                }
+              }
+            },
+            "description": "The day's entries + nutrient totals"
+          }
+        },
+        "summary": "One diary day + rolled-up totals"
+      }
+    },
+    "/api/log/entries": {
+      "delete": {
+        "description": "Requires bearer; owner-gated. Soft-deletes by id (the row survives).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ack"
+                }
+              }
+            },
+            "description": "Deletion acknowledged"
+          }
+        },
+        "summary": "Delete a diary entry"
+      },
+      "patch": {
+        "description": "Requires bearer; owner-gated. Same body as POST, with the entry id set.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLogEntryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedId"
+                }
+              }
+            },
+            "description": "The updated entry's id"
+          }
+        },
+        "summary": "Update a diary entry"
+      },
+      "post": {
+        "description": "Requires bearer; PRIVATE to the viewer. Logs `grams` of an ingredient (or a recipe via its as-ingredient id) against a client-chosen calendar date. Upsert-by-id: a body id updates that entry (owner-gated), else a new one is minted.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLogEntryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedId"
+                }
+              }
+            },
+            "description": "The created/updated entry's id"
+          }
+        },
+        "summary": "Log a diary entry"
+      }
+    },
+    "/api/log/recents": {
+      "get": {
+        "description": "Requires bearer; PRIVATE to the viewer. Distinct ingredients the viewer has logged, newest first, to prepend the add-flow's search.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentIngredient"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The viewer's recents, newest first"
+          }
+        },
+        "summary": "Recently logged ingredients"
       }
     },
     "/api/messages/conversations": {
