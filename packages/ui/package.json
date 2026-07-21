@@ -12,6 +12,7 @@
     "./button": "./src/button.tsx",
     "./card": "./src/card.tsx",
     "./catalog": "./src/catalog.ts",
+    "./day": "./src/day.tsx",
     "./checkbox": "./src/checkbox.tsx",
     "./cn": "./src/cn.ts",
     "./detail-hero": "./src/detail-hero.tsx",

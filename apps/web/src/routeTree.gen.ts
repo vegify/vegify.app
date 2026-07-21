@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DiaryRouteImport } from './routes/diary'
 import { Route as DownloadRouteImport } from './routes/download'
 import { Route as ForgotRouteImport } from './routes/forgot'
 import { Route as LoginRouteImport } from './routes/login'
@@ -39,6 +40,11 @@ import { Route as RecipesRecipeIdEditRouteImport } from './routes/recipes.$recip
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiaryRoute = DiaryRouteImport.update({
+  id: '/diary',
+  path: '/diary',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DownloadRoute = DownloadRouteImport.update({
@@ -171,6 +177,7 @@ const RecipesRecipeIdEditRoute = RecipesRecipeIdEditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/diary': typeof DiaryRoute
   '/download': typeof DownloadRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/diary': typeof DiaryRoute
   '/download': typeof DownloadRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -228,6 +236,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/diary': typeof DiaryRoute
   '/download': typeof DownloadRoute
   '/forgot': typeof ForgotRoute
   '/login': typeof LoginRoute
@@ -258,6 +267,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/diary'
     | '/download'
     | '/forgot'
     | '/login'
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/diary'
     | '/download'
     | '/forgot'
     | '/login'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/diary'
     | '/download'
     | '/forgot'
     | '/login'
@@ -343,6 +355,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DiaryRoute: typeof DiaryRoute
   DownloadRoute: typeof DownloadRoute
   ForgotRoute: typeof ForgotRoute
   LoginRoute: typeof LoginRoute
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/diary': {
+      id: '/diary'
+      path: '/diary'
+      fullPath: '/diary'
+      preLoaderRoute: typeof DiaryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/download': {
@@ -559,6 +579,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DiaryRoute: DiaryRoute,
   DownloadRoute: DownloadRoute,
   ForgotRoute: ForgotRoute,
   LoginRoute: LoginRoute,
