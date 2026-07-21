@@ -92,6 +92,16 @@ struct SearchQuery {
     q: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct DateQuery {
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RecentsQuery {
+    limit: Option<u32>,
+}
+
 // ---- auth routes (JSON body in, token in the body out; no cookie/CSRF — for native clients) ----
 
 #[derive(Deserialize)]
@@ -1130,6 +1140,76 @@ async fn ws_loop(mut socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver
     }
 }
 
+// ---- diary (log_entries): the PRIVATE food log. Every endpoint is hard-authed to the owner and the
+// diary is NEVER in the anonymous content pull or the sitemap. WS push for the diary is deferred to
+// P1.2 (the desktop's local-first sync), so these writes intentionally do not notify_change. ----
+
+/// POST/PATCH /api/log/entries — create or update a diary entry (upsert-by-id; owner-gated on update).
+async fn save_log_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<vegify_core::SaveLogEntryInput>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let id = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::do_save_log_entry(conn, &input, &me.id).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(json!({ "id": id })))
+}
+
+/// DELETE /api/log/entries?id= — soft-delete a diary entry (owner-gated).
+async fn delete_log_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<IdQuery>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let id =
+        q.id.ok_or_else(|| AppError::BadRequest("id is required.".into()))?;
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::do_delete_log_entry(conn, &id, &me.id).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// GET /api/log/day?date=YYYY-MM-DD — the day's entries + server-computed nutrient totals.
+async fn log_day(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<DateQuery>,
+) -> Result<Json<vegify_core::DayLog>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let date = q
+        .date
+        .ok_or_else(|| AppError::BadRequest("date is required.".into()))?;
+    let day = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::log_day(conn, &me.id, &date).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(day))
+}
+
+/// GET /api/log/recents?limit= — distinct recently-logged ingredients (default 20, capped 100).
+async fn log_recents(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<RecentsQuery>,
+) -> Result<Json<Vec<vegify_core::RecentIngredient>>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let limit = q.limit.unwrap_or(20).min(100) as i64;
+    let recents = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::log_recents(conn, &me.id, limit).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(recents))
+}
+
 /// Idempotent additive migration applied on boot. The live EBS DB predates the password-reset table
 /// and the `users.email_verified_at` column; the server is the sole writer, so this is the migration
 /// path (the server analogue of the web's old `ensure-schema.mjs`). Safe to re-run every boot.
@@ -1176,7 +1256,21 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER,
             updated_at INTEGER
         );
-        CREATE INDEX IF NOT EXISTS posts_status_published_idx ON posts(status, published_at);",
+        CREATE INDEX IF NOT EXISTS posts_status_published_idx ON posts(status, published_at);
+        CREATE TABLE IF NOT EXISTS log_entries (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            date TEXT NOT NULL,
+            slot TEXT,
+            ingredient_id TEXT NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
+            amount_id TEXT NOT NULL REFERENCES amounts(id) ON DELETE CASCADE,
+            logged_at INTEGER,
+            deleted_at INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS log_entries_user_date_idx ON log_entries(user_id, date);
+        CREATE INDEX IF NOT EXISTS log_entries_user_logged_idx ON log_entries(user_id, logged_at);",
     )?;
     // 1:1 direct messages + the notification feed (server-owned, like posts — online-only, never in
     // the shared content schema).
@@ -1411,6 +1505,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/sitemap", get(sitemap))
         .route("/api/content/blog", get(blog_list))
         .route("/api/content/blog-detail", get(blog_detail))
+        // Food diary (PRIVATE per-user — every handler hard-auths the owner; never in the anon pull or
+        // sitemap). POST/PATCH both upsert-by-id; day totals roll up via the nested-recipe CTE.
+        .route(
+            "/api/log/entries",
+            post(save_log_entry)
+                .patch(save_log_entry)
+                .delete(delete_log_entry),
+        )
+        .route("/api/log/day", get(log_day))
+        .route("/api/log/recents", get(log_recents))
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.

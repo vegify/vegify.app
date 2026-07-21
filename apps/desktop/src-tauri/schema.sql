@@ -190,3 +190,20 @@ CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS `password_reset_tokens_hashed_token_unique` ON `password_reset_tokens` (`hashed_token`);
 CREATE INDEX IF NOT EXISTS `password_reset_tokens_user_idx` ON `password_reset_tokens` (`user_id`);
+CREATE TABLE IF NOT EXISTS `log_entries` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`date` text NOT NULL,
+	`slot` text,
+	`ingredient_id` text NOT NULL,
+	`amount_id` text NOT NULL,
+	`logged_at` integer,
+	`deleted_at` integer,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`ingredient_id`) REFERENCES `ingredients`(`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`amount_id`) REFERENCES `amounts`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE INDEX IF NOT EXISTS `log_entries_user_date_idx` ON `log_entries` (`user_id`,`date`);
+CREATE INDEX IF NOT EXISTS `log_entries_user_logged_idx` ON `log_entries` (`user_id`,`logged_at`);

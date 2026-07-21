@@ -207,6 +207,58 @@ export const ingredientInRecipe = sqliteTable(
   (t) => [index("iir_recipe_idx").on(t.recipeId)]
 )
 
+// The food DIARY — a user's dated log of what they ate. PRIVATE, full stop: unlike the public-default
+// content tables above, log entries are personal data — never listed, never in the anonymous content
+// pull or the sitemap; the server's every /api/log/* endpoint is hard-authed to the owner. The privacy
+// carve-out is enforced at the query/endpoint layer; this table just stores the rows.
+//
+// A row logs `grams` of an ingredient against a user-local calendar `date` ('YYYY-MM-DD', chosen
+// client-side — no server timezone modeling). Because a recipe IS an ingredient (recipes.as_ingredient_id),
+// logging a recipe serving is just logging its as-ingredient id: the SAME recursive nutrition CTE that
+// rolls up recipes rolls up a logged recipe, so day totals need no parallel math. Quantity mirrors
+// ingredient_in_recipe's amount pattern (an `amounts` row via amountId — grams canonical, display unit
+// preserved). `slot` (breakfast/lunch/dinner/snack) is a cheap column the UI ignores for now.
+//
+// v0 accepted drift: entries reference LIVE ingredients, so editing a referenced ingredient later
+// changes historical days. Acceptable while the catalog is USDA-locked-ish; the durable fix
+// (copy-on-edit / versioning) lands with provenance in P2.5.
+export const logEntries = sqliteTable(
+  "log_entries",
+  {
+    id: pk(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // User-local calendar date 'YYYY-MM-DD' the food is logged against (client-chosen).
+    date: text("date").notNull(),
+    // Meal slot (breakfast/lunch/dinner/snack); nullable, UI-ignored until a later phase.
+    slot: text("slot"),
+    // The logged ingredient — or a recipe's as_ingredient_id (logging a recipe). RESTRICT mirrors
+    // ingredient_in_recipe: a logged ingredient can't be hard-deleted out from under history (the DAL
+    // soft-deletes/tombstones it instead), so a day always resolves.
+    ingredientId: text("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "restrict" }),
+    // Quantity as an amounts row (grams canonical + display unit) — the ingredient_in_recipe pattern.
+    amountId: text("amount_id")
+      .notNull()
+      .references(() => amounts.id, { onDelete: "cascade" }),
+    // When the entry was recorded (ms epoch); orders "recents" and the day list. May be client-supplied
+    // on offline create / sync replay so ordering survives round-trips.
+    loggedAt: integer("logged_at", { mode: "timestamp_ms" }).$defaultFn(
+      () => new Date()
+    ),
+    // Soft-delete tombstone (ms epoch); NULL = live. Kept (not hard-deleted) so an undo/versioning
+    // story stays possible and sync can propagate the deletion.
+    deletedAt: integer("deleted_at"),
+    ...timestamps
+  },
+  (t) => [
+    index("log_entries_user_date_idx").on(t.userId, t.date),
+    index("log_entries_user_logged_idx").on(t.userId, t.loggedAt)
+  ]
+)
+
 export const nutrients = sqliteTable("nutrients", {
   id: pk(),
   name: text("name").notNull(),
@@ -291,7 +343,23 @@ export const products = sqliteTable("products", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   ingredients: many(ingredients),
-  sessions: many(sessions)
+  sessions: many(sessions),
+  logEntries: many(logEntries)
+}))
+
+export const logEntriesRelations = relations(logEntries, ({ one }) => ({
+  user: one(users, {
+    fields: [logEntries.userId],
+    references: [users.id]
+  }),
+  ingredient: one(ingredients, {
+    fields: [logEntries.ingredientId],
+    references: [ingredients.id]
+  }),
+  amount: one(amounts, {
+    fields: [logEntries.amountId],
+    references: [amounts.id]
+  })
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
