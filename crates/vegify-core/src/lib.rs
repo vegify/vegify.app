@@ -1467,6 +1467,151 @@ pub fn log_recents(
     Ok(rows)
 }
 
+// ---- authed diary sync (the desktop's local-first cache pull; SEPARATE from the anon content pull) ----
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// One nutrient of a pulled entry's FROZEN snapshot (per 100 g) — applied verbatim, never recomputed.
+pub struct LogPullNutrient {
+    /// Nutrient name.
+    pub name: String,
+    /// Frozen per-100g amount.
+    pub amount_per_100g: f64,
+    /// Display unit.
+    pub unit: String,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// One diary entry in the authed pull: everything to rebuild it on a replica VERBATIM — its frozen
+/// nutrition snapshot (calories + per-nutrient rows) and its display amount. The snapshot is NOT
+/// recomputed on apply; the server's is authoritative.
+pub struct LogPullEntry {
+    /// Entry id (client ULID, stable cross-replica).
+    pub id: String,
+    /// The logged ingredient (or a recipe's as-ingredient id).
+    pub ingredient_id: String,
+    /// User-local calendar date 'YYYY-MM-DD'.
+    pub date: String,
+    /// Meal slot, if any.
+    pub slot: Option<String>,
+    /// Amount logged, canonical grams.
+    pub grams: f64,
+    /// Display unit the user picked, if any.
+    pub unit: Option<String>,
+    /// Frozen per-100g calories snapshot.
+    pub calories_per_100g: Option<f64>,
+    /// When it was logged (ms epoch).
+    pub logged_at: i64,
+    /// The frozen per-nutrient snapshot.
+    pub nutrients: Vec<LogPullNutrient>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// The viewer's FULL diary for authed device sync — a separate channel from the anonymous content pull,
+/// which never carries private log data. The desktop reconciles this into its local cache via
+/// `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild).
+pub struct LogPull {
+    /// Every live entry the viewer owns, newest logged first.
+    pub entries: Vec<LogPullEntry>,
+}
+
+/// Read the viewer's ENTIRE live diary (all dates) for authed device sync — each entry with its frozen
+/// snapshot (calories + per-nutrient readings) + display amount. Newest logged first.
+pub fn log_pull(conn: &Connection, user_id: &str) -> Result<LogPull, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT le.id, le.ingredient_id, le.date, le.slot, a.grams, a.unit,
+                le.calories_per_100g, le.logged_at
+         FROM log_entries le
+         JOIN amounts a ON a.id = le.amount_id
+         WHERE le.user_id = ?1 AND le.deleted_at IS NULL
+         ORDER BY le.logged_at DESC",
+    )?;
+    let base = stmt
+        .query_map([user_id], |row| {
+            Ok(LogPullEntry {
+                id: row.get(0)?,
+                ingredient_id: row.get(1)?,
+                date: row.get(2)?,
+                slot: row.get(3)?,
+                grams: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+                unit: row.get(5)?,
+                calories_per_100g: row.get(6)?,
+                logged_at: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                nutrients: Vec::new(),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut nstmt = conn.prepare(
+        "SELECT name, amount_per_100g, unit FROM log_entry_nutrient WHERE log_entry_id = ?1",
+    )?;
+    let mut entries = Vec::with_capacity(base.len());
+    for mut e in base {
+        e.nutrients = nstmt
+            .query_map([&e.id], |row| {
+                Ok(LogPullNutrient {
+                    name: row.get(0)?,
+                    amount_per_100g: row.get(1)?,
+                    unit: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        entries.push(e);
+    }
+    Ok(LogPull { entries })
+}
+
+/// Replace the viewer's LOCAL diary with the authoritative server pull, applied VERBATIM (the frozen
+/// snapshots are inserted as-is, never recomputed — the server's snapshot wins). Wipes ONLY this user's
+/// `log_entries` (+ their `amounts`; `log_entry_nutrient` cascades) and re-inserts. Deliberately its own
+/// reconciliation, NOT part of `apply_pull`: that wipes the shared `amounts` table wholesale, which the
+/// diary references, so folding the two would corrupt it. The caller manages foreign-key enforcement.
+pub fn apply_log_pull(conn: &Connection, user_id: &str, pull: &LogPull) -> Result<(), Error> {
+    // Capture the old entries' amount ids to clean them up after the rebuild (amounts is shared, so we
+    // delete only the ones this diary owned — never the whole table).
+    let old_amount_ids: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT amount_id FROM log_entries WHERE user_id = ?1")?;
+        let ids = stmt
+            .query_map([user_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        ids
+    };
+    conn.execute("DELETE FROM log_entries WHERE user_id = ?1", [user_id])?; // cascades log_entry_nutrient
+    for aid in &old_amount_ids {
+        conn.execute("DELETE FROM amounts WHERE id = ?1", [aid])?;
+    }
+    for e in &pull.entries {
+        let amount_id = new_id();
+        conn.execute(
+            "INSERT INTO amounts(id, grams, unit, amount, preferred) VALUES (?1, ?2, ?3, 1, 'grams')",
+            params![amount_id, e.grams, e.unit.as_deref().unwrap_or("")],
+        )?;
+        conn.execute(
+            "INSERT INTO log_entries(id, user_id, date, slot, ingredient_id, amount_id, calories_per_100g, logged_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                e.id,
+                user_id,
+                e.date,
+                e.slot.as_deref(),
+                e.ingredient_id,
+                amount_id,
+                e.calories_per_100g,
+                e.logged_at
+            ],
+        )?;
+        for n in &e.nutrients {
+            conn.execute(
+                "INSERT INTO log_entry_nutrient(id, log_entry_id, name, amount_per_100g, unit)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![new_id(), e.id, n.name, n.amount_per_100g, n.unit],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Load an ingredient's edit-shape data + its owner id (for the visibility gate). Shared by the
 /// `ingredient` detail read (canView) and `ingredient_for_edit` (isOwner) — the desktop reuses one
 /// loader where the web splits it into two server fns. The detail VM simply ignores the extra fields.
@@ -2870,5 +3015,46 @@ mod log_tests {
             d2.calories
         );
         assert!(approx(total(&d2, "Iron"), 1.0));
+    }
+
+    #[test]
+    fn diary_pull_round_trips_and_applies_the_snapshot_verbatim() {
+        let c = conn();
+        let beans = ingredient_with(&c, "Beans", Some(100.0), vec![("Iron", 5.0, "mg")]);
+        log(&c, &beans, "2026-07-20", 200.0, 1000); // frozen: 100 cal, 5 mg iron / 100 g
+
+        // Pull the whole diary — it carries the entry + its FROZEN snapshot.
+        let pull = log_pull(&c, "u1").unwrap();
+        assert_eq!(pull.entries.len(), 1);
+        assert_eq!(pull.entries[0].ingredient_id, beans);
+        assert_eq!(pull.entries[0].calories_per_100g, Some(100.0));
+        assert_eq!(pull.entries[0].nutrients.len(), 1, "iron snapshot carried");
+
+        // Poison the SOURCE ingredient AFTER the pull was taken.
+        edit_ingredient(&c, &beans, "Beans", Some(999.0), vec![("Iron", 99.0, "mg")]);
+
+        // Apply the pull VERBATIM (as a replica would). It must use the pull's frozen snapshot, NOT
+        // recompute from the now-poisoned live ingredient.
+        apply_log_pull(&c, "u1", &pull).unwrap();
+        let day = log_day(&c, "u1", "2026-07-20").unwrap();
+        let approx = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        assert_eq!(day.entries.len(), 1, "the entry round-tripped");
+        assert!(
+            approx(day.calories.unwrap(), 200.0),
+            "verbatim snapshot (200 g × 100/100), NOT the poisoned 1998: {:?}",
+            day.calories
+        );
+        assert!(
+            approx(total(&day, "Iron"), 10.0),
+            "verbatim iron (200 g × 5/100), NOT the poisoned 198: {}",
+            total(&day, "Iron")
+        );
+
+        // An empty pull clears the viewer's diary (a signed-out/empty server view, or a wipe).
+        apply_log_pull(&c, "u1", &LogPull { entries: vec![] }).unwrap();
+        assert!(
+            log_day(&c, "u1", "2026-07-20").unwrap().entries.is_empty(),
+            "an empty pull clears the diary"
+        );
     }
 }

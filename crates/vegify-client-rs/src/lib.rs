@@ -481,6 +481,15 @@ impl VegifyClient {
         )
     }
 
+    /// GET /api/log/pull → the viewer's entire diary (each entry with its frozen snapshot) for authed
+    /// device sync. Deserialized straight into the DAL's [`vegify_core::LogPull`] (this SDK already
+    /// depends on vegify-core), so the desktop hands it to `apply_log_pull` with no conversion.
+    pub fn log_pull(&self, token: &str) -> Result<vegify_core::LogPull, Error> {
+        tracing::debug!("GET /api/log/pull");
+        let req = Self::bearer(self.agent.get(format!("{}/api/log/pull", self.base)), token);
+        read_json(req.call().map_err(net)?)
+    }
+
     /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");

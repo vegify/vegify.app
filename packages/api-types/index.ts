@@ -175,6 +175,52 @@ export type LogEntryView = {
 	loggedAt: number,
 };
 
+/**
+ *  The viewer's FULL diary for authed device sync — a separate channel from the anonymous content pull,
+ *  which never carries private log data. The desktop reconciles this into its local cache via
+ *  `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild).
+ */
+export type LogPull = {
+	/**  Every live entry the viewer owns, newest logged first. */
+	entries: LogPullEntry[],
+};
+
+/**
+ *  One diary entry in the authed pull: everything to rebuild it on a replica VERBATIM — its frozen
+ *  nutrition snapshot (calories + per-nutrient rows) and its display amount. The snapshot is NOT
+ *  recomputed on apply; the server's is authoritative.
+ */
+export type LogPullEntry = {
+	/**  Entry id (client ULID, stable cross-replica). */
+	id: string,
+	/**  The logged ingredient (or a recipe's as-ingredient id). */
+	ingredientId: string,
+	/**  User-local calendar date 'YYYY-MM-DD'. */
+	date: string,
+	/**  Meal slot, if any. */
+	slot: string | null,
+	/**  Amount logged, canonical grams. */
+	grams: number | null,
+	/**  Display unit the user picked, if any. */
+	unit: string | null,
+	/**  Frozen per-100g calories snapshot. */
+	caloriesPer100g: number | null,
+	/**  When it was logged (ms epoch). */
+	loggedAt: number,
+	/**  The frozen per-nutrient snapshot. */
+	nutrients: LogPullNutrient[],
+};
+
+/**  One nutrient of a pulled entry's FROZEN snapshot (per 100 g) — applied verbatim, never recomputed. */
+export type LogPullNutrient = {
+	/**  Nutrient name. */
+	name: string,
+	/**  Frozen per-100g amount. */
+	amountPer100g: number | null,
+	/**  Display unit. */
+	unit: string,
+};
+
 /**  One DM as the thread screen renders it. */
 export type Message = {
 	/**  Message id. */
