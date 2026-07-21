@@ -498,6 +498,8 @@ impl Db {
                     client.content_delete(&token, "ingredients", payload_id(&payload)?)?
                 }
                 "restoreIngredient" => client.restore_ingredient(&token, payload_id(&payload)?)?,
+                "saveLogEntry" => client.log_post(&token, &payload)?,
+                "deleteLogEntry" => client.log_delete(&token, payload_id(&payload)?)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
             self.conn()
@@ -609,6 +611,15 @@ pub trait VegifyData {
     fn save_recipe(&self, input: SaveRecipeInput) -> Result<String, DataError>;
     /// Delete a recipe and its as-ingredient pair. Enqueues for sync.
     fn delete_recipe(&self, id: String) -> Result<(), DataError>;
+    /// One diary day (entries + rolled-up nutrient totals) from the local cache. Authed-only — the
+    /// diary is PRIVATE, so unlike content reads there is no anonymous fallback.
+    fn log_day(&self, date: String) -> Result<DayLog, DataError>;
+    /// The viewer's recently-logged ingredients, newest first, for the add-flow. Authed-only.
+    fn log_recents(&self, limit: f64) -> Result<Vec<RecentIngredient>, DataError>;
+    /// Log or update a diary entry (freezes the nutrition snapshot); returns its id. Enqueues for sync.
+    fn save_log_entry(&self, input: SaveLogEntryInput) -> Result<String, DataError>;
+    /// Soft-delete a diary entry. Enqueues for sync.
+    fn delete_log_entry(&self, id: String) -> Result<(), DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
@@ -784,6 +795,38 @@ impl VegifyData for Db {
         let uid = self.require_uid()?;
         self.with_conn(|conn| do_delete_recipe(conn, &id, Some(uid.as_str())).map_err(Into::into))?;
         self.enqueue("deleteRecipe", serde_json::json!({ "id": id }))?;
+        Ok(())
+    }
+
+    fn log_day(&self, date: String) -> Result<DayLog, DataError> {
+        let me = self.require_uid()?; // diary is authed-only (private)
+        let conn = self.conn();
+        vegify_core::log_day(&conn, &me, &date).map_err(Into::into)
+    }
+
+    fn log_recents(&self, limit: f64) -> Result<Vec<RecentIngredient>, DataError> {
+        let me = self.require_uid()?;
+        let conn = self.conn();
+        vegify_core::log_recents(&conn, &me, limit as i64).map_err(Into::into)
+    }
+
+    fn save_log_entry(&self, mut input: SaveLogEntryInput) -> Result<String, DataError> {
+        let uid = self.require_uid()?;
+        // Mint the client id up front for a create (see save_recipe) so the local row, the outbox entry,
+        // and the server row after push all share ONE id.
+        if input.id.is_none() {
+            input.id = Some(new_id());
+        }
+        let id =
+            self.with_conn(|conn| do_save_log_entry(conn, &input, &uid).map_err(Into::into))?;
+        self.enqueue("saveLogEntry", to_json(&input)?)?;
+        Ok(id)
+    }
+
+    fn delete_log_entry(&self, id: String) -> Result<(), DataError> {
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| do_delete_log_entry(conn, &id, &uid).map_err(Into::into))?;
+        self.enqueue("deleteLogEntry", serde_json::json!({ "id": id }))?;
         Ok(())
     }
 
@@ -1865,6 +1908,75 @@ mod tests {
         // deleteRecipe payload = { id } (drives DELETE /api/content/recipes?id=…).
         assert_eq!(rows[2].1["id"], serde_json::json!(rid));
         eprintln!("outbox FIFO {ops:?}; recipe payload's as-ingredient id matches the local row");
+    }
+
+    #[test]
+    fn logging_a_food_writes_locally_and_queues_the_push() {
+        let db_path = std::env::temp_dir().join("vegify-diary-outbox.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        sign_in_seed(&db);
+        let ops = |db: &Db| -> Vec<String> {
+            let conn = db.conn.lock().unwrap();
+            let mut stmt = conn.prepare("SELECT op FROM _outbox ORDER BY seq").unwrap();
+            let v = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            v
+        };
+
+        let beans = VegifyData::search_ingredients(&db, "Black Beans".into())
+            .expect("search")
+            .into_iter()
+            .find(|r| r.name == "Black Beans")
+            .expect("seeded Black Beans")
+            .id;
+
+        // Log 150 g on a clean date (avoids the seed's own diary rows).
+        let id = VegifyData::save_log_entry(
+            &db,
+            SaveLogEntryInput {
+                id: None,
+                ingredient_id: beans,
+                date: "2020-01-01".into(),
+                slot: None,
+                grams: 150.0,
+                unit: None,
+                logged_at: None,
+            },
+        )
+        .expect("log");
+
+        // The write hit the LOCAL cache: the day reads back the entry with its frozen snapshot.
+        let day = VegifyData::log_day(&db, "2020-01-01".into()).expect("day");
+        assert_eq!(day.entries.len(), 1, "local write is readable offline");
+        assert_eq!(day.entries[0].name, "Black Beans");
+        assert!(
+            day.calories.unwrap_or(0.0) > 0.0,
+            "the snapshot froze calories locally"
+        );
+        // …and it queued the push (drained to POST /api/log/entries by the sync engine).
+        assert!(
+            ops(&db).contains(&"saveLogEntry".to_string()),
+            "the diary write is queued for sync"
+        );
+
+        // Delete soft-deletes locally + queues the delete for sync.
+        VegifyData::delete_log_entry(&db, id).expect("delete");
+        assert!(
+            VegifyData::log_day(&db, "2020-01-01".into())
+                .unwrap()
+                .entries
+                .is_empty(),
+            "the deleted entry leaves the day"
+        );
+        assert!(
+            ops(&db).contains(&"deleteLogEntry".to_string()),
+            "the delete is queued for sync"
+        );
     }
 
     // Step 4: the content-API HTTP client against a running web shell (real network + Bearer auth).

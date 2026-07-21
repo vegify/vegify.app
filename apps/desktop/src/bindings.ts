@@ -228,6 +228,26 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  logDay(date: string): Promise<DayLog> {
+    return invoke("log_day", { date });
+  },
+
+  /** @throws {DataError} */
+  logRecents(limit: number | null): Promise<RecentIngredient[]> {
+    return invoke("log_recents", { limit });
+  },
+
+  /** @throws {DataError} */
+  saveLogEntry(input: SaveLogEntryInput): Promise<string> {
+    return invoke("save_log_entry", { input });
+  },
+
+  /** @throws {DataError} */
+  deleteLogEntry(id: string): Promise<null> {
+    return invoke("delete_log_entry", { id });
+  },
+
+  /** @throws {DataError} */
   syncNow(): Promise<null> {
     return invoke("sync_now");
   },
@@ -394,6 +414,22 @@ export type ConversationSummary = {
 };
 
 /**
+ *  One diary day: the entries plus server-computed nutrient totals, each rolled up from its entry via
+ *  the SAME recursive CTE recipes use (so a logged recipe expands through its nesting). PRIVATE — only
+ *  ever returned to its owner, never listed, never in the anonymous pull.
+ */
+export type DayLog = {
+	/**  The 'YYYY-MM-DD' this day covers (echoes the request). */
+	date: string,
+	/**  The day's live entries, newest logged first. */
+	entries: LogEntryView[],
+	/**  Total calories for the day; None when no entry carries calorie data. */
+	calories: number | null,
+	/**  Per-nutrient absolute totals for the day, ordered by nutrient name. */
+	totals: NutrientTotal[],
+};
+
+/**
  *  One bell row, as CONSUMERS see it: `payload` is the server's per-kind JSON re-serialized to a
  *  RAW STRING (consumers parse it by `kind`). The wire shape itself is [`Notification`]
  *  (`payload` as parsed JSON); this view exists so IPC/webview consumers get a string they can
@@ -509,6 +545,32 @@ export type IngredientSlugHit = {
 	username: string | null,
 };
 
+/**
+ *  One diary entry as read: what was logged, how much, and — when the logged row is itself a
+ *  recipe-as-ingredient — a link to that recipe (mirrors RecipeItem.recipe_id). `calories` is this
+ *  entry's own contribution (its per-100g rollup × grams/100), for the row display.
+ */
+export type LogEntryView = {
+	/**  The entry id. */
+	id: string,
+	/**  User-local calendar date 'YYYY-MM-DD'. */
+	date: string,
+	/**  Meal slot; currently unused by the UI. */
+	slot: string | null,
+	/**  The logged ingredient's id (a recipe's as-ingredient id when a recipe was logged). */
+	ingredientId: string,
+	/**  Ingredient (or recipe) display name at read time. */
+	name: string,
+	/**  Set when the logged row is itself a recipe-as-ingredient, so the UI links to the recipe page. */
+	recipeId: string | null,
+	/**  The amount logged (display form + canonical grams). */
+	amount: Amount,
+	/**  This entry's calorie contribution (per-100g rollup × grams/100), when calorie data exists. */
+	calories: number | null,
+	/**  When it was logged (ms epoch). */
+	loggedAt: number,
+};
+
 /**  One DM as the thread screen renders it. */
 export type Message = {
 	/**  Message id. */
@@ -519,6 +581,19 @@ export type Message = {
 	createdAt: number,
 	/**  True when the viewer sent it (clients render alignment off this, not off raw ids). */
 	mine: boolean,
+};
+
+/**
+ *  One nutrient's ABSOLUTE total for a day (summed across entries), keyed by name + unit. Distinct
+ *  from `Reading`, which is per-100g.
+ */
+export type NutrientTotal = {
+	/**  Nutrient name (e.g. "Iron"). */
+	name: string,
+	/**  Absolute amount for the day, in `unit`. */
+	amount: number | null,
+	/**  Display unit (g, mg, µg). */
+	unit: string,
 };
 
 /**
@@ -574,6 +649,27 @@ export type Reading = {
 	amountPer100g: number | null,
 	/**  Display unit for the quantity (g, mg, µg). */
 	unit: string,
+};
+
+/**
+ *  A recently/frequently logged ingredient, surfaced so re-logging is fast (the add-flow prepends
+ *  these before global search — personal ranking beats global relevance for logging speed).
+ */
+export type RecentIngredient = {
+	/**  The ingredient's id (a recipe's as-ingredient id when a recipe). */
+	ingredientId: string,
+	/**  Display name. */
+	name: string,
+	/**  Set when it's a recipe-as-ingredient (the UI can badge/link it). */
+	recipeId: string | null,
+	/**  How many times the user has logged it (lifetime, non-deleted). */
+	count: number,
+	/**  The most recent log's grams, to prefill the amount on re-log. */
+	lastGrams: number | null,
+	/**  The most recent log's display unit, if any. */
+	lastUnit: string | null,
+	/**  When it was last logged (ms epoch). */
+	lastLoggedAt: number,
 };
 
 /**  Recipe list/browse card — the light projection for grids. */
@@ -745,6 +841,34 @@ export type SaveIngredientInput = {
 	 *  so replicas never diverge. Serde-default so pre-slug payloads deserialize as None.
 	 */
 	slug?: string | null,
+};
+
+/**
+ *  Create-or-update payload for a diary entry. `id: Some` + an existing row updates it (owner-gated);
+ *  `id: Some` + no such row inserts WITH that id (an offline create's client ULID / a sync replay);
+ *  `id: None` mints a fresh ULID. Logging a recipe = passing its as-ingredient id as `ingredientId`.
+ */
+export type SaveLogEntryInput = {
+	/**
+	 *  Existing entry to update, or None to create (id minted). Client ids are honored so replays
+	 *  stay idempotent cross-replica.
+	 */
+	id: string | null,
+	/**  The ingredient — or a recipe's as_ingredient_id — being logged. */
+	ingredientId: string,
+	/**  User-local calendar date 'YYYY-MM-DD', chosen client-side (no server timezone modeling). */
+	date: string,
+	/**
+	 *  Meal slot (breakfast/lunch/dinner/snack); currently ignored by the UI. Serde-default so
+	 *  slot-less payloads deserialize.
+	 */
+	slot?: string | null,
+	/**  Amount logged, canonical grams. */
+	grams: number | null,
+	/**  Display unit the user picked; None = grams. Mirrors RecipeItemInput. */
+	unit?: string | null,
+	/**  When it was logged (ms epoch); None ⇒ now. Set by a sync replay to preserve ordering. */
+	loggedAt?: number | null,
 };
 
 /**
