@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS `log_entries` (
 	`slot` text,
 	`ingredient_id` text NOT NULL,
 	`amount_id` text NOT NULL,
+	`calories_per_100g` real,
 	`logged_at` integer,
 	`deleted_at` integer,
 	`created_at` integer,
@@ -207,3 +208,14 @@ CREATE TABLE IF NOT EXISTS `log_entries` (
 );
 CREATE INDEX IF NOT EXISTS `log_entries_user_date_idx` ON `log_entries` (`user_id`,`date`);
 CREATE INDEX IF NOT EXISTS `log_entries_user_logged_idx` ON `log_entries` (`user_id`,`logged_at`);
+CREATE TABLE IF NOT EXISTS `log_entry_nutrient` (
+	`id` text PRIMARY KEY NOT NULL,
+	`log_entry_id` text NOT NULL,
+	`name` text NOT NULL,
+	`amount_per_100g` real NOT NULL,
+	`unit` text NOT NULL,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`log_entry_id`) REFERENCES `log_entries`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE INDEX IF NOT EXISTS `log_entry_nutrient_entry_idx` ON `log_entry_nutrient` (`log_entry_id`);

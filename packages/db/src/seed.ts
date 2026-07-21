@@ -1,5 +1,8 @@
+import { eq } from "drizzle-orm"
+
 import { hashPassword } from "./auth"
 import { client, db } from "./index"
+import { getIngredientNutrition } from "./nutrition"
 import { one } from "./rows"
 import {
   amounts,
@@ -7,6 +10,7 @@ import {
   ingredientNutrient,
   ingredients,
   logEntries,
+  logEntryNutrient,
   nutrients,
   recipes,
   users
@@ -18,6 +22,7 @@ import {
 
 async function main() {
   // wipe (dev only — order respects FKs)
+  await db.delete(logEntryNutrient)
   await db.delete(logEntries)
   await db.delete(ingredientInRecipe)
   await db.delete(recipes)
@@ -302,12 +307,29 @@ async function main() {
     [unit, qty, grams]: [string, number, number]
   ) => {
     const a = await amount(unit, qty, grams)
-    await db.insert(logEntries).values({
-      userId: john.id,
-      date: today,
-      ingredientId,
-      amountId: a.id
-    })
+    const entry = one(
+      await db
+        .insert(logEntries)
+        .values({ userId: john.id, date: today, ingredientId, amountId: a.id })
+        .returning()
+    )
+    // Freeze the food's nutrition onto the entry (mirrors the DAL's do_save_log_entry) so the seeded
+    // day reads an immutable snapshot, not the live graph.
+    const n = await getIngredientNutrition(ingredientId)
+    await db
+      .update(logEntries)
+      .set({ caloriesPer100g: n.caloriesPer100g })
+      .where(eq(logEntries.id, entry.id))
+    if (n.readings.length) {
+      await db.insert(logEntryNutrient).values(
+        n.readings.map((r) => ({
+          logEntryId: entry.id,
+          name: r.name,
+          amountPer100g: r.amountPer100g,
+          unit: r.unit
+        }))
+      )
+    }
   }
   await logEntry(blackBeans.id, ["cup", 0.5, 130])
   await logEntry(doughIngredient.id, ["dough ball", 1, 260])

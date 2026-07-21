@@ -1264,13 +1264,24 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             slot TEXT,
             ingredient_id TEXT NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
             amount_id TEXT NOT NULL REFERENCES amounts(id) ON DELETE CASCADE,
+            calories_per_100g REAL,
             logged_at INTEGER,
             deleted_at INTEGER,
             created_at INTEGER,
             updated_at INTEGER
         );
         CREATE INDEX IF NOT EXISTS log_entries_user_date_idx ON log_entries(user_id, date);
-        CREATE INDEX IF NOT EXISTS log_entries_user_logged_idx ON log_entries(user_id, logged_at);",
+        CREATE INDEX IF NOT EXISTS log_entries_user_logged_idx ON log_entries(user_id, logged_at);
+        CREATE TABLE IF NOT EXISTS log_entry_nutrient (
+            id TEXT PRIMARY KEY,
+            log_entry_id TEXT NOT NULL REFERENCES log_entries(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            amount_per_100g REAL NOT NULL,
+            unit TEXT NOT NULL,
+            created_at INTEGER,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS log_entry_nutrient_entry_idx ON log_entry_nutrient(log_entry_id);",
     )?;
     // 1:1 direct messages + the notification feed (server-owned, like posts — online-only, never in
     // the shared content schema).

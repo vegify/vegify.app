@@ -219,9 +219,10 @@ export const ingredientInRecipe = sqliteTable(
 // ingredient_in_recipe's amount pattern (an `amounts` row via amountId — grams canonical, display unit
 // preserved). `slot` (breakfast/lunch/dinner/snack) is a cheap column the UI ignores for now.
 //
-// v0 accepted drift: entries reference LIVE ingredients, so editing a referenced ingredient later
-// changes historical days. Acceptable while the catalog is USDA-locked-ish; the durable fix
-// (copy-on-edit / versioning) lands with provenance in P2.5.
+// Historical integrity: each entry FREEZES the food's nutrition at log time into a snapshot
+// (calories_per_100g here + log_entry_nutrient rows), so editing a referenced recipe/ingredient later
+// never rewrites a past day. Ingredient VERSIONING (copy-on-edit) is a separate provenance concern
+// parked at P2.5 — not needed for log integrity, which the snapshot already guarantees.
 export const logEntries = sqliteTable(
   "log_entries",
   {
@@ -243,6 +244,11 @@ export const logEntries = sqliteTable(
     amountId: text("amount_id")
       .notNull()
       .references(() => amounts.id, { onDelete: "cascade" }),
+    // Snapshotted nutrition, FROZEN at log time so a later recipe/ingredient edit never rewrites a past
+    // day (the immutable half of the diary record): calories per 100 g of the logged food. The
+    // per-nutrient rows live in log_entry_nutrient. grams stays editable on the entry and rescales this
+    // frozen per-100g profile; the snapshot is re-taken only when the entry's ingredient itself changes.
+    caloriesPer100g: real("calories_per_100g"),
     // When the entry was recorded (ms epoch); orders "recents" and the day list. May be client-supplied
     // on offline create / sync replay so ordering survives round-trips.
     loggedAt: integer("logged_at", { mode: "timestamp_ms" }).$defaultFn(
@@ -257,6 +263,27 @@ export const logEntries = sqliteTable(
     index("log_entries_user_date_idx").on(t.userId, t.date),
     index("log_entries_user_logged_idx").on(t.userId, t.loggedAt)
   ]
+)
+
+// The per-nutrient half of a log entry's FROZEN nutrition snapshot (per 100 g of the logged food),
+// captured at log time via the same recursive rollup recipes use. This is what makes a logged day an
+// immutable record: day totals read these rows (scaled by the entry's grams), NOT the live ingredient
+// graph, so editing a recipe or ingredient later never moves a past day. Rewritten only when the
+// entry's ingredient changes (do_save_log_entry), never on a grams/date edit or a source-food edit.
+export const logEntryNutrient = sqliteTable(
+  "log_entry_nutrient",
+  {
+    id: pk(),
+    logEntryId: text("log_entry_id")
+      .notNull()
+      .references(() => logEntries.id, { onDelete: "cascade" }),
+    // Nutrient display name at log time (denormalized — the snapshot is self-contained, not a live FK).
+    name: text("name").notNull(),
+    amountPer100g: real("amount_per_100g").notNull(),
+    unit: text("unit").notNull(),
+    ...timestamps
+  },
+  (t) => [index("log_entry_nutrient_entry_idx").on(t.logEntryId)]
 )
 
 export const nutrients = sqliteTable("nutrients", {
@@ -347,7 +374,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   logEntries: many(logEntries)
 }))
 
-export const logEntriesRelations = relations(logEntries, ({ one }) => ({
+export const logEntriesRelations = relations(logEntries, ({ one, many }) => ({
   user: one(users, {
     fields: [logEntries.userId],
     references: [users.id]
@@ -359,8 +386,19 @@ export const logEntriesRelations = relations(logEntries, ({ one }) => ({
   amount: one(amounts, {
     fields: [logEntries.amountId],
     references: [amounts.id]
-  })
+  }),
+  nutrients: many(logEntryNutrient)
 }))
+
+export const logEntryNutrientRelations = relations(
+  logEntryNutrient,
+  ({ one }) => ({
+    logEntry: one(logEntries, {
+      fields: [logEntryNutrient.logEntryId],
+      references: [logEntries.id]
+    })
+  })
+)
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
