@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react"
 import {
   Bell,
+  CalendarDays,
   Carrot,
   House,
   LogOut,
@@ -47,6 +48,13 @@ export type AppShellNavItem = {
  */
 export const APP_NAV: AppShellNavItem[] = [
   { key: "home", label: "Home", icon: House, href: "/", inMobileBar: true },
+  {
+    key: "diary",
+    label: "Diary",
+    icon: CalendarDays,
+    href: "/diary",
+    inMobileBar: true
+  },
   {
     key: "explore",
     label: "Explore",

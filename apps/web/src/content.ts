@@ -10,17 +10,20 @@
 import type {
   AggregatedNutrition,
   Amount,
+  DayLog,
   IngredientCard,
   IngredientEditData,
   IngredientSlugHit,
   Profile,
   Reading,
+  RecentIngredient,
   RecipeCard,
   RecipeEditData,
   RecipeEditItem,
   RecipeItem,
   RecipeSlugHit,
   RecipeView,
+  SaveLogEntryInput,
   UploadTicket,
   Visibility
 } from "@vegify/api-types"
@@ -36,17 +39,20 @@ import { api, apiUrl } from "./api"
 export type {
   AggregatedNutrition,
   Amount,
+  DayLog,
   IngredientCard,
   IngredientEditData,
   IngredientSlugHit,
   Profile,
   Reading,
+  RecentIngredient,
   RecipeCard,
   RecipeEditData,
   RecipeEditItem,
   RecipeItem,
   RecipeSlugHit,
   RecipeView,
+  SaveLogEntryInput,
   Visibility
 }
 
@@ -115,6 +121,19 @@ export const getBlogPost = (slug: string) =>
   api<BlogPostData | null>(
     `/api/content/blog-detail?slug=${encodeURIComponent(slug)}`
   )
+
+// --- diary (PRIVATE per-user food log; the backend hard-401s without a session, and it is never in
+// the anonymous content pull or the sitemap). `date` is a user-local YYYY-MM-DD chosen client-side. ---
+export const getLogDay = (date: string) =>
+  api<DayLog>(`/api/log/day?date=${encodeURIComponent(date)}`)
+export const getLogRecents = (limit = 20) =>
+  api<RecentIngredient[]>(`/api/log/recents?limit=${limit}`)
+export const saveLogEntry = (input: SaveLogEntryInput): Promise<string> =>
+  api<{ id: string }>("/api/log/entries", { method: "POST", body: input }).then(
+    (r) => r.id
+  )
+export const deleteLogEntry = (id: string): Promise<void> =>
+  api(`/api/log/entries${byId(id)}`, { method: "DELETE" }).then(() => undefined)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 
