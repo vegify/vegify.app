@@ -1173,6 +1173,10 @@ pub struct DayLog {
     pub calories: Option<f64>,
     /// Per-nutrient absolute totals for the day, ordered by nutrient name.
     pub totals: Vec<NutrientTotal>,
+    /// The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when
+    /// unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets
+    /// in one payload. Match a `total` to its `target` by nutrient name.
+    pub targets: Vec<NutrientTarget>,
 }
 
 #[derive(Serialize, Type)]
@@ -1417,11 +1421,17 @@ pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, E
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    // 3. The viewer's personalized targets (profile-driven; generic-adult when unset). The age bracket
+    // uses the VIEWED day's year — pure and clock-free (the date is already validated 'YYYY-MM-DD').
+    let year: i64 = date.get(0..4).and_then(|y| y.parse().ok()).unwrap_or(1970);
+    let target_list = targets(&get_nutrition_profile(conn, user_id)?, year);
+
     Ok(DayLog {
         date: date.to_string(),
         entries,
         calories: day_calories,
         totals,
+        targets: target_list,
     })
 }
 
@@ -1698,6 +1708,496 @@ fn load_ingredient_edit(
         },
         owner,
     )))
+}
+
+// ================================================================================================
+// NUTRITION PROFILE + PERSONALIZED VEGAN-AWARE TARGETS (P1.3)
+//
+// PRIVATE per-user data, exactly like the diary above: a profile selects which Dietary Reference
+// Intake (DRI) column to read, and `targets()` turns it into per-nutrient daily goals. TWO things
+// make these targets different from the FDA "%DV" shown on recipe/ingredient labels (a separate,
+// standardized concept — NEVER conflate the two):
+//   1. They are PERSONALIZED to age / sex / weight / pregnancy / lactation via the IOM/NASEM DRIs.
+//   2. They carry a VEGAN OVERLAY that no mainstream tracker ships by default — raising iron and
+//      zinc for the lower bioavailability of plant (non-heme / high-phytate) sources, nudging
+//      protein for plant digestibility, and modelling B12 / vitamin D / omega-3 as supplement-aware.
+//
+// EVERY constant below is transcribed from a primary source (NIH Office of Dietary Supplements
+// health-professional fact sheets, which tabulate the IOM/NASEM DRIs) and cited inline. Amounts are
+// expressed in the SAME unit the ingredient catalog stores that nutrient in (see the NUTRIENTS map in
+// crates/usda-importer), so a `NutrientTotal` compares to its target with no unit conversion — e.g.
+// vitamin D is in IU because USDA data is, not µg. Verified against the sources on 2026-07-21.
+// ================================================================================================
+
+/// Which DRI reference column to read. Male and female adult nutrient requirements genuinely differ
+/// (iron, zinc, calcium, …), so a target must know which table applies. This is a NUTRITION parameter,
+/// NOT a statement of gender identity: it is optional, falls back to a protective generic tier when
+/// unset, and any individual target stays overridable.
+#[derive(Serialize, Deserialize, Type, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum DriSex {
+    /// Read the male DRI column.
+    Male,
+    /// Read the female DRI column.
+    Female,
+}
+
+impl DriSex {
+    fn as_str(self) -> &'static str {
+        match self {
+            DriSex::Male => "male",
+            DriSex::Female => "female",
+        }
+    }
+    fn from_db(s: &str) -> Option<Self> {
+        match s {
+            "male" => Some(DriSex::Male),
+            "female" => Some(DriSex::Female),
+            _ => None,
+        }
+    }
+}
+
+/// The per-user nutrition profile. Every field is OPTIONAL — an empty profile (or an absent field)
+/// yields the generic-adult target tier, so targets ALWAYS exist. PRIVATE: only ever read/written by
+/// its owner, never listed or in the anonymous pull. Doubles as the write payload (`save_profile`) and
+/// the read shape (`get_profile`); `#[serde(default)]` lets a partial `{}` deserialize.
+#[derive(Serialize, Deserialize, Type, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NutritionProfile {
+    /// Birth year → coarse DRI age bracket (19–50 / 51–70 / 71+). None ⇒ the 19–50 adult tier.
+    pub birth_year: Option<i64>,
+    /// Which DRI column to read. None ⇒ the protective generic tier (max of the sexes, per nutrient).
+    pub dri_sex: Option<DriSex>,
+    /// Body weight (kg) for the protein g/kg target. None ⇒ the reference-weight gram RDA.
+    pub weight_kg: Option<f64>,
+    /// Pregnancy raises the iron / iodine / zinc / B12 / selenium DRIs; overrides the sex column.
+    pub pregnancy: bool,
+    /// Lactation DRIs (distinct from pregnancy); overrides the sex column.
+    pub lactation: bool,
+    /// Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered.
+    pub supplement_b12: bool,
+    /// Takes a vitamin D supplement ⇒ the vitamin D target shows as covered.
+    pub supplement_vit_d: bool,
+    /// Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.
+    pub supplement_algae_oil: bool,
+}
+
+/// Whether a target is an RDA (meets ~97–98% of the population's needs) or an AI (Adequate Intake,
+/// used where the evidence can't set an RDA — e.g. omega-3 ALA). Surfaced so the UI can be honest.
+#[derive(Serialize, Deserialize, Type, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum TargetBasis {
+    /// Recommended Dietary Allowance — meets the needs of ~97–98% of healthy people.
+    Rda,
+    /// Adequate Intake — used where the evidence can't establish an RDA (e.g. omega-3 ALA).
+    Ai,
+}
+
+/// One personalized daily target for a nutrient. `name`/`unit` match the ingredient catalog's naming
+/// (crates/usda-importer NUTRIENTS) so a day `NutrientTotal` compares to it directly.
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NutrientTarget {
+    /// Canonical nutrient name, matching `NutrientTotal.name` (e.g. "Iron", "Vitamin B12").
+    pub name: String,
+    /// The personalized daily goal, in `unit`.
+    pub amount: f64,
+    /// Unit — the catalog's storage unit for this nutrient ("mg" | "µg" | "g" | "IU").
+    pub unit: String,
+    /// RDA vs AI, for honest labelling.
+    pub basis: TargetBasis,
+    /// True when the vegan bioavailability overlay raised this above the plain DRI (iron, zinc, protein).
+    pub vegan_adjusted: bool,
+    /// True when a logged supplement flag covers this nutrient (B12 / vitamin D) — display it as met by
+    /// supplement rather than as a food gap.
+    pub supplement_covered: bool,
+    /// Short guidance note (vegan-specific context). Guidance-toned, never shaming. None = no note.
+    pub note: Option<String>,
+}
+
+/// Adult DRI age brackets (this app targets adults; a <19 age folds into the 19–50 tier).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AgeBracket {
+    A19to50,
+    A51to70,
+    A71plus,
+}
+
+fn age_bracket(birth_year: Option<i64>, current_year: i64) -> AgeBracket {
+    match birth_year {
+        Some(by) => {
+            let age = current_year - by;
+            if age >= 71 {
+                AgeBracket::A71plus
+            } else if age >= 51 {
+                AgeBracket::A51to70
+            } else {
+                AgeBracket::A19to50
+            }
+        }
+        None => AgeBracket::A19to50,
+    }
+}
+
+/// Round to one decimal place (targets read as e.g. 14.4 mg, not 14.4000000001).
+fn round1(x: f64) -> f64 {
+    (x * 10.0).round() / 10.0
+}
+
+/// Compute this profile's personalized daily nutrient targets, with the vegan overlay. `current_year`
+/// resolves the age bracket from `birth_year` (callers pass the year of the day in view / today), so
+/// the function stays pure and clock-free.
+///
+/// Coverage is the "vegan-critical" set the roadmap calls out — the nutrients where a plant-based diet
+/// meaningfully changes the target or the risk. Nutrients the catalog tracks but that need no personal
+/// adjustment (most B-vitamins, magnesium, potassium, …) are intentionally NOT targeted here yet; the
+/// FDA %DV panel still covers them. Extending coverage = adding to this list with cited constants.
+pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTarget> {
+    let sex = profile.dri_sex;
+    let bracket = age_bracket(profile.birth_year, current_year);
+    let preg = profile.pregnancy;
+    let lact = profile.lactation;
+
+    // Pick a sex-specific value. When sex is unset, use the MAX of the two adult values so the generic
+    // target never UNDER-recommends for either sex (the protective default for an adequacy tracker).
+    // Pregnancy/lactation values, when set, are applied at each nutrient regardless of `sex`.
+    let by_sex = |male: f64, female: f64| -> f64 {
+        match sex {
+            Some(DriSex::Male) => male,
+            Some(DriSex::Female) => female,
+            None => male.max(female),
+        }
+    };
+
+    let mut out = Vec::new();
+
+    // IRON — RDA mg/day. IOM (2001) DRI; NIH ODS Iron (Table 2): men 19+ 8; women 19–50 18, women 51+ 8;
+    // pregnancy 27; lactation 9. VEGAN OVERLAY ×1.8: "The requirement for iron is 1.8 times higher for
+    // people who follow vegetarian diets … because heme iron from meat is more bioavailable than nonheme
+    // iron from plant-based foods" (NIH ODS Iron; IOM 2001). A vegan eats only non-heme iron, so it
+    // applies to every profile.
+    {
+        let base = if preg {
+            27.0
+        } else if lact {
+            9.0
+        } else if bracket == AgeBracket::A19to50 {
+            by_sex(8.0, 18.0)
+        } else {
+            8.0 // men 8 at every age; women drop to 8 post-menopause (51+)
+        };
+        out.push(NutrientTarget {
+            name: "Iron".into(),
+            amount: round1(base * 1.8),
+            unit: "mg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: true,
+            supplement_covered: false,
+            note: Some(
+                "Plant (non-heme) iron absorbs less readily, so the target is 1.8× the standard RDA. \
+                 Pairing iron-rich foods with vitamin C boosts absorption."
+                    .into(),
+            ),
+        });
+    }
+
+    // ZINC — RDA mg/day. IOM (2001) DRI; NIH ODS Zinc (Table 1): men 11; women 8; pregnancy 11;
+    // lactation 12. VEGAN OVERLAY ×1.5: the IOM (2001) DRI notes zinc requirements may be "as much as
+    // 50%" greater for vegetarians whose diets are high in phytate (which binds zinc); NIH ODS Zinc
+    // confirms the phytate mechanism and that vegetarians run lower zinc intake/status. Applied to all.
+    {
+        let base = if preg {
+            11.0
+        } else if lact {
+            12.0
+        } else {
+            by_sex(11.0, 8.0)
+        };
+        out.push(NutrientTarget {
+            name: "Zinc".into(),
+            amount: round1(base * 1.5),
+            unit: "mg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: true,
+            supplement_covered: false,
+            note: Some(
+                "Phytates in grains and legumes lower zinc absorption, so the target adds ~50% over the \
+                 RDA. Soaking, sprouting, and leavening (sourdough) help release it."
+                    .into(),
+            ),
+        });
+    }
+
+    // VITAMIN B12 — RDA µg/day. IOM (1998) DRI; NIH ODS Vitamin B12 (Table 1): adults 2.4; pregnancy 2.6;
+    // lactation 2.8. NO bioavailability multiplier — the vegan issue is ABSENCE, not absorption ("natural
+    // food sources of vitamin B12 are limited to animal foods"; fortified foods/supplements "substantially
+    // reduce the risk of deficiency", NIH ODS). We surface supplement coverage instead of inflating it.
+    {
+        let base = if preg {
+            2.6
+        } else if lact {
+            2.8
+        } else {
+            2.4
+        };
+        out.push(NutrientTarget {
+            name: "Vitamin B12".into(),
+            amount: base,
+            unit: "µg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: false,
+            supplement_covered: profile.supplement_b12,
+            note: Some(if profile.supplement_b12 {
+                "Covered by your B12 supplement — the non-negotiable one for vegans (no reliable plant \
+                 food source)."
+                    .into()
+            } else {
+                "B12 has no reliable plant food source. A supplement or consistently fortified foods \
+                 (nutritional yeast, fortified plant milk) are essential on a vegan diet."
+                    .into()
+            }),
+        });
+    }
+
+    // CALCIUM — RDA mg/day. IOM (2011) DRI; NIH ODS Calcium (Table 1): men 19–70 1000, men 71+ 1200;
+    // women 19–50 1000, women 51+ 1200; pregnancy/lactation 1000 (adults). No vegan multiplier (the DRI
+    // is the same) — but plant-based intake often runs low, so we flag it as a watch nutrient.
+    {
+        let base = if preg || lact {
+            1000.0
+        } else {
+            match (sex, bracket) {
+                (_, AgeBracket::A71plus) => 1200.0,
+                (Some(DriSex::Female), AgeBracket::A51to70) => 1200.0,
+                (None, AgeBracket::A51to70) => 1200.0, // protective generic (women 51–70 = 1200)
+                _ => 1000.0,
+            }
+        };
+        out.push(NutrientTarget {
+            name: "Calcium".into(),
+            amount: base,
+            unit: "mg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: false,
+            supplement_covered: false,
+            note: Some(
+                "Calcium-set tofu, fortified plant milks, tahini, almonds, and low-oxalate greens (kale, \
+                 bok choy) are dependable plant sources."
+                    .into(),
+            ),
+        });
+    }
+
+    // IODINE — RDA µg/day. IOM (2001) DRI; NIH ODS Iodine (Table 1): adults 150; pregnancy 220;
+    // lactation 290. No multiplier, but vegans are a named at-risk group ("Vegans … might not obtain
+    // sufficient amounts of iodine"), and seaweed iodine is wildly variable — iodized salt or a
+    // supplement is the reliable route (NIH ODS Iodine). NOTE: USDA plant data carries no iodine, so
+    // this target usually reads 0 from food logs today — which is itself honest and a reason to supplement.
+    {
+        let base = if preg {
+            220.0
+        } else if lact {
+            290.0
+        } else {
+            150.0
+        };
+        out.push(NutrientTarget {
+            name: "Iodine".into(),
+            amount: base,
+            unit: "µg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: false,
+            supplement_covered: false,
+            note: Some(
+                "Use iodized salt or a supplement — seaweed iodine varies enormously and most plant \
+                 foods carry little."
+                    .into(),
+            ),
+        });
+    }
+
+    // VITAMIN D — RDA IU/day (the catalog/USDA store vitamin D in IU; 1 µg = 40 IU). IOM (2011) DRI;
+    // NIH ODS Vitamin D: ages 19–70 600 IU (15 µg); 71+ 800 IU (20 µg); pregnancy/lactation 600 IU. Few
+    // plant foods carry vitamin D (sun, fortified foods, or a supplement), so it's supplement-aware.
+    {
+        let base = if bracket == AgeBracket::A71plus && !preg && !lact {
+            800.0
+        } else {
+            600.0
+        };
+        out.push(NutrientTarget {
+            name: "Vitamin D".into(),
+            amount: base,
+            unit: "IU".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: false,
+            supplement_covered: profile.supplement_vit_d,
+            note: Some(if profile.supplement_vit_d {
+                "Covered by your vitamin D supplement (a vegan D3 from lichen, or D2)."
+                    .into()
+            } else {
+                "Sunlight, fortified foods, or a vegan D3 (lichen) / D2 supplement — plant foods carry \
+                 little vitamin D."
+                    .into()
+            }),
+        });
+    }
+
+    // SELENIUM — RDA µg/day. IOM (2000) DRI; NIH ODS Selenium (Table 1): adults 55; pregnancy 60;
+    // lactation 70. No vegan multiplier; intake tracks soil selenium, and a couple of Brazil nuts cover it.
+    {
+        let base = if preg {
+            60.0
+        } else if lact {
+            70.0
+        } else {
+            55.0
+        };
+        out.push(NutrientTarget {
+            name: "Selenium".into(),
+            amount: base,
+            unit: "µg".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted: false,
+            supplement_covered: false,
+            note: Some("A couple of Brazil nuts a day easily covers selenium.".into()),
+        });
+    }
+
+    // OMEGA-3 (ALA) — AI g/day (an Adequate Intake, not an RDA — the evidence can't set an RDA). IOM
+    // (2002/2005) Macronutrients DRI; NIH ODS Omega-3 (Table 1): men 1.6; women 1.1; pregnancy 1.4;
+    // lactation 1.3. ALA→EPA/DHA conversion is limited (<15%, NIH ODS), so we surface an algae-oil
+    // (direct EPA+DHA) note. Target name matches the USDA nutrient "Omega-3 Fatty Acids" (18:3 n-3, ALA).
+    {
+        let base = if preg {
+            1.4
+        } else if lact {
+            1.3
+        } else {
+            by_sex(1.6, 1.1)
+        };
+        out.push(NutrientTarget {
+            name: "Omega-3 Fatty Acids".into(),
+            amount: base,
+            unit: "g".into(),
+            basis: TargetBasis::Ai,
+            vegan_adjusted: false,
+            supplement_covered: profile.supplement_algae_oil,
+            note: Some(if profile.supplement_algae_oil {
+                "ALA from flax, chia, hemp, and walnuts, plus your algae-oil supplement for direct EPA+DHA."
+                    .into()
+            } else {
+                "Flax, chia, hemp, and walnuts supply ALA; the body converts little to EPA/DHA, so many \
+                 vegans add algae oil."
+                    .into()
+            }),
+        });
+    }
+
+    // PROTEIN — RDA. IOM (2005) Macronutrients DRI: 0.8 g/kg body weight/day for adults (reference-weight
+    // RDAs 56 g men / 46 g women). VEGAN OVERLAY: plant proteins average lower digestibility (DIAAS) and
+    // some run low in lysine, so a modest bump is prudent — we target 1.0 g/kg when a weight is known (the
+    // conservative low end of the commonly-cited 1.0–1.2 g/kg plant range; the 0.8 RDA assumes mixed
+    // high-quality protein). Without a weight we fall back to the reference gram RDA and DON'T claim the
+    // vegan adjustment (no g/kg is possible).
+    {
+        let (amount, vegan_adjusted, note) = match profile.weight_kg {
+            Some(kg) if kg > 0.0 => (
+                round1(kg * 1.0),
+                true,
+                "Set to 1.0 g/kg — a little above the 0.8 g/kg RDA to offset plant protein's lower \
+                 digestibility. Legumes, soy, seitan, and grains together cover all amino acids."
+                    .to_string(),
+            ),
+            _ => (
+                by_sex(56.0, 46.0),
+                false,
+                "Add your weight in Settings for a body-weight-based protein target (plant-adjusted). \
+                 Legumes, soy, and grains together supply complete protein."
+                    .to_string(),
+            ),
+        };
+        out.push(NutrientTarget {
+            name: "Protein".into(),
+            amount,
+            unit: "g".into(),
+            basis: TargetBasis::Rda,
+            vegan_adjusted,
+            supplement_covered: false,
+            note: Some(note),
+        });
+    }
+
+    out
+}
+
+/// Read a user's nutrition profile. Returns a default (all-None/false ⇒ generic-adult targets) when no
+/// row exists, so callers never branch on presence. PRIVATE — owner-scoped by the caller's auth.
+pub fn get_nutrition_profile(conn: &Connection, user_id: &str) -> Result<NutritionProfile, Error> {
+    let p = conn
+        .query_row(
+            "SELECT birth_year, dri_sex, weight_kg, pregnancy, lactation,
+                    supplement_b12, supplement_vit_d, supplement_algae_oil
+             FROM profiles WHERE user_id = ?1",
+            [user_id],
+            |row| {
+                Ok(NutritionProfile {
+                    birth_year: row.get(0)?,
+                    dri_sex: row
+                        .get::<_, Option<String>>(1)?
+                        .as_deref()
+                        .and_then(DriSex::from_db),
+                    weight_kg: row.get(2)?,
+                    pregnancy: row.get::<_, Option<bool>>(3)?.unwrap_or(false),
+                    lactation: row.get::<_, Option<bool>>(4)?.unwrap_or(false),
+                    supplement_b12: row.get::<_, Option<bool>>(5)?.unwrap_or(false),
+                    supplement_vit_d: row.get::<_, Option<bool>>(6)?.unwrap_or(false),
+                    supplement_algae_oil: row.get::<_, Option<bool>>(7)?.unwrap_or(false),
+                })
+            },
+        )
+        .optional()?;
+    Ok(p.unwrap_or_default())
+}
+
+/// Upsert a user's nutrition profile (the single row per user). Owner-scoped by construction — the
+/// caller passes the authenticated `user_id`.
+pub fn save_nutrition_profile(
+    conn: &Connection,
+    user_id: &str,
+    input: &NutritionProfile,
+) -> Result<(), Error> {
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO profiles
+            (user_id, birth_year, dri_sex, weight_kg, pregnancy, lactation,
+             supplement_b12, supplement_vit_d, supplement_algae_oil, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+         ON CONFLICT(user_id) DO UPDATE SET
+            birth_year = excluded.birth_year,
+            dri_sex = excluded.dri_sex,
+            weight_kg = excluded.weight_kg,
+            pregnancy = excluded.pregnancy,
+            lactation = excluded.lactation,
+            supplement_b12 = excluded.supplement_b12,
+            supplement_vit_d = excluded.supplement_vit_d,
+            supplement_algae_oil = excluded.supplement_algae_oil,
+            updated_at = excluded.updated_at",
+        params![
+            user_id,
+            input.birth_year,
+            input.dri_sex.map(|s| s.as_str()),
+            input.weight_kg,
+            input.pregnancy,
+            input.lactation,
+            input.supplement_b12,
+            input.supplement_vit_d,
+            input.supplement_algae_oil,
+            now,
+        ],
+    )?;
+    Ok(())
 }
 
 // ---- reads (free fns, viewer-scoped; the desktop trait + the server handlers are thin wrappers) ----
@@ -3056,5 +3556,262 @@ mod log_tests {
             log_day(&c, "u1", "2026-07-20").unwrap().entries.is_empty(),
             "an empty pull clears the diary"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::float_cmp, clippy::panic, missing_docs)] // test code: the asserts ARE the checks
+mod targets_tests {
+    use super::*;
+
+    /// The real client schema (drift-pinned to Drizzle) now carries the `profiles` table too.
+    const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email) VALUES ('u1', 'Ada', 'a@x')",
+            [],
+        )
+        .unwrap();
+        c
+    }
+
+    fn find<'a>(ts: &'a [NutrientTarget], name: &str) -> &'a NutrientTarget {
+        ts.iter()
+            .find(|t| t.name == name)
+            .unwrap_or_else(|| panic!("target {name} present"))
+    }
+    fn amount(ts: &[NutrientTarget], name: &str) -> f64 {
+        find(ts, name).amount
+    }
+    /// Float compare with a tiny epsilon (targets are rounded to 0.1).
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    // A profile that only sets what a test cares about; everything else is the generic default.
+    fn profile(f: impl FnOnce(&mut NutritionProfile)) -> NutritionProfile {
+        let mut p = NutritionProfile::default();
+        f(&mut p);
+        p
+    }
+
+    #[test]
+    fn generic_empty_profile_uses_protective_defaults() {
+        // Unknown sex ⇒ the higher of the two adult DRIs per nutrient (never under-recommend).
+        let t = targets(&NutritionProfile::default(), 2026);
+        assert!(
+            close(amount(&t, "Iron"), 32.4),
+            "18 (female 19–50) × 1.8 vegan"
+        );
+        assert!(close(amount(&t, "Zinc"), 16.5), "11 (male) × 1.5 vegan");
+        assert!(close(amount(&t, "Calcium"), 1000.0));
+        assert!(close(amount(&t, "Iodine"), 150.0));
+        assert!(close(amount(&t, "Selenium"), 55.0));
+        assert!(close(amount(&t, "Vitamin B12"), 2.4));
+        assert!(close(amount(&t, "Vitamin D"), 600.0), "IU, ages 19–70");
+        assert!(
+            close(amount(&t, "Omega-3 Fatty Acids"), 1.6),
+            "max(1.6, 1.1) AI"
+        );
+        assert!(
+            close(amount(&t, "Protein"), 56.0),
+            "reference male gram RDA (no weight)"
+        );
+        assert_eq!(t.len(), 9, "the nine vegan-critical targets");
+    }
+
+    #[test]
+    fn adult_male_gets_lower_iron_and_weight_based_protein() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Male);
+            p.birth_year = Some(1990); // age 36 in 2026
+            p.weight_kg = Some(80.0);
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Iron"), 14.4), "8 (male) × 1.8");
+        assert!(close(amount(&t, "Zinc"), 16.5), "11 × 1.5");
+        assert!(close(amount(&t, "Calcium"), 1000.0));
+        assert!(close(amount(&t, "Vitamin D"), 600.0));
+        let protein = find(&t, "Protein");
+        assert!(close(protein.amount, 80.0), "1.0 g/kg × 80 kg");
+        assert!(
+            protein.vegan_adjusted,
+            "g/kg target claims the plant adjustment"
+        );
+    }
+
+    #[test]
+    fn premenopausal_female_high_iron_low_zinc_reference_protein() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Female);
+            p.birth_year = Some(1996); // age 30
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Iron"), 32.4), "18 × 1.8");
+        assert!(close(amount(&t, "Zinc"), 12.0), "8 (female) × 1.5");
+        assert!(close(amount(&t, "Omega-3 Fatty Acids"), 1.1), "female AI");
+        let protein = find(&t, "Protein");
+        assert!(
+            close(protein.amount, 46.0),
+            "reference female gram RDA (no weight)"
+        );
+        assert!(
+            !protein.vegan_adjusted,
+            "no g/kg without a weight ⇒ no adjustment claim"
+        );
+    }
+
+    #[test]
+    fn postmenopausal_female_iron_drops_calcium_rises() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Female);
+            p.birth_year = Some(1966); // age 60 → 51–70 bracket
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Iron"), 14.4), "8 × 1.8 post-menopause");
+        assert!(close(amount(&t, "Calcium"), 1200.0), "women 51+ = 1200");
+    }
+
+    #[test]
+    fn elderly_male_vitamin_d_and_calcium_rise() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Male);
+            p.birth_year = Some(1950); // age 76 → 71+
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Vitamin D"), 800.0), "71+ = 800 IU");
+        assert!(close(amount(&t, "Calcium"), 1200.0), "men 71+ = 1200");
+    }
+
+    #[test]
+    fn pregnancy_raises_iron_iodine_selenium_b12() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Female);
+            p.pregnancy = true;
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Iron"), 48.6), "27 × 1.8");
+        assert!(close(amount(&t, "Iodine"), 220.0));
+        assert!(close(amount(&t, "Selenium"), 60.0));
+        assert!(close(amount(&t, "Zinc"), 16.5), "11 × 1.5");
+        assert!(close(amount(&t, "Vitamin B12"), 2.6));
+    }
+
+    #[test]
+    fn lactation_values() {
+        let p = profile(|p| {
+            p.dri_sex = Some(DriSex::Female);
+            p.lactation = true;
+        });
+        let t = targets(&p, 2026);
+        assert!(close(amount(&t, "Iron"), 16.2), "9 × 1.8");
+        assert!(close(amount(&t, "Iodine"), 290.0));
+        assert!(close(amount(&t, "Selenium"), 70.0));
+        assert!(close(amount(&t, "Zinc"), 18.0), "12 × 1.5");
+        assert!(close(amount(&t, "Vitamin B12"), 2.8));
+        assert!(close(amount(&t, "Omega-3 Fatty Acids"), 1.3));
+    }
+
+    #[test]
+    fn supplement_flags_mark_covered() {
+        let p = profile(|p| {
+            p.supplement_b12 = true;
+            p.supplement_vit_d = true;
+            p.supplement_algae_oil = true;
+        });
+        let t = targets(&p, 2026);
+        assert!(find(&t, "Vitamin B12").supplement_covered);
+        assert!(find(&t, "Vitamin D").supplement_covered);
+        assert!(find(&t, "Omega-3 Fatty Acids").supplement_covered);
+        // A nutrient with no supplement concept is never "covered".
+        assert!(!find(&t, "Iron").supplement_covered);
+    }
+
+    #[test]
+    fn overlay_flags_and_basis_are_honest() {
+        let t = targets(&NutritionProfile::default(), 2026);
+        assert!(find(&t, "Iron").vegan_adjusted);
+        assert!(find(&t, "Zinc").vegan_adjusted);
+        assert!(
+            !find(&t, "Calcium").vegan_adjusted,
+            "calcium DRI is unchanged for vegans"
+        );
+        assert!(!find(&t, "Iodine").vegan_adjusted);
+        assert_eq!(
+            find(&t, "Omega-3 Fatty Acids").basis,
+            TargetBasis::Ai,
+            "ALA is an AI"
+        );
+        assert_eq!(find(&t, "Iron").basis, TargetBasis::Rda);
+    }
+
+    #[test]
+    fn every_target_name_matches_a_catalog_nutrient() {
+        // The matching contract: a target's `name` must equal a nutrient name the catalog uses (the
+        // USDA importer NUTRIENTS map), so a day total lines up with its target by name. Iodine is a
+        // valid catalog name even though USDA plant data doesn't populate it yet.
+        let catalog = [
+            "Iron",
+            "Zinc",
+            "Vitamin B12",
+            "Calcium",
+            "Iodine",
+            "Vitamin D",
+            "Selenium",
+            "Omega-3 Fatty Acids",
+            "Protein",
+        ];
+        for t in targets(&NutritionProfile::default(), 2026) {
+            assert!(
+                catalog.contains(&t.name.as_str()),
+                "unknown target name {}",
+                t.name
+            );
+        }
+    }
+
+    #[test]
+    fn save_and_get_nutrition_profile_round_trips() {
+        let c = conn();
+        // Absent profile ⇒ the generic default (all None/false).
+        let empty = get_nutrition_profile(&c, "u1").unwrap();
+        assert_eq!(empty.birth_year, None);
+        assert!(!empty.pregnancy && !empty.supplement_b12);
+
+        let p = profile(|p| {
+            p.birth_year = Some(1990);
+            p.dri_sex = Some(DriSex::Male);
+            p.weight_kg = Some(78.5);
+            p.supplement_b12 = true;
+        });
+        save_nutrition_profile(&c, "u1", &p).unwrap();
+        let got = get_nutrition_profile(&c, "u1").unwrap();
+        assert_eq!(got.birth_year, Some(1990));
+        assert_eq!(got.dri_sex, Some(DriSex::Male));
+        assert!(close(got.weight_kg.unwrap(), 78.5));
+        assert!(got.supplement_b12);
+        assert!(!got.supplement_vit_d);
+
+        // Upsert replaces (single row per user).
+        let p2 = profile(|p| p.dri_sex = Some(DriSex::Female));
+        save_nutrition_profile(&c, "u1", &p2).unwrap();
+        let got2 = get_nutrition_profile(&c, "u1").unwrap();
+        assert_eq!(got2.dri_sex, Some(DriSex::Female));
+        assert_eq!(
+            got2.birth_year, None,
+            "upsert cleared the previously-set year"
+        );
+        let count: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM profiles WHERE user_id = 'u1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "one row per user");
     }
 }

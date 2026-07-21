@@ -161,6 +161,13 @@
             },
             "type": "array"
           },
+          "targets": {
+            "description": " The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when\n unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets\n in one payload. Match a `total` to its `target` by nutrient name.",
+            "items": {
+              "$ref": "#/components/schemas/NutrientTarget"
+            },
+            "type": "array"
+          },
           "totals": {
             "description": " Per-nutrient absolute totals for the day, ordered by nutrient name.",
             "items": {
@@ -173,10 +180,24 @@
           "date",
           "entries",
           "calories",
-          "totals"
+          "totals",
+          "targets"
         ],
         "title": "DayLog",
         "type": "object"
+      },
+      "DriSex": {
+        "description": " Which DRI reference column to read. Male and female adult nutrient requirements genuinely differ\n (iron, zinc, calcium, …), so a target must know which table applies. This is a NUTRITION parameter,\n NOT a statement of gender identity: it is optional, falls back to a protective generic tier when\n unset, and any individual target stays overridable.",
+        "enum": [
+          "male",
+          "female"
+        ],
+        "title": "DriSex",
+        "type": "string",
+        "x-specta-enum-descriptions": {
+          "female": "Read the female DRI column.",
+          "male": "Read the male DRI column."
+        }
       },
       "IngredientCard": {
         "additionalProperties": false,
@@ -733,6 +754,59 @@
         "title": "Notification",
         "type": "object"
       },
+      "NutrientTarget": {
+        "additionalProperties": false,
+        "description": " One personalized daily target for a nutrient. `name`/`unit` match the ingredient catalog's naming\n (crates/usda-importer NUTRIENTS) so a day `NutrientTotal` compares to it directly.",
+        "properties": {
+          "amount": {
+            "description": " The personalized daily goal, in `unit`.",
+            "format": "double",
+            "type": "number"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/TargetBasis",
+            "description": " RDA vs AI, for honest labelling."
+          },
+          "name": {
+            "description": " Canonical nutrient name, matching `NutrientTotal.name` (e.g. \"Iron\", \"Vitamin B12\").",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Short guidance note (vegan-specific context). Guidance-toned, never shaming. None = no note."
+          },
+          "supplementCovered": {
+            "description": " True when a logged supplement flag covers this nutrient (B12 / vitamin D) — display it as met by\n supplement rather than as a food gap.",
+            "type": "boolean"
+          },
+          "unit": {
+            "description": " Unit — the catalog's storage unit for this nutrient (\"mg\" | \"µg\" | \"g\" | \"IU\").",
+            "type": "string"
+          },
+          "veganAdjusted": {
+            "description": " True when the vegan bioavailability overlay raised this above the plain DRI (iron, zinc, protein).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "amount",
+          "unit",
+          "basis",
+          "veganAdjusted",
+          "supplementCovered",
+          "note"
+        ],
+        "title": "NutrientTarget",
+        "type": "object"
+      },
       "NutrientTotal": {
         "additionalProperties": false,
         "description": " One nutrient's ABSOLUTE total for a day (summed across entries), keyed by name + unit. Distinct\n from `Reading`, which is per-100g.",
@@ -757,6 +831,71 @@
           "unit"
         ],
         "title": "NutrientTotal",
+        "type": "object"
+      },
+      "NutritionProfile": {
+        "additionalProperties": false,
+        "description": " The per-user nutrition profile. Every field is OPTIONAL — an empty profile (or an absent field)\n yields the generic-adult target tier, so targets ALWAYS exist. PRIVATE: only ever read/written by\n its owner, never listed or in the anonymous pull. Doubles as the write payload (`save_profile`) and\n the read shape (`get_profile`); `#[serde(default)]` lets a partial `{}` deserialize.",
+        "properties": {
+          "birthYear": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "maximum": 9223372036854775807,
+                "minimum": -9223372036854775808,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Birth year → coarse DRI age bracket (19–50 / 51–70 / 71+). None ⇒ the 19–50 adult tier."
+          },
+          "driSex": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriSex"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Which DRI column to read. None ⇒ the protective generic tier (max of the sexes, per nutrient)."
+          },
+          "lactation": {
+            "description": " Lactation DRIs (distinct from pregnancy); overrides the sex column.",
+            "type": "boolean"
+          },
+          "pregnancy": {
+            "description": " Pregnancy raises the iron / iodine / zinc / B12 / selenium DRIs; overrides the sex column.",
+            "type": "boolean"
+          },
+          "supplementAlgaeOil": {
+            "description": " Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.",
+            "type": "boolean"
+          },
+          "supplementB12": {
+            "description": " Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered.",
+            "type": "boolean"
+          },
+          "supplementVitD": {
+            "description": " Takes a vitamin D supplement ⇒ the vitamin D target shows as covered.",
+            "type": "boolean"
+          },
+          "weightKg": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Body weight (kg) for the protein g/kg target. None ⇒ the reference-weight gram RDA."
+          }
+        },
+        "title": "NutritionProfile",
         "type": "object"
       },
       "Party": {
@@ -1948,6 +2087,19 @@
           "oldest": "Oldest first."
         }
       },
+      "TargetBasis": {
+        "description": " Whether a target is an RDA (meets ~97–98% of the population's needs) or an AI (Adequate Intake,\n used where the evidence can't set an RDA — e.g. omega-3 ALA). Surfaced so the UI can be honest.",
+        "enum": [
+          "rda",
+          "ai"
+        ],
+        "title": "TargetBasis",
+        "type": "string",
+        "x-specta-enum-descriptions": {
+          "ai": "Adequate Intake — used where the evidence can't establish an RDA (e.g. omega-3 ALA).",
+          "rda": "Recommended Dietary Allowance — meets the needs of ~97–98% of healthy people."
+        }
+      },
       "Thread": {
         "additionalProperties": false,
         "description": " A thread as the thread screen consumes it: the other party (resolved even before any message\n exists, so a profile's \"Message\" button lands on an empty composer) + the messages, oldest first.",
@@ -2590,7 +2742,7 @@
     },
     "/api/log/day": {
       "get": {
-        "description": "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use).",
+        "description": "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use) and the viewer's personalized vegan-aware daily targets (from their nutrition profile; generic-adult when unset).",
         "parameters": [
           {
             "in": "query",
@@ -2609,10 +2761,10 @@
                 }
               }
             },
-            "description": "The day's entries + nutrient totals"
+            "description": "The day's entries + nutrient totals + targets"
           }
         },
-        "summary": "One diary day + rolled-up totals"
+        "summary": "One diary day + rolled-up totals + personalized targets"
       }
     },
     "/api/log/entries": {
@@ -2840,6 +2992,50 @@
           }
         },
         "summary": "The bell"
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "description": "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy/supplement inputs that drive personalized targets. All fields optional — absent ones default to the generic-adult DRI tier (an unset profile returns all nulls).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NutritionProfile"
+                }
+              }
+            },
+            "description": "The viewer's nutrition profile (defaults when unset)"
+          }
+        },
+        "summary": "The viewer's nutrition profile"
+      },
+      "post": {
+        "description": "Requires bearer; owner-scoped. Replaces the single per-user profile row; changes personalized targets on the next diary-day read.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NutritionProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ack"
+                }
+              }
+            },
+            "description": "Profile saved"
+          }
+        },
+        "summary": "Upsert the viewer's nutrition profile"
       }
     },
     "/health": {

@@ -219,3 +219,17 @@ CREATE TABLE IF NOT EXISTS `log_entry_nutrient` (
 	FOREIGN KEY (`log_entry_id`) REFERENCES `log_entries`(`id`) ON UPDATE no action ON DELETE cascade
 );
 CREATE INDEX IF NOT EXISTS `log_entry_nutrient_entry_idx` ON `log_entry_nutrient` (`log_entry_id`);
+CREATE TABLE IF NOT EXISTS `profiles` (
+	`user_id` text PRIMARY KEY NOT NULL,
+	`birth_year` integer,
+	`dri_sex` text,
+	`weight_kg` real,
+	`pregnancy` integer,
+	`lactation` integer,
+	`supplement_b12` integer,
+	`supplement_vit_d` integer,
+	`supplement_algae_oil` integer,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);

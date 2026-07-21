@@ -60,7 +60,25 @@ export type DayLog = {
 	calories: number | null,
 	/**  Per-nutrient absolute totals for the day, ordered by nutrient name. */
 	totals: NutrientTotal[],
+	/**
+	 *  The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when
+	 *  unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets
+	 *  in one payload. Match a `total` to its `target` by nutrient name.
+	 */
+	targets: NutrientTarget[],
 };
+
+/**
+ *  Which DRI reference column to read. Male and female adult nutrient requirements genuinely differ
+ *  (iron, zinc, calcium, …), so a target must know which table applies. This is a NUTRITION parameter,
+ *  NOT a statement of gender identity: it is optional, falls back to a protective generic tier when
+ *  unset, and any individual target stays overridable.
+ */
+export type DriSex = 
+/**  Read the male DRI column. */
+"male" | 
+/**  Read the female DRI column. */
+"female";
 
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
 export type IngredientCard = {
@@ -254,6 +272,30 @@ export type Notification = {
 };
 
 /**
+ *  One personalized daily target for a nutrient. `name`/`unit` match the ingredient catalog's naming
+ *  (crates/usda-importer NUTRIENTS) so a day `NutrientTotal` compares to it directly.
+ */
+export type NutrientTarget = {
+	/**  Canonical nutrient name, matching `NutrientTotal.name` (e.g. "Iron", "Vitamin B12"). */
+	name: string,
+	/**  The personalized daily goal, in `unit`. */
+	amount: number | null,
+	/**  Unit — the catalog's storage unit for this nutrient ("mg" | "µg" | "g" | "IU"). */
+	unit: string,
+	/**  RDA vs AI, for honest labelling. */
+	basis: TargetBasis,
+	/**  True when the vegan bioavailability overlay raised this above the plain DRI (iron, zinc, protein). */
+	veganAdjusted: boolean,
+	/**
+	 *  True when a logged supplement flag covers this nutrient (B12 / vitamin D) — display it as met by
+	 *  supplement rather than as a food gap.
+	 */
+	supplementCovered: boolean,
+	/**  Short guidance note (vegan-specific context). Guidance-toned, never shaming. None = no note. */
+	note: string | null,
+};
+
+/**
  *  One nutrient's ABSOLUTE total for a day (summed across entries), keyed by name + unit. Distinct
  *  from `Reading`, which is per-100g.
  */
@@ -264,6 +306,31 @@ export type NutrientTotal = {
 	amount: number | null,
 	/**  Display unit (g, mg, µg). */
 	unit: string,
+};
+
+/**
+ *  The per-user nutrition profile. Every field is OPTIONAL — an empty profile (or an absent field)
+ *  yields the generic-adult target tier, so targets ALWAYS exist. PRIVATE: only ever read/written by
+ *  its owner, never listed or in the anonymous pull. Doubles as the write payload (`save_profile`) and
+ *  the read shape (`get_profile`); `#[serde(default)]` lets a partial `{}` deserialize.
+ */
+export type NutritionProfile = {
+	/**  Birth year → coarse DRI age bracket (19–50 / 51–70 / 71+). None ⇒ the 19–50 adult tier. */
+	birthYear?: number | null,
+	/**  Which DRI column to read. None ⇒ the protective generic tier (max of the sexes, per nutrient). */
+	driSex?: DriSex | null,
+	/**  Body weight (kg) for the protein g/kg target. None ⇒ the reference-weight gram RDA. */
+	weightKg?: number | null,
+	/**  Pregnancy raises the iron / iodine / zinc / B12 / selenium DRIs; overrides the sex column. */
+	pregnancy?: boolean,
+	/**  Lactation DRIs (distinct from pregnancy); overrides the sex column. */
+	lactation?: boolean,
+	/**  Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered. */
+	supplementB12?: boolean,
+	/**  Takes a vitamin D supplement ⇒ the vitamin D target shows as covered. */
+	supplementVitD?: boolean,
+	/**  Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it. */
+	supplementAlgaeOil?: boolean,
 };
 
 /**  The other party, as the conversation list + thread header shows them. */
@@ -693,6 +760,16 @@ export type Sort =
 "name_asc" | 
 /**  Name Z→A. */
 "name_desc";
+
+/**
+ *  Whether a target is an RDA (meets ~97–98% of the population's needs) or an AI (Adequate Intake,
+ *  used where the evidence can't set an RDA — e.g. omega-3 ALA). Surfaced so the UI can be honest.
+ */
+export type TargetBasis = 
+/**  Recommended Dietary Allowance — meets the needs of ~97–98% of healthy people. */
+"rda" | 
+/**  Adequate Intake — used where the evidence can't establish an RDA (e.g. omega-3 ALA). */
+"ai";
 
 /**
  *  A thread as the thread screen consumes it: the other party (resolved even before any message

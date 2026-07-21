@@ -42,6 +42,22 @@ export type DayRecentVM = {
   lastGrams: number | null
 }
 
+/** One personalized daily target (from the viewer's nutrition profile; generic-adult when unset).
+ *  Matches a `totals` entry by nutrient `name`. See vegify-core's `targets` for the cited DRIs. */
+export type DayTargetVM = {
+  name: string
+  amount: number
+  unit: string
+  /** "rda" (meets ~98% of needs) or "ai" (Adequate Intake) — shown for honesty. */
+  basis: "rda" | "ai"
+  /** The vegan bioavailability overlay raised this above the plain DRI (iron, zinc, protein). */
+  veganAdjusted: boolean
+  /** A logged supplement flag covers this (B12 / vitamin D / algae oil) — met by supplement. */
+  supplementCovered: boolean
+  /** Short, guidance-toned vegan context. */
+  note: string | null
+}
+
 /** One diary day as a view-model (each shell maps the server's `DayLog`, coercing null numbers). */
 export type DayVM = {
   /** The 'YYYY-MM-DD' local calendar date this covers. */
@@ -51,6 +67,8 @@ export type DayVM = {
   calories: number | null
   /** Per-nutrient ABSOLUTE totals for the day (name + amount + unit). */
   totals: { name: string; amount: number; unit: string }[]
+  /** The viewer's personalized vegan-aware targets; render progress of `totals` against these. */
+  targets: DayTargetVM[]
   /** The viewer's recents, for the add-flow. */
   recents: DayRecentVM[]
 }
@@ -352,6 +370,115 @@ function AddFoodRow({
   )
 }
 
+// --- targets progress: match a day total to its target by nutrient name + unit ---
+const normName = (s: string) => s.trim().toLowerCase()
+const normUnit = (u: string) => {
+  const l = u.trim().toLowerCase()
+  return l === "mcg" || l === "ug" ? "µg" : l
+}
+// Mass units → micrograms, so mg/µg totals compare to their targets. Non-mass units (g for macros,
+// IU for vitamin D) are compared only when the units already match — we never guess an IU↔µg factor
+// (it's nutrient-specific), so a rare unit mismatch just reads as no-progress rather than a wrong %.
+const MASS_TO_UG: Record<string, number> = { mg: 1e3, µg: 1 }
+function targetProgress(
+  totalAmount: number,
+  totalUnit: string,
+  target: DayTargetVM
+): number {
+  const tu = normUnit(target.unit)
+  const cu = normUnit(totalUnit)
+  if (cu === tu) return target.amount > 0 ? totalAmount / target.amount : 0
+  const c = MASS_TO_UG[cu]
+  const t = MASS_TO_UG[tu]
+  if (c != null && t != null && target.amount > 0)
+    return (totalAmount * c) / (target.amount * t)
+  return 0
+}
+
+/** THE TARGETS PANEL — the personalized, vegan-aware readout that replaces the FDA framing (P1.3).
+ *  Guidance-toned by design (the audience is ED-adjacent): progress is shown as gentle fill, never
+ *  red "you failed" states, and supplement-covered nutrients read as handled, not as a gap. */
+function DayTargets({
+  targets,
+  totals,
+  className
+}: {
+  targets: DayTargetVM[]
+  totals: { name: string; amount: number; unit: string }[]
+  className?: string
+}) {
+  if (targets.length === 0) return null
+  const byName = new Map(totals.map((t) => [normName(t.name), t]))
+  return (
+    <div className={cn("text-foreground", className)}>
+      <div className="mb-3 border-foreground border-b-2 pb-1">
+        <h2 className="font-bold font-serif text-lg tracking-tight">
+          Your targets
+        </h2>
+        <p className="text-muted-foreground text-xs">
+          Vegan-adjusted daily goals for your profile
+        </p>
+      </div>
+      <ul className="space-y-3">
+        {targets.map((tgt) => {
+          const total = byName.get(normName(tgt.name))
+          const have = total?.amount ?? 0
+          const ratio = total ? targetProgress(have, total.unit, tgt) : 0
+          const pct = Math.round(ratio * 100)
+          const width = Math.max(0, Math.min(100, pct))
+          const met = pct >= 100
+          return (
+            <li key={tgt.name}>
+              <div className="flex items-baseline justify-between gap-2 text-sm">
+                <span className="font-medium">
+                  {tgt.name}
+                  {tgt.veganAdjusted ? (
+                    <span
+                      className="ml-1 text-primary text-xs"
+                      title="Raised above the standard DRI for plant bioavailability"
+                    >
+                      ✦
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                  {tgt.supplementCovered
+                    ? "Supplemented"
+                    : `${num(have)} / ${num(tgt.amount)} ${tgt.unit}`}
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    tgt.supplementCovered
+                      ? "bg-primary/40"
+                      : met
+                        ? "bg-primary"
+                        : "bg-primary/70"
+                  )}
+                  style={{
+                    width: tgt.supplementCovered ? "100%" : `${width}%`
+                  }}
+                />
+              </div>
+              {tgt.note ? (
+                <p className="mt-1 line-clamp-2 text-muted-foreground text-xs leading-snug">
+                  {tgt.note}
+                </p>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-4 text-muted-foreground text-xs leading-snug">
+        Targets from NIH/IOM Dietary Reference Intakes, adjusted for a
+        plant-based diet. Guidance, not medical advice.
+      </p>
+    </div>
+  )
+}
+
 export function DayView({
   day,
   LinkComponent,
@@ -407,10 +534,19 @@ export function DayView({
             <AddFoodRow log={log} recents={day.recents} />
           </div>
         ) : null}
+
+        {/* Mobile: targets live in the main flow (the aside is desktop-only). */}
+        <DayTargets
+          targets={day.targets}
+          totals={day.totals}
+          className="mt-8 lg:hidden"
+        />
       </div>
 
       <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
-        <div className="lg:sticky lg:top-6">
+        <div className="space-y-8 lg:sticky lg:top-6">
+          {/* Targets are the primary readout (P1.3); the full FDA panel follows as reference. */}
+          <DayTargets targets={day.targets} totals={day.totals} />
           <NutritionFacts data={nutrition} />
         </div>
       </aside>

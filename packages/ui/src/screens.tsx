@@ -12,6 +12,7 @@ import {
 } from "./breadcrumb"
 import { buttonClasses } from "./button"
 import { SORT_OPTIONS, type Sort } from "./catalog"
+import { Checkbox } from "./checkbox"
 import { cn } from "./cn"
 import { DetailHero } from "./detail-hero"
 import {
@@ -36,6 +37,8 @@ import {
   InlineText,
   InlineTextarea
 } from "./inline"
+import { Input } from "./input"
+import { Label } from "./label"
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
 import { NutritionFactsFab } from "./nutrition-facts-fab"
 import type { IngredientSearchItem } from "./recipe-form"
@@ -1767,10 +1770,206 @@ export function SearchResultsView({
   )
 }
 
+/** The value shape for the nutrition-profile form — structurally the wire `NutritionProfile`
+ *  (camelCase, all optional), kept local so @vegify/ui stays decoupled from @vegify/api-types. */
+export type NutritionProfileValues = {
+  birthYear?: number | null
+  driSex?: "male" | "female" | null
+  weightKg?: number | null
+  pregnancy?: boolean
+  lactation?: boolean
+  supplementB12?: boolean
+  supplementVitD?: boolean
+  supplementAlgaeOil?: boolean
+}
+
+const selectClasses =
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+
+/** The nutrition PROFILE form (P1.3). Feeds vegify-core's targets — birth year + reference sex pick the
+ *  DRI table, weight enables a g/kg protein target, pregnancy/lactation and supplement flags adjust the
+ *  vegan overlay. Presentational + guidance-toned; the shell wires `onSave` to its transport. */
+function NutritionProfileForm({
+  profile,
+  onSave
+}: {
+  profile: NutritionProfileValues
+  onSave: (values: NutritionProfileValues) => Promise<void>
+}) {
+  const [birthYear, setBirthYear] = useState(
+    profile.birthYear?.toString() ?? ""
+  )
+  const [driSex, setDriSex] = useState<"" | "male" | "female">(
+    profile.driSex ?? ""
+  )
+  const [weightKg, setWeightKg] = useState(profile.weightKg?.toString() ?? "")
+  const [pregnancy, setPregnancy] = useState(!!profile.pregnancy)
+  const [lactation, setLactation] = useState(!!profile.lactation)
+  const [b12, setB12] = useState(!!profile.supplementB12)
+  const [vitD, setVitD] = useState(!!profile.supplementVitD)
+  const [algae, setAlgae] = useState(!!profile.supplementAlgaeOil)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const by = Number.parseInt(birthYear, 10)
+      const wt = Number.parseFloat(weightKg)
+      await onSave({
+        birthYear: Number.isFinite(by) ? by : null,
+        driSex: driSex || null,
+        weightKg: Number.isFinite(wt) && wt > 0 ? wt : null,
+        pregnancy: driSex === "female" ? pregnancy : false,
+        lactation: driSex === "female" ? lactation : false,
+        supplementB12: b12,
+        supplementVitD: vitD,
+        supplementAlgaeOil: algae
+      })
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="birth-year">Birth year</Label>
+          <Input
+            id="birth-year"
+            type="number"
+            inputMode="numeric"
+            placeholder="e.g. 1990"
+            value={birthYear}
+            onChange={(e) => setBirthYear(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dri-sex">Reference sex</Label>
+          <select
+            id="dri-sex"
+            value={driSex}
+            onChange={(e) =>
+              setDriSex(e.target.value as "" | "male" | "female")
+            }
+            className={selectClasses}
+          >
+            <option value="">Not specified</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select>
+          <p className="text-muted-foreground text-xs">
+            Picks which DRI table to use (nutrient needs differ) — not stored as
+            identity.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="weight-kg">Weight (kg)</Label>
+          <Input
+            id="weight-kg"
+            type="number"
+            inputMode="decimal"
+            placeholder="optional"
+            value={weightKg}
+            onChange={(e) => setWeightKg(e.target.value)}
+          />
+          <p className="text-muted-foreground text-xs">
+            Enables a body-weight-based protein target.
+          </p>
+        </div>
+      </div>
+
+      {driSex === "female" ? (
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          <label
+            htmlFor="pregnancy"
+            className="flex items-center gap-2 text-sm"
+          >
+            <Checkbox
+              id="pregnancy"
+              checked={pregnancy}
+              onCheckedChange={(v) => setPregnancy(v === true)}
+            />
+            Pregnant
+          </label>
+          <label
+            htmlFor="lactation"
+            className="flex items-center gap-2 text-sm"
+          >
+            <Checkbox
+              id="lactation"
+              checked={lactation}
+              onCheckedChange={(v) => setLactation(v === true)}
+            />
+            Lactating
+          </label>
+        </div>
+      ) : null}
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 font-medium text-sm">
+          Supplements you take
+        </legend>
+        <label htmlFor="supp-b12" className="flex items-center gap-2 text-sm">
+          <Checkbox
+            id="supp-b12"
+            checked={b12}
+            onCheckedChange={(v) => setB12(v === true)}
+          />
+          Vitamin B12
+        </label>
+        <label htmlFor="supp-vit-d" className="flex items-center gap-2 text-sm">
+          <Checkbox
+            id="supp-vit-d"
+            checked={vitD}
+            onCheckedChange={(v) => setVitD(v === true)}
+          />
+          Vitamin D
+        </label>
+        <label htmlFor="supp-algae" className="flex items-center gap-2 text-sm">
+          <Checkbox
+            id="supp-algae"
+            checked={algae}
+            onCheckedChange={(v) => setAlgae(v === true)}
+          />
+          Algae oil (EPA/DHA)
+        </label>
+        <p className="text-muted-foreground text-xs">
+          A flagged supplement shows its nutrient as covered rather than a gap
+          to fill from food.
+        </p>
+      </fieldset>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={save}
+          className={buttonClasses({ size: "sm" })}
+        >
+          {saving ? "Saving…" : "Save profile"}
+        </button>
+        {saved ? (
+          <span className="text-muted-foreground text-sm">Saved.</span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function SettingsView({
-  onDeleteAccount
+  onDeleteAccount,
+  profile,
+  onSaveProfile
 }: {
   onDeleteAccount?: (password: string) => Promise<void>
+  /** The viewer's current nutrition profile (defaults when unset). */
+  profile?: NutritionProfileValues
+  /** Present ⇒ render the nutrition-profile form and persist edits. */
+  onSaveProfile?: (values: NutritionProfileValues) => Promise<void>
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [password, setPassword] = useState("")
@@ -1795,6 +1994,23 @@ export function SettingsView({
           <ThemeSetting className="self-start sm:self-auto" />
         </div>
       </section>
+
+      {onSaveProfile ? (
+        <section className="mt-10">
+          <h2 className="mb-1 font-bold font-serif text-xl">
+            Nutrition profile
+          </h2>
+          <p className="mb-3 text-muted-foreground text-sm">
+            Personalizes your daily targets. Everything is optional — leave a
+            field blank to use the generic-adult reference values. Your diary
+            and profile are private.
+          </p>
+          <NutritionProfileForm
+            profile={profile ?? {}}
+            onSave={onSaveProfile}
+          />
+        </section>
+      ) : null}
 
       {onDeleteAccount ? (
         <section className="mt-10">

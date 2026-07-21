@@ -337,6 +337,12 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::LogPullNutrient>()
         .register::<vegify_core::LogPullEntry>()
         .register::<vegify_core::LogPull>()
+        // vegify-core nutrition profile + personalized targets (P1.3 — private, vegan-aware). DayLog
+        // now carries `targets: NutrientTarget[]`, so those shapes must register here too.
+        .register::<vegify_core::DriSex>()
+        .register::<vegify_core::NutritionProfile>()
+        .register::<vegify_core::TargetBasis>()
+        .register::<vegify_core::NutrientTarget>()
         // this crate (server-local wire shapes)
         .register::<UploadTicket>()
         .register::<User>()
@@ -493,13 +499,15 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             .query_param::<String>("id")
             .response::<Ack>(200, "Deletion acknowledged"),
         Operation::get("/api/log/day")
-            .summary("One diary day + rolled-up totals")
+            .summary("One diary day + rolled-up totals + personalized targets")
             .description(
                 "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed \
-                 nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use).",
+                 nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use) \
+                 and the viewer's personalized vegan-aware daily targets (from their nutrition profile; \
+                 generic-adult when unset).",
             )
             .query_param::<String>("date")
-            .response::<core::DayLog>(200, "The day's entries + nutrient totals"),
+            .response::<core::DayLog>(200, "The day's entries + nutrient totals + targets"),
         Operation::get("/api/log/recents")
             .summary("Recently logged ingredients")
             .description(
@@ -516,5 +524,21 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
                  content pull.",
             )
             .response::<core::LogPull>(200, "Every live diary entry with its frozen snapshot"),
+        Operation::get("/api/profile")
+            .summary("The viewer's nutrition profile")
+            .description(
+                "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy/supplement inputs \
+                 that drive personalized targets. All fields optional — absent ones default to the \
+                 generic-adult DRI tier (an unset profile returns all nulls).",
+            )
+            .response::<core::NutritionProfile>(200, "The viewer's nutrition profile (defaults when unset)"),
+        Operation::post("/api/profile")
+            .summary("Upsert the viewer's nutrition profile")
+            .description(
+                "Requires bearer; owner-scoped. Replaces the single per-user profile row; changes \
+                 personalized targets on the next diary-day read.",
+            )
+            .request_body::<core::NutritionProfile>()
+            .response::<Ack>(200, "Profile saved"),
     ]
 }
