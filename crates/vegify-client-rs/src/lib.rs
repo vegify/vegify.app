@@ -453,6 +453,34 @@ impl VegifyClient {
         )
     }
 
+    /// POST /api/log/entries with a SaveLogEntryInput payload (the PRIVATE diary; the server upserts by
+    /// id, stamps the owner from the session, and freezes the nutrition snapshot). Bearer required.
+    pub fn log_post(&self, token: &str, body: &serde_json::Value) -> Result<(), Error> {
+        tracing::debug!("POST log entry");
+        expect_ok(
+            Self::bearer(
+                self.agent.post(format!("{}/api/log/entries", self.base)),
+                token,
+            )
+            .send_json(body)
+            .map_err(net)?,
+        )
+    }
+
+    /// DELETE /api/log/entries?id=… — idempotent soft delete of a diary entry. Bearer required.
+    pub fn log_delete(&self, token: &str, id: &str) -> Result<(), Error> {
+        tracing::debug!(id, "DELETE log entry");
+        expect_ok(
+            Self::bearer(
+                self.agent
+                    .delete(format!("{}/api/log/entries?id={id}", self.base)),
+                token,
+            )
+            .call()
+            .map_err(net)?,
+        )
+    }
+
     /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");

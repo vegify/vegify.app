@@ -47,6 +47,13 @@ import {
 } from "@vegify/ui/auth-form"
 import { PAGE_SIZE, parseSort, type Sort } from "@vegify/ui/catalog"
 import {
+  addDays,
+  type DayLogAdapter,
+  DayView,
+  type DayVM,
+  todayLocal
+} from "@vegify/ui/day"
+import {
   IngredientForm,
   type IngredientFormDefaults,
   type IngredientFormInput
@@ -1369,6 +1376,130 @@ const loginRoute = createRoute({
   }
 })
 
+// The PRIVATE food diary, read from the local-first cache (vegify_core::log_day) and mapped to the
+// shared DayView's view-model — number|null coerced at the edge with num(), exactly like the recipe VMs.
+const logDayQuery = (date: string) =>
+  queryOptions({
+    queryKey: ["diary", date],
+    queryFn: async (): Promise<DayVM> => {
+      const [day, recents] = await Promise.all([
+        vegifyData.logDay(date),
+        vegifyData.logRecents(20)
+      ])
+      return {
+        date: day.date,
+        entries: day.entries.map((e) => ({
+          id: e.id,
+          ingredientId: e.ingredientId,
+          name: e.name,
+          href: e.recipeId
+            ? `/recipes/${e.recipeId}`
+            : `/ingredients/${e.ingredientId}`,
+          grams: num(e.amount.grams),
+          calories: e.calories
+        })),
+        calories: day.calories,
+        totals: day.totals.map((t) => ({
+          name: t.name,
+          amount: num(t.amount),
+          unit: t.unit
+        })),
+        recents: recents.map((r) => ({
+          ingredientId: r.ingredientId,
+          name: r.name,
+          lastGrams: r.lastGrams
+        }))
+      }
+    }
+  })
+
+const diaryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/diary",
+  validateSearch: (s: { date?: string }): { date: string } => ({
+    // Desktop is client-only, so todayLocal() is always the viewer's real local day (no SSR-tz issue).
+    date: typeof s.date === "string" && s.date ? s.date : todayLocal()
+  }),
+  component: function Diary() {
+    const auth = useContext(AuthContext)
+    // Authed-only (private diary): the authed query lives in the inner component so it only mounts —
+    // and only fires vegifyData.logDay, which require_uid-gates — once signed in.
+    if (!auth?.user) return <SignInRequired action="see your food diary" />
+    return <DiaryInner />
+  }
+})
+
+function DiaryInner() {
+  const { date } = diaryRoute.useSearch()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { data: day } = useQuery(logDayQuery(date))
+  if (!day) {
+    return <div className="p-8 text-center text-muted-foreground">Loading…</div>
+  }
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["diary"] })
+  const log: DayLogAdapter = {
+    addEntry: async ({ ingredientId, grams, unit }) => {
+      await vegifyData.saveLogEntry({
+        id: null,
+        ingredientId,
+        date,
+        slot: null,
+        grams,
+        unit: unit ?? null,
+        loggedAt: null
+      })
+      scheduleSync()
+      await refresh()
+    },
+    setEntryAmount: async (id, grams) => {
+      const entry = day.entries.find((e) => e.id === id)
+      if (!entry) return
+      await vegifyData.saveLogEntry({
+        id,
+        ingredientId: entry.ingredientId,
+        date,
+        slot: null,
+        grams,
+        unit: null,
+        loggedAt: null
+      })
+      scheduleSync()
+      await refresh()
+    },
+    removeEntry: async (id) => {
+      await vegifyData.deleteLogEntry(id)
+      scheduleSync()
+      await refresh()
+    },
+    search: searchForForm,
+    copyYesterday: async () => {
+      const src = await vegifyData.logDay(addDays(date, -1))
+      for (const e of src.entries) {
+        await vegifyData.saveLogEntry({
+          id: null,
+          ingredientId: e.ingredientId,
+          date,
+          slot: e.slot,
+          grams: num(e.amount.grams),
+          unit: e.amount.unit,
+          loggedAt: null
+        })
+      }
+      scheduleSync()
+      await refresh()
+    }
+  }
+  return (
+    <DayView
+      day={day}
+      LinkComponent={LinkComponent}
+      log={log}
+      onNavigateDate={(d) => navigate({ to: "/diary", search: { date: d } })}
+    />
+  )
+}
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   recipesRoute,
@@ -1384,7 +1515,8 @@ const routeTree = rootRoute.addChildren([
   messagesRoute,
   messageThreadRoute,
   notificationsRoute,
-  profileRoute
+  profileRoute,
+  diaryRoute
 ])
 
 // The desktop loads the SPA from a fixed entry (tauri://localhost/index.html), so a hard webview
