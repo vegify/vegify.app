@@ -1229,6 +1229,37 @@ async fn log_pull(
     Ok(Json(pull))
 }
 
+/// GET /api/profile — the viewer's nutrition profile (all-null defaults when never set). PRIVATE, like
+/// the diary: it drives the personalized targets in the day view and is never public.
+async fn get_nutrition_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<vegify_core::NutritionProfile>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let profile = db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::get_nutrition_profile(conn, &me.id).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(profile))
+}
+
+/// POST /api/profile — upsert the viewer's nutrition profile (age/sex/weight/pregnancy/supplements).
+/// Changes personalized targets on the next `GET /api/log/day`. PRIVATE, owner-scoped.
+async fn save_nutrition_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<vegify_core::NutritionProfile>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::save_nutrition_profile(conn, &me.id, &input).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// Idempotent additive migration applied on boot. The live EBS DB predates the password-reset table
 /// and the `users.email_verified_at` column; the server is the sole writer, so this is the migration
 /// path (the server analogue of the web's old `ensure-schema.mjs`). Safe to re-run every boot.
@@ -1300,7 +1331,20 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER,
             updated_at INTEGER
         );
-        CREATE INDEX IF NOT EXISTS log_entry_nutrient_entry_idx ON log_entry_nutrient(log_entry_id);",
+        CREATE INDEX IF NOT EXISTS log_entry_nutrient_entry_idx ON log_entry_nutrient(log_entry_id);
+        CREATE TABLE IF NOT EXISTS profiles (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            birth_year INTEGER,
+            dri_sex TEXT,
+            weight_kg REAL,
+            pregnancy INTEGER,
+            lactation INTEGER,
+            supplement_b12 INTEGER,
+            supplement_vit_d INTEGER,
+            supplement_algae_oil INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER
+        );",
     )?;
     // 1:1 direct messages + the notification feed (server-owned, like posts — online-only, never in
     // the shared content schema).
@@ -1546,6 +1590,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/log/day", get(log_day))
         .route("/api/log/recents", get(log_recents))
         .route("/api/log/pull", get(log_pull))
+        // Nutrition PROFILE (PRIVATE per-user — drives personalized vegan-aware targets). GET reads it
+        // (defaults when unset), POST upserts it.
+        .route(
+            "/api/profile",
+            get(get_nutrition_profile).post(save_nutrition_profile),
+        )
         // WebSocket push: content writes fan out here so the desktop pulls on change instead of polling.
         .route("/ws", get(ws))
         // Per-request span (method, path) + a response line with status + latency; failures at ERROR.

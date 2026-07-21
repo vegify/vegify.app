@@ -1404,6 +1404,16 @@ const logDayQuery = (date: string) =>
           amount: num(t.amount),
           unit: t.unit
         })),
+        // Targets come from the local profile (generic-adult until profile sync lands in a follow-up).
+        targets: day.targets.map((t) => ({
+          name: t.name,
+          amount: num(t.amount),
+          unit: t.unit,
+          basis: t.basis,
+          veganAdjusted: t.veganAdjusted,
+          supplementCovered: t.supplementCovered,
+          note: t.note ?? null
+        })),
         recents: recents.map((r) => ({
           ingredientId: r.ingredientId,
           name: r.name,

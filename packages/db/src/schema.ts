@@ -286,6 +286,34 @@ export const logEntryNutrient = sqliteTable(
   (t) => [index("log_entry_nutrient_entry_idx").on(t.logEntryId)]
 )
 
+// The per-user nutrition PROFILE — PRIVATE, like the diary (never public, never listed, never in the
+// anon pull or sitemap). It selects which Dietary Reference Intake (DRI) column drives personalized
+// targets in vegify-core's `targets` module. Every field is OPTIONAL: an absent profile (or absent
+// field) falls back to the generic-adult DRI tier, so targets always exist. `driSex` is "which DRI
+// table" (male/female nutrient requirements differ), NOT a statement of gender identity — the field is
+// optional and individual targets stay overridable. 1:1 with the user (user_id IS the primary key).
+export const profiles = sqliteTable("profiles", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Birth year → age bracket for the DRI table (coarse 19–50 / 51–70 / 71+ tiers). Year, not a full
+  // date: the brackets are wide and a year avoids storing a precise birthday.
+  birthYear: integer("birth_year"),
+  // 'male' | 'female' — which sex-specific DRI column to read (iron, zinc, calcium, etc. differ).
+  driSex: text("dri_sex"),
+  // Body weight in kg, for the protein g/kg target. Absent ⇒ the reference-weight gram RDA is used.
+  weightKg: real("weight_kg"),
+  // Pregnancy / lactation raise several DRIs (iron, iodine, zinc, B12, selenium). Booleans; null = no.
+  pregnancy: integer("pregnancy", { mode: "boolean" }),
+  lactation: integer("lactation", { mode: "boolean" }),
+  // Supplement flags: when set, B12 / vitamin D / algae-oil (EPA+DHA) targets show as "covered" rather
+  // than a gap the user must fill from food — the vegan-aware nuance no generic tracker models.
+  supplementB12: integer("supplement_b12", { mode: "boolean" }),
+  supplementVitD: integer("supplement_vit_d", { mode: "boolean" }),
+  supplementAlgaeOil: integer("supplement_algae_oil", { mode: "boolean" }),
+  ...timestamps
+})
+
 export const nutrients = sqliteTable("nutrients", {
   id: pk(),
   name: text("name").notNull(),

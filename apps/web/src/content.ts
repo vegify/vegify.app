@@ -14,6 +14,7 @@ import type {
   IngredientCard,
   IngredientEditData,
   IngredientSlugHit,
+  NutritionProfile,
   Profile,
   Reading,
   RecentIngredient,
@@ -43,6 +44,7 @@ export type {
   IngredientCard,
   IngredientEditData,
   IngredientSlugHit,
+  NutritionProfile,
   Profile,
   Reading,
   RecentIngredient,
@@ -134,6 +136,12 @@ export const saveLogEntry = (input: SaveLogEntryInput): Promise<string> =>
   )
 export const deleteLogEntry = (id: string): Promise<void> =>
   api(`/api/log/entries${byId(id)}`, { method: "DELETE" }).then(() => undefined)
+
+// Nutrition PROFILE (PRIVATE; drives personalized vegan-aware targets). GET returns defaults (all
+// null) when never set; POST upserts the single per-user row.
+export const getNutritionProfile = () => api<NutritionProfile>("/api/profile")
+export const saveNutritionProfile = (input: NutritionProfile): Promise<void> =>
+  api("/api/profile", { method: "POST", body: input }).then(() => undefined)
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

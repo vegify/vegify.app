@@ -47,6 +47,15 @@ const getDay = createServerFn({ method: "GET" })
         amount: t.amount ?? 0,
         unit: t.unit
       })),
+      targets: day.targets.map((t) => ({
+        name: t.name,
+        amount: t.amount ?? 0,
+        unit: t.unit,
+        basis: t.basis,
+        veganAdjusted: t.veganAdjusted,
+        supplementCovered: t.supplementCovered,
+        note: t.note ?? null
+      })),
       recents: recents.map((r) => ({
         ingredientId: r.ingredientId,
         name: r.name,

@@ -427,6 +427,12 @@ export type DayLog = {
 	calories: number | null,
 	/**  Per-nutrient absolute totals for the day, ordered by nutrient name. */
 	totals: NutrientTotal[],
+	/**
+	 *  The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when
+	 *  unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets
+	 *  in one payload. Match a `total` to its `target` by nutrient name.
+	 */
+	targets: NutrientTarget[],
 };
 
 /**
@@ -581,6 +587,30 @@ export type Message = {
 	createdAt: number,
 	/**  True when the viewer sent it (clients render alignment off this, not off raw ids). */
 	mine: boolean,
+};
+
+/**
+ *  One personalized daily target for a nutrient. `name`/`unit` match the ingredient catalog's naming
+ *  (crates/usda-importer NUTRIENTS) so a day `NutrientTotal` compares to it directly.
+ */
+export type NutrientTarget = {
+	/**  Canonical nutrient name, matching `NutrientTotal.name` (e.g. "Iron", "Vitamin B12"). */
+	name: string,
+	/**  The personalized daily goal, in `unit`. */
+	amount: number | null,
+	/**  Unit — the catalog's storage unit for this nutrient ("mg" | "µg" | "g" | "IU"). */
+	unit: string,
+	/**  RDA vs AI, for honest labelling. */
+	basis: TargetBasis,
+	/**  True when the vegan bioavailability overlay raised this above the plain DRI (iron, zinc, protein). */
+	veganAdjusted: boolean,
+	/**
+	 *  True when a logged supplement flag covers this nutrient (B12 / vitamin D) — display it as met by
+	 *  supplement rather than as a food gap.
+	 */
+	supplementCovered: boolean,
+	/**  Short guidance note (vegan-specific context). Guidance-toned, never shaming. None = no note. */
+	note: string | null,
 };
 
 /**
@@ -950,6 +980,16 @@ export type Sort =
 "name_asc" | 
 /**  Name Z→A. */
 "name_desc";
+
+/**
+ *  Whether a target is an RDA (meets ~97–98% of the population's needs) or an AI (Adequate Intake,
+ *  used where the evidence can't set an RDA — e.g. omega-3 ALA). Surfaced so the UI can be honest.
+ */
+export type TargetBasis = 
+/**  Recommended Dietary Allowance — meets the needs of ~97–98% of healthy people. */
+"rda" | 
+/**  Adequate Intake — used where the evidence can't establish an RDA (e.g. omega-3 ALA). */
+"ai";
 
 /**
  *  A thread as the thread screen consumes it: the other party (resolved even before any message
