@@ -1245,7 +1245,9 @@ async fn get_nutrition_profile(
 }
 
 /// POST /api/profile — upsert the viewer's nutrition profile (age/sex/weight/pregnancy/supplements).
-/// Changes personalized targets on the next `GET /api/log/day`. PRIVATE, owner-scoped.
+/// Changes personalized targets on the next `GET /api/log/day`. PRIVATE, owner-scoped. Fans a WS
+/// "profile" change (like the diary writes) so the owner's other signed-in devices re-pull and their
+/// targets re-personalize without a manual sync.
 async fn save_nutrition_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1257,6 +1259,7 @@ async fn save_nutrition_profile(
         vegify_core::save_nutrition_profile(conn, &me.id, &input).map_err(AppError::from)
     })
     .await?;
+    state.notify_change("profile");
     Ok(Json(json!({ "ok": true })))
 }
 

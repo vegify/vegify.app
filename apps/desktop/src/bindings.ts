@@ -248,6 +248,16 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  getNutritionProfile(): Promise<NutritionProfile> {
+    return invoke("get_nutrition_profile");
+  },
+
+  /** @throws {DataError} */
+  saveNutritionProfile(input: NutritionProfile): Promise<null> {
+    return invoke("save_nutrition_profile", { input });
+  },
+
+  /** @throws {DataError} */
   syncNow(): Promise<null> {
     return invoke("sync_now");
   },
@@ -454,6 +464,18 @@ export type DmNotification = {
 	read: boolean,
 };
 
+/**
+ *  Which DRI reference column to read. Male and female adult nutrient requirements genuinely differ
+ *  (iron, zinc, calcium, …), so a target must know which table applies. This is a NUTRITION parameter,
+ *  NOT a statement of gender identity: it is optional, falls back to a protective generic tier when
+ *  unset, and any individual target stays overridable.
+ */
+export type DriSex = 
+/**  Read the male DRI column. */
+"male" | 
+/**  Read the female DRI column. */
+"female";
+
 /**  Ingredient browser card (leaf ingredients — those not backing a recipe). */
 export type IngredientCard = {
 	/**  Ingredient id. */
@@ -624,6 +646,31 @@ export type NutrientTotal = {
 	amount: number | null,
 	/**  Display unit (g, mg, µg). */
 	unit: string,
+};
+
+/**
+ *  The per-user nutrition profile. Every field is OPTIONAL — an empty profile (or an absent field)
+ *  yields the generic-adult target tier, so targets ALWAYS exist. PRIVATE: only ever read/written by
+ *  its owner, never listed or in the anonymous pull. Doubles as the write payload (`save_profile`) and
+ *  the read shape (`get_profile`); `#[serde(default)]` lets a partial `{}` deserialize.
+ */
+export type NutritionProfile = {
+	/**  Birth year → coarse DRI age bracket (19–50 / 51–70 / 71+). None ⇒ the 19–50 adult tier. */
+	birthYear?: number | null,
+	/**  Which DRI column to read. None ⇒ the protective generic tier (max of the sexes, per nutrient). */
+	driSex?: DriSex | null,
+	/**  Body weight (kg) for the protein g/kg target. None ⇒ the reference-weight gram RDA. */
+	weightKg?: number | null,
+	/**  Pregnancy raises the iron / iodine / zinc / B12 / selenium DRIs; overrides the sex column. */
+	pregnancy?: boolean,
+	/**  Lactation DRIs (distinct from pregnancy); overrides the sex column. */
+	lactation?: boolean,
+	/**  Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered. */
+	supplementB12?: boolean,
+	/**  Takes a vitamin D supplement ⇒ the vitamin D target shows as covered. */
+	supplementVitD?: boolean,
+	/**  Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it. */
+	supplementAlgaeOil?: boolean,
 };
 
 /**
