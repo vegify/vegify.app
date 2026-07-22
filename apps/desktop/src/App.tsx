@@ -101,6 +101,7 @@ import { useEditHistory } from "@vegify/ui/use-edit-history"
 import {
   type AuthUser,
   type IngredientEditData,
+  type NutritionProfile,
   type RecipeCard,
   type RecipeView,
   vegifyData
@@ -1330,6 +1331,14 @@ const ingredientEditRoute = createRoute({
   }
 })
 
+// The nutrition profile (PRIVATE, authed-only) drives the diary's personalized targets. Read from the
+// local-first cache (vegify_core::get_nutrition_profile); the structurally-identical bindings
+// NutritionProfile passes straight into the shared form's NutritionProfileValues shape.
+const nutritionProfileQuery = queryOptions({
+  queryKey: ["nutrition-profile"],
+  queryFn: (): Promise<NutritionProfile> => vegifyData.getNutritionProfile()
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -1337,8 +1346,30 @@ const settingsRoute = createRoute({
     const auth = useContext(AuthContext)
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    const authed = !!auth?.user
+    // Authed-only: the profile query only fires (get_nutrition_profile require_uid-gates) once signed in.
+    const { data: profile } = useQuery({
+      ...nutritionProfileQuery,
+      enabled: authed
+    })
     return (
       <SettingsView
+        // Render the profile form only once the profile has loaded, so the form's fields initialize from
+        // the real values (the shared form seeds its state from the prop on mount).
+        profile={profile}
+        onSaveProfile={
+          authed && profile
+            ? async (values) => {
+                await vegifyData.saveNutritionProfile(values)
+                scheduleSync() // push the profile out; the server's other devices re-pull
+                // Targets are computed from the local profile — refresh the day view and the form's read.
+                await queryClient.invalidateQueries({
+                  queryKey: ["nutrition-profile"]
+                })
+                await queryClient.invalidateQueries({ queryKey: ["diary"] })
+              }
+            : undefined
+        }
         onDeleteAccount={
           auth?.user
             ? async (password) => {
@@ -1404,7 +1435,8 @@ const logDayQuery = (date: string) =>
           amount: num(t.amount),
           unit: t.unit
         })),
-        // Targets come from the local profile (generic-adult until profile sync lands in a follow-up).
+        // Targets come from the local profile (synced from the server; edited in Settings). Generic-adult
+        // until the viewer fills one in.
         targets: day.targets.map((t) => ({
           name: t.name,
           amount: num(t.amount),

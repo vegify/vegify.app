@@ -500,6 +500,7 @@ impl Db {
                 "restoreIngredient" => client.restore_ingredient(&token, payload_id(&payload)?)?,
                 "saveLogEntry" => client.log_post(&token, &payload)?,
                 "deleteLogEntry" => client.log_delete(&token, payload_id(&payload)?)?,
+                "saveProfile" => client.profile_post(&token, &payload)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
             self.conn()
@@ -546,6 +547,22 @@ impl Db {
         let res = vegify_core::apply_log_pull(&conn, &uid, &pull).map_err(Into::into);
         conn.execute_batch("PRAGMA foreign_keys = ON;").ok();
         res
+    }
+
+    /// Pull the viewer's authoritative nutrition profile into the local cache — another authed-only
+    /// channel (the profile is PRIVATE, like the diary; never in the anonymous content pull). Upserts
+    /// the single per-user `profiles` row via the same DAL the local write uses, so the server's value
+    /// wins (server is the source of truth). Runs only when signed in; a no-op otherwise. Cheap — one
+    /// row — so it rides every sync. The signed-in `users` row already exists (ensure_user_local), so
+    /// the profile's FK resolves with foreign keys left ON.
+    fn pull_profile(&self) -> Result<(), DataError> {
+        let Some(token) = self.current_token() else {
+            return Ok(()); // signed out: no private profile to pull
+        };
+        let uid = self.require_uid()?;
+        let profile = client().profile_get(&token)?;
+        let conn = self.conn();
+        vegify_core::save_nutrition_profile(&conn, &uid, &profile).map_err(Into::into)
     }
 
     /// Upsert the signed-in user into the local `users` table so write-time foreign keys (and the
@@ -641,6 +658,12 @@ pub trait VegifyData {
     fn save_log_entry(&self, input: SaveLogEntryInput) -> Result<String, DataError>;
     /// Soft-delete a diary entry. Enqueues for sync.
     fn delete_log_entry(&self, id: String) -> Result<(), DataError>;
+    /// The viewer's nutrition profile from the local cache (all-null defaults when never set). Authed-only
+    /// — the profile is PRIVATE, so unlike content reads there is no anonymous fallback. Drives targets.
+    fn get_nutrition_profile(&self) -> Result<NutritionProfile, DataError>;
+    /// Upsert the viewer's nutrition profile (age/sex/weight/pregnancy/supplements). Enqueues for sync,
+    /// so the next `sync_now` pushes it and the server's other devices re-pull. Authed-only.
+    fn save_nutrition_profile(&self, input: NutritionProfile) -> Result<(), DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
@@ -851,14 +874,33 @@ impl VegifyData for Db {
         Ok(())
     }
 
+    fn get_nutrition_profile(&self) -> Result<NutritionProfile, DataError> {
+        let me = self.require_uid()?; // profile is authed-only (private)
+        let conn = self.conn();
+        vegify_core::get_nutrition_profile(&conn, &me).map_err(Into::into)
+    }
+
+    fn save_nutrition_profile(&self, input: NutritionProfile) -> Result<(), DataError> {
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| {
+            vegify_core::save_nutrition_profile(conn, &uid, &input).map_err(Into::into)
+        })?;
+        // The upsert is a whole-row replace, so a single queued "saveProfile" always carries the latest
+        // state — the server's own upsert is idempotent under a re-push.
+        self.enqueue("saveProfile", to_json(&input)?)?;
+        Ok(())
+    }
+
     /// One content-API sync pass: push local writes, THEN pull/reconcile — push-first so the pull's
     /// prune can't drop an unpushed local create. The bootstrap-on-sign-in, the debounced auto-sync,
     /// and the manual Sync button all call it.
     fn sync_now(&self) -> Result<(), DataError> {
         self.push()?;
         self.pull()?;
-        // Diary last: its entries reference content ingredients, so the content pull must land first.
-        self.pull_diary()
+        // Diary before profile, both after the content pull: diary entries reference content ingredients
+        // (so that pull must land first); the profile is independent (only the user FK, always present).
+        self.pull_diary()?;
+        self.pull_profile()
     }
 
     fn media_base(&self) -> Result<String, DataError> {
@@ -1999,6 +2041,65 @@ mod tests {
         assert!(
             ops(&db).contains(&"deleteLogEntry".to_string()),
             "the delete is queued for sync"
+        );
+    }
+
+    #[test]
+    fn saving_a_profile_writes_locally_and_queues_the_push() {
+        let db_path = std::env::temp_dir().join("vegify-profile-outbox.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        sign_in_seed(&db);
+
+        // Fresh profile reads as all-null defaults (generic-adult targets).
+        let before = VegifyData::get_nutrition_profile(&db).expect("get");
+        assert!(
+            before.birth_year.is_none() && before.dri_sex.is_none() && !before.supplement_b12,
+            "an unset profile defaults to all-null"
+        );
+
+        VegifyData::save_nutrition_profile(
+            &db,
+            NutritionProfile {
+                birth_year: Some(1990),
+                dri_sex: Some(DriSex::Male),
+                weight_kg: Some(80.0),
+                pregnancy: false,
+                lactation: false,
+                supplement_b12: true,
+                supplement_vit_d: false,
+                supplement_algae_oil: false,
+            },
+        )
+        .expect("save profile");
+
+        // The write hit the LOCAL cache: it reads back offline with the saved values.
+        let after = VegifyData::get_nutrition_profile(&db).expect("get");
+        assert_eq!(after.birth_year, Some(1990));
+        assert_eq!(after.dri_sex, Some(DriSex::Male));
+        assert_eq!(after.weight_kg, Some(80.0));
+        assert!(after.supplement_b12, "the B12 flag persisted locally");
+
+        // …and it queued the push (drained to POST /api/profile by the sync engine). The payload is the
+        // camelCase wire body the server upserts — no userId (the server stamps it from the session).
+        let queued: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT payload FROM _outbox WHERE op = 'saveProfile' ORDER BY seq DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .expect("a saveProfile op is queued");
+        let payload: serde_json::Value = serde_json::from_str(&queued).unwrap();
+        assert_eq!(payload["birthYear"], serde_json::json!(1990));
+        assert_eq!(payload["driSex"], "male");
+        assert_eq!(payload["supplementB12"], serde_json::json!(true));
+        assert!(
+            payload.get("userId").is_none(),
+            "userId omitted — the server stamps it from the session"
         );
     }
 

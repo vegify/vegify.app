@@ -490,6 +490,27 @@ impl VegifyClient {
         read_json(req.call().map_err(net)?)
     }
 
+    /// GET /api/profile → the viewer's nutrition profile (all-null defaults when never set) for authed
+    /// device sync. Deserialized straight into [`vegify_core::NutritionProfile`] (this SDK already
+    /// depends on vegify-core), so the desktop upserts it into the local cache with no conversion. The
+    /// profile is PRIVATE, like the diary — never in the anonymous content pull. Bearer required.
+    pub fn profile_get(&self, token: &str) -> Result<vegify_core::NutritionProfile, Error> {
+        tracing::debug!("GET /api/profile");
+        let req = Self::bearer(self.agent.get(format!("{}/api/profile", self.base)), token);
+        read_json(req.call().map_err(net)?)
+    }
+
+    /// POST /api/profile with a NutritionProfile payload (the server upserts the single per-user row).
+    /// Bearer required; PRIVATE, owner-scoped.
+    pub fn profile_post(&self, token: &str, body: &serde_json::Value) -> Result<(), Error> {
+        tracing::debug!("POST /api/profile");
+        expect_ok(
+            Self::bearer(self.agent.post(format!("{}/api/profile", self.base)), token)
+                .send_json(body)
+                .map_err(net)?,
+        )
+    }
+
     /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");
