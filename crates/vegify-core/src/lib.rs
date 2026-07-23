@@ -1174,9 +1174,12 @@ pub struct DayLog {
     /// Per-nutrient absolute totals for the day, ordered by nutrient name.
     pub totals: Vec<NutrientTotal>,
     /// The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when
-    /// unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets
-    /// in one payload. Match a `total` to its `target` by nutrient name.
+    /// unset), with per-DAY supplement coverage applied. Returned per-day so the Day screen can render
+    /// progress vs. targets in one payload. Match a `total` to its `target` by nutrient name.
     pub targets: Vec<NutrientTarget>,
+    /// The supplements taken on this day (effective, carry-forward). Renders the day's supplement
+    /// checklist and drives the `supplementCovered` flags above.
+    pub supplements: DaySupplements,
 }
 
 #[derive(Serialize, Type)]
@@ -1423,8 +1426,11 @@ pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, E
 
     // 3. The viewer's personalized targets (profile-driven; generic-adult when unset). The age bracket
     // uses the VIEWED day's year — pure and clock-free (the date is already validated 'YYYY-MM-DD').
+    // Supplement coverage is now per-DAY (carry-forward from the last recorded day), so targets reflect
+    // whether THIS day's supplements were taken, not a standing profile setting.
     let year: i64 = date.get(0..4).and_then(|y| y.parse().ok()).unwrap_or(1970);
-    let target_list = targets(&get_nutrition_profile(conn, user_id)?, year);
+    let supplements = get_day_supplements(conn, user_id, date)?;
+    let target_list = targets(&get_nutrition_profile(conn, user_id)?, &supplements, year);
 
     Ok(DayLog {
         date: date.to_string(),
@@ -1432,6 +1438,7 @@ pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, E
         calories: day_calories,
         totals,
         targets: target_list,
+        supplements,
     })
 }
 
@@ -1517,14 +1524,33 @@ pub struct LogPullEntry {
     pub nutrients: Vec<LogPullNutrient>,
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+/// A dated supplement record: the supplements taken on one `date`. Doubles as the authed-pull row (to
+/// rebuild the day_supplements table on a replica verbatim) and the `save_day_supplements` write payload.
+pub struct DaySupplementsRecord {
+    /// User-local calendar date 'YYYY-MM-DD' this record pins (incl. the '1970-01-01' migration floor).
+    pub date: String,
+    /// Took a B12 supplement that day.
+    pub b12: bool,
+    /// Took a vitamin D supplement that day.
+    pub vit_d: bool,
+    /// Took an algae-oil (EPA+DHA) supplement that day.
+    pub algae_oil: bool,
+}
+
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 /// The viewer's FULL diary for authed device sync — a separate channel from the anonymous content pull,
 /// which never carries private log data. The desktop reconciles this into its local cache via
-/// `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild).
+/// `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild). Carries the
+/// day-supplement records alongside the entries — both are private per-day diary data on one channel.
 pub struct LogPull {
     /// Every live entry the viewer owns, newest logged first.
     pub entries: Vec<LogPullEntry>,
+    /// Every day-supplement record the viewer owns (all dates), applied verbatim on the replica.
+    #[serde(default)]
+    pub supplements: Vec<DaySupplementsRecord>,
 }
 
 /// Read the viewer's ENTIRE live diary (all dates) for authed device sync — each entry with its frozen
@@ -1569,7 +1595,25 @@ pub fn log_pull(conn: &Connection, user_id: &str) -> Result<LogPull, Error> {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         entries.push(e);
     }
-    Ok(LogPull { entries })
+    // The viewer's day-supplement records (all dates, incl. the migration floor) — private per-day data
+    // riding the same authed channel as the entries.
+    let mut sstmt = conn.prepare(
+        "SELECT date, b12, vit_d, algae_oil FROM day_supplements WHERE user_id = ?1 ORDER BY date",
+    )?;
+    let supplements = sstmt
+        .query_map([user_id], |row| {
+            Ok(DaySupplementsRecord {
+                date: row.get(0)?,
+                b12: row.get::<_, Option<bool>>(1)?.unwrap_or(false),
+                vit_d: row.get::<_, Option<bool>>(2)?.unwrap_or(false),
+                algae_oil: row.get::<_, Option<bool>>(3)?.unwrap_or(false),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(LogPull {
+        entries,
+        supplements,
+    })
 }
 
 /// Replace the viewer's LOCAL diary with the authoritative server pull, applied VERBATIM (the frozen
@@ -1618,6 +1662,17 @@ pub fn apply_log_pull(conn: &Connection, user_id: &str, pull: &LogPull) -> Resul
                 params![new_id(), e.id, n.name, n.amount_per_100g, n.unit],
             )?;
         }
+    }
+    // Rebuild the viewer's day-supplement records verbatim (server is authoritative) — wipe only this
+    // user's rows, then re-insert. `day_supplements` references only the user, so no amounts cleanup.
+    conn.execute("DELETE FROM day_supplements WHERE user_id = ?1", [user_id])?;
+    let now = now_ms();
+    for s in &pull.supplements {
+        conn.execute(
+            "INSERT INTO day_supplements(user_id, date, b12, vit_d, algae_oil, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![user_id, s.date, s.b12, s.vit_d, s.algae_oil, now],
+        )?;
     }
     Ok(())
 }
@@ -1775,12 +1830,22 @@ pub struct NutritionProfile {
     pub pregnancy: bool,
     /// Lactation DRIs (distinct from pregnancy); overrides the sex column.
     pub lactation: bool,
-    /// Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered.
-    pub supplement_b12: bool,
-    /// Takes a vitamin D supplement ⇒ the vitamin D target shows as covered.
-    pub supplement_vit_d: bool,
-    /// Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.
-    pub supplement_algae_oil: bool,
+}
+
+/// The supplements taken on a given DAY — the vegan-critical ones whose targets read as "covered by a
+/// supplement" rather than a food gap. This is per-DAY state (part of the day's plan), NOT a standing
+/// profile setting: whether you took your B12 today is a fact about today, and coverage should reflect
+/// it honestly. Carry-forward (`get_day_supplements`) makes a new day inherit your last day's routine so
+/// you don't re-check the same boxes every morning. Every field defaults to false (nothing taken).
+#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DaySupplements {
+    /// Took a B12 supplement (or reliably ate fortified foods) ⇒ the B12 target shows as covered.
+    pub b12: bool,
+    /// Took a vitamin D supplement ⇒ the vitamin D target shows as covered.
+    pub vit_d: bool,
+    /// Took an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.
+    pub algae_oil: bool,
 }
 
 /// Whether a target is an RDA (meets ~97–98% of the population's needs) or an AI (Adequate Intake,
@@ -1853,7 +1918,11 @@ fn round1(x: f64) -> f64 {
 /// meaningfully changes the target or the risk. Nutrients the catalog tracks but that need no personal
 /// adjustment (most B-vitamins, magnesium, potassium, …) are intentionally NOT targeted here yet; the
 /// FDA %DV panel still covers them. Extending coverage = adding to this list with cited constants.
-pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTarget> {
+pub fn targets(
+    profile: &NutritionProfile,
+    supplements: &DaySupplements,
+    current_year: i64,
+) -> Vec<NutrientTarget> {
     let sex = profile.dri_sex;
     let bracket = age_bracket(profile.birth_year, current_year);
     let preg = profile.pregnancy;
@@ -1947,8 +2016,8 @@ pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTar
             unit: "µg".into(),
             basis: TargetBasis::Rda,
             vegan_adjusted: false,
-            supplement_covered: profile.supplement_b12,
-            note: Some(if profile.supplement_b12 {
+            supplement_covered: supplements.b12,
+            note: Some(if supplements.b12 {
                 "Covered by your B12 supplement — the non-negotiable one for vegans (no reliable plant \
                  food source)."
                     .into()
@@ -2032,8 +2101,8 @@ pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTar
             unit: "IU".into(),
             basis: TargetBasis::Rda,
             vegan_adjusted: false,
-            supplement_covered: profile.supplement_vit_d,
-            note: Some(if profile.supplement_vit_d {
+            supplement_covered: supplements.vit_d,
+            note: Some(if supplements.vit_d {
                 "Covered by your vitamin D supplement (a vegan D3 from lichen, or D2)."
                     .into()
             } else {
@@ -2083,8 +2152,8 @@ pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTar
             unit: "g".into(),
             basis: TargetBasis::Ai,
             vegan_adjusted: false,
-            supplement_covered: profile.supplement_algae_oil,
-            note: Some(if profile.supplement_algae_oil {
+            supplement_covered: supplements.algae_oil,
+            note: Some(if supplements.algae_oil {
                 "ALA from flax, chia, hemp, and walnuts, plus your algae-oil supplement for direct EPA+DHA."
                     .into()
             } else {
@@ -2137,8 +2206,7 @@ pub fn targets(profile: &NutritionProfile, current_year: i64) -> Vec<NutrientTar
 pub fn get_nutrition_profile(conn: &Connection, user_id: &str) -> Result<NutritionProfile, Error> {
     let p = conn
         .query_row(
-            "SELECT birth_year, dri_sex, weight_kg, pregnancy, lactation,
-                    supplement_b12, supplement_vit_d, supplement_algae_oil
+            "SELECT birth_year, dri_sex, weight_kg, pregnancy, lactation
              FROM profiles WHERE user_id = ?1",
             [user_id],
             |row| {
@@ -2151,9 +2219,6 @@ pub fn get_nutrition_profile(conn: &Connection, user_id: &str) -> Result<Nutriti
                     weight_kg: row.get(2)?,
                     pregnancy: row.get::<_, Option<bool>>(3)?.unwrap_or(false),
                     lactation: row.get::<_, Option<bool>>(4)?.unwrap_or(false),
-                    supplement_b12: row.get::<_, Option<bool>>(5)?.unwrap_or(false),
-                    supplement_vit_d: row.get::<_, Option<bool>>(6)?.unwrap_or(false),
-                    supplement_algae_oil: row.get::<_, Option<bool>>(7)?.unwrap_or(false),
                 })
             },
         )
@@ -2171,18 +2236,14 @@ pub fn save_nutrition_profile(
     let now = now_ms();
     conn.execute(
         "INSERT INTO profiles
-            (user_id, birth_year, dri_sex, weight_kg, pregnancy, lactation,
-             supplement_b12, supplement_vit_d, supplement_algae_oil, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+            (user_id, birth_year, dri_sex, weight_kg, pregnancy, lactation, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
          ON CONFLICT(user_id) DO UPDATE SET
             birth_year = excluded.birth_year,
             dri_sex = excluded.dri_sex,
             weight_kg = excluded.weight_kg,
             pregnancy = excluded.pregnancy,
             lactation = excluded.lactation,
-            supplement_b12 = excluded.supplement_b12,
-            supplement_vit_d = excluded.supplement_vit_d,
-            supplement_algae_oil = excluded.supplement_algae_oil,
             updated_at = excluded.updated_at",
         params![
             user_id,
@@ -2191,11 +2252,60 @@ pub fn save_nutrition_profile(
             input.weight_kg,
             input.pregnancy,
             input.lactation,
-            input.supplement_b12,
-            input.supplement_vit_d,
-            input.supplement_algae_oil,
             now,
         ],
+    )?;
+    Ok(())
+}
+
+/// The effective supplements for a user on a date, with CARRY-FORWARD: the row for exactly `date` if one
+/// exists, else the most recent row on an EARLIER date (your standing routine), else all-false. So a new
+/// day inherits what you last recorded — no re-checking the same boxes daily — and an explicit edit to a
+/// day sets that day (and, by carry-forward, later days without their own row). The migration seeds a
+/// floor row (date '1970-01-01') from any old profile supplement flags, so pre-existing coverage holds.
+/// PRIVATE — owner-scoped by the caller's auth, exactly like the diary.
+pub fn get_day_supplements(
+    conn: &Connection,
+    user_id: &str,
+    date: &str,
+) -> Result<DaySupplements, Error> {
+    let s = conn
+        .query_row(
+            "SELECT b12, vit_d, algae_oil FROM day_supplements
+             WHERE user_id = ?1 AND date <= ?2 ORDER BY date DESC LIMIT 1",
+            params![user_id, date],
+            |row| {
+                Ok(DaySupplements {
+                    b12: row.get::<_, Option<bool>>(0)?.unwrap_or(false),
+                    vit_d: row.get::<_, Option<bool>>(1)?.unwrap_or(false),
+                    algae_oil: row.get::<_, Option<bool>>(2)?.unwrap_or(false),
+                })
+            },
+        )
+        .optional()?;
+    Ok(s.unwrap_or_default())
+}
+
+/// Upsert the supplements taken on a specific `date` for a user (one row per user+date). Owner-scoped by
+/// construction — the caller passes the authenticated `user_id`. Writing an explicit row for a date
+/// pins that day (carry-forward flows from it to later days without their own row).
+pub fn save_day_supplements(
+    conn: &Connection,
+    user_id: &str,
+    date: &str,
+    input: &DaySupplements,
+) -> Result<(), Error> {
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO day_supplements
+            (user_id, date, b12, vit_d, algae_oil, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+         ON CONFLICT(user_id, date) DO UPDATE SET
+            b12 = excluded.b12,
+            vit_d = excluded.vit_d,
+            algae_oil = excluded.algae_oil,
+            updated_at = excluded.updated_at",
+        params![user_id, date, input.b12, input.vit_d, input.algae_oil, now,],
     )?;
     Ok(())
 }
@@ -3551,10 +3661,77 @@ mod log_tests {
         );
 
         // An empty pull clears the viewer's diary (a signed-out/empty server view, or a wipe).
-        apply_log_pull(&c, "u1", &LogPull { entries: vec![] }).unwrap();
+        apply_log_pull(
+            &c,
+            "u1",
+            &LogPull {
+                entries: vec![],
+                supplements: vec![],
+            },
+        )
+        .unwrap();
         assert!(
             log_day(&c, "u1", "2026-07-20").unwrap().entries.is_empty(),
             "an empty pull clears the diary"
+        );
+    }
+
+    #[test]
+    fn day_supplements_carry_forward_and_round_trip_the_pull() {
+        let c = conn();
+        // No records yet ⇒ nothing taken on any day.
+        assert_eq!(
+            get_day_supplements(&c, "u1", "2026-07-20").unwrap(),
+            DaySupplements::default()
+        );
+
+        // Record B12 on the 18th. It carries FORWARD to later days without their own row…
+        save_day_supplements(
+            &c,
+            "u1",
+            "2026-07-18",
+            &DaySupplements {
+                b12: true,
+                vit_d: false,
+                algae_oil: false,
+            },
+        )
+        .unwrap();
+        assert!(get_day_supplements(&c, "u1", "2026-07-20").unwrap().b12);
+        // …but NOT backward to an earlier day.
+        assert!(!get_day_supplements(&c, "u1", "2026-07-17").unwrap().b12);
+
+        // An explicit later row pins that day and overrides the carry-forward from there on.
+        save_day_supplements(
+            &c,
+            "u1",
+            "2026-07-20",
+            &DaySupplements {
+                b12: false,
+                vit_d: true,
+                algae_oil: false,
+            },
+        )
+        .unwrap();
+        let d20 = get_day_supplements(&c, "u1", "2026-07-20").unwrap();
+        assert!(!d20.b12 && d20.vit_d);
+        // The 19th still carries the 18th's B12 (no row of its own).
+        assert!(get_day_supplements(&c, "u1", "2026-07-19").unwrap().b12);
+
+        // The pull carries every record; apply rebuilds them verbatim on a replica.
+        let pull = log_pull(&c, "u1").unwrap();
+        assert_eq!(pull.supplements.len(), 2);
+        let replica = conn();
+        apply_log_pull(&replica, "u1", &pull).unwrap();
+        assert!(
+            get_day_supplements(&replica, "u1", "2026-07-19")
+                .unwrap()
+                .b12
+        );
+        assert!(
+            get_day_supplements(&replica, "u1", "2026-07-20")
+                .unwrap()
+                .vit_d
         );
     }
 }
@@ -3602,7 +3779,11 @@ mod targets_tests {
     #[test]
     fn generic_empty_profile_uses_protective_defaults() {
         // Unknown sex ⇒ the higher of the two adult DRIs per nutrient (never under-recommend).
-        let t = targets(&NutritionProfile::default(), 2026);
+        let t = targets(
+            &NutritionProfile::default(),
+            &DaySupplements::default(),
+            2026,
+        );
         assert!(
             close(amount(&t, "Iron"), 32.4),
             "18 (female 19–50) × 1.8 vegan"
@@ -3631,7 +3812,7 @@ mod targets_tests {
             p.birth_year = Some(1990); // age 36 in 2026
             p.weight_kg = Some(80.0);
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Iron"), 14.4), "8 (male) × 1.8");
         assert!(close(amount(&t, "Zinc"), 16.5), "11 × 1.5");
         assert!(close(amount(&t, "Calcium"), 1000.0));
@@ -3650,7 +3831,7 @@ mod targets_tests {
             p.dri_sex = Some(DriSex::Female);
             p.birth_year = Some(1996); // age 30
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Iron"), 32.4), "18 × 1.8");
         assert!(close(amount(&t, "Zinc"), 12.0), "8 (female) × 1.5");
         assert!(close(amount(&t, "Omega-3 Fatty Acids"), 1.1), "female AI");
@@ -3671,7 +3852,7 @@ mod targets_tests {
             p.dri_sex = Some(DriSex::Female);
             p.birth_year = Some(1966); // age 60 → 51–70 bracket
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Iron"), 14.4), "8 × 1.8 post-menopause");
         assert!(close(amount(&t, "Calcium"), 1200.0), "women 51+ = 1200");
     }
@@ -3682,7 +3863,7 @@ mod targets_tests {
             p.dri_sex = Some(DriSex::Male);
             p.birth_year = Some(1950); // age 76 → 71+
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Vitamin D"), 800.0), "71+ = 800 IU");
         assert!(close(amount(&t, "Calcium"), 1200.0), "men 71+ = 1200");
     }
@@ -3693,7 +3874,7 @@ mod targets_tests {
             p.dri_sex = Some(DriSex::Female);
             p.pregnancy = true;
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Iron"), 48.6), "27 × 1.8");
         assert!(close(amount(&t, "Iodine"), 220.0));
         assert!(close(amount(&t, "Selenium"), 60.0));
@@ -3707,7 +3888,7 @@ mod targets_tests {
             p.dri_sex = Some(DriSex::Female);
             p.lactation = true;
         });
-        let t = targets(&p, 2026);
+        let t = targets(&p, &DaySupplements::default(), 2026);
         assert!(close(amount(&t, "Iron"), 16.2), "9 × 1.8");
         assert!(close(amount(&t, "Iodine"), 290.0));
         assert!(close(amount(&t, "Selenium"), 70.0));
@@ -3718,22 +3899,36 @@ mod targets_tests {
 
     #[test]
     fn supplement_flags_mark_covered() {
-        let p = profile(|p| {
-            p.supplement_b12 = true;
-            p.supplement_vit_d = true;
-            p.supplement_algae_oil = true;
-        });
-        let t = targets(&p, 2026);
+        // Supplement coverage is now a per-DAY input, not a profile field.
+        let taken = DaySupplements {
+            b12: true,
+            vit_d: true,
+            algae_oil: true,
+        };
+        let t = targets(&NutritionProfile::default(), &taken, 2026);
         assert!(find(&t, "Vitamin B12").supplement_covered);
         assert!(find(&t, "Vitamin D").supplement_covered);
         assert!(find(&t, "Omega-3 Fatty Acids").supplement_covered);
         // A nutrient with no supplement concept is never "covered".
         assert!(!find(&t, "Iron").supplement_covered);
+        // With nothing taken, the same nutrients read as a gap (not covered).
+        let none = targets(
+            &NutritionProfile::default(),
+            &DaySupplements::default(),
+            2026,
+        );
+        assert!(!find(&none, "Vitamin B12").supplement_covered);
+        assert!(!find(&none, "Vitamin D").supplement_covered);
+        assert!(!find(&none, "Omega-3 Fatty Acids").supplement_covered);
     }
 
     #[test]
     fn overlay_flags_and_basis_are_honest() {
-        let t = targets(&NutritionProfile::default(), 2026);
+        let t = targets(
+            &NutritionProfile::default(),
+            &DaySupplements::default(),
+            2026,
+        );
         assert!(find(&t, "Iron").vegan_adjusted);
         assert!(find(&t, "Zinc").vegan_adjusted);
         assert!(
@@ -3765,7 +3960,11 @@ mod targets_tests {
             "Omega-3 Fatty Acids",
             "Protein",
         ];
-        for t in targets(&NutritionProfile::default(), 2026) {
+        for t in targets(
+            &NutritionProfile::default(),
+            &DaySupplements::default(),
+            2026,
+        ) {
             assert!(
                 catalog.contains(&t.name.as_str()),
                 "unknown target name {}",
@@ -3780,21 +3979,18 @@ mod targets_tests {
         // Absent profile ⇒ the generic default (all None/false).
         let empty = get_nutrition_profile(&c, "u1").unwrap();
         assert_eq!(empty.birth_year, None);
-        assert!(!empty.pregnancy && !empty.supplement_b12);
+        assert!(!empty.pregnancy);
 
         let p = profile(|p| {
             p.birth_year = Some(1990);
             p.dri_sex = Some(DriSex::Male);
             p.weight_kg = Some(78.5);
-            p.supplement_b12 = true;
         });
         save_nutrition_profile(&c, "u1", &p).unwrap();
         let got = get_nutrition_profile(&c, "u1").unwrap();
         assert_eq!(got.birth_year, Some(1990));
         assert_eq!(got.dri_sex, Some(DriSex::Male));
         assert!(close(got.weight_kg.unwrap(), 78.5));
-        assert!(got.supplement_b12);
-        assert!(!got.supplement_vit_d);
 
         // Upsert replaces (single row per user).
         let p2 = profile(|p| p.dri_sex = Some(DriSex::Female));

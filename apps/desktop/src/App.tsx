@@ -1450,7 +1450,12 @@ const logDayQuery = (date: string) =>
           ingredientId: r.ingredientId,
           name: r.name,
           lastGrams: r.lastGrams
-        }))
+        })),
+        supplements: {
+          b12: day.supplements.b12 ?? false,
+          vitD: day.supplements.vitD ?? false,
+          algaeOil: day.supplements.algaeOil ?? false
+        }
       }
     }
   })
@@ -1528,6 +1533,11 @@ function DiaryInner() {
           loggedAt: null
         })
       }
+      scheduleSync()
+      await refresh()
+    },
+    setSupplements: async (next) => {
+      await vegifyData.saveDaySupplements({ date, ...next })
       scheduleSync()
       await refresh()
     }

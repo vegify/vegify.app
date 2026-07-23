@@ -511,6 +511,21 @@ impl VegifyClient {
         )
     }
 
+    /// POST /api/day-supplements with a DaySupplementsRecord payload (`{ date, b12, vitD, algaeOil }`);
+    /// the server upserts the (user, date) row. Bearer required; PRIVATE, owner-scoped.
+    pub fn day_supplements_post(&self, token: &str, body: &serde_json::Value) -> Result<(), Error> {
+        tracing::debug!("POST /api/day-supplements");
+        expect_ok(
+            Self::bearer(
+                self.agent
+                    .post(format!("{}/api/day-supplements", self.base)),
+                token,
+            )
+            .send_json(body)
+            .map_err(net)?,
+        )
+    }
+
     /// Undo a soft delete (POST /api/content/ingredient-restore?id=).
     pub fn restore_ingredient(&self, token: &str, id: &str) -> Result<(), Error> {
         tracing::debug!(id, "POST ingredient-restore");

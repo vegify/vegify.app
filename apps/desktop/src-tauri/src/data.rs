@@ -501,6 +501,7 @@ impl Db {
                 "saveLogEntry" => client.log_post(&token, &payload)?,
                 "deleteLogEntry" => client.log_delete(&token, payload_id(&payload)?)?,
                 "saveProfile" => client.profile_post(&token, &payload)?,
+                "saveDaySupplements" => client.day_supplements_post(&token, &payload)?,
                 other => return Err(DataError::Db(format!("unknown outbox op: {other}"))),
             }
             self.conn()
@@ -661,9 +662,12 @@ pub trait VegifyData {
     /// The viewer's nutrition profile from the local cache (all-null defaults when never set). Authed-only
     /// — the profile is PRIVATE, so unlike content reads there is no anonymous fallback. Drives targets.
     fn get_nutrition_profile(&self) -> Result<NutritionProfile, DataError>;
-    /// Upsert the viewer's nutrition profile (age/sex/weight/pregnancy/supplements). Enqueues for sync,
-    /// so the next `sync_now` pushes it and the server's other devices re-pull. Authed-only.
+    /// Upsert the viewer's nutrition profile (age/sex/weight/pregnancy). Enqueues for sync, so the next
+    /// `sync_now` pushes it and the server's other devices re-pull. Authed-only.
     fn save_nutrition_profile(&self, input: NutritionProfile) -> Result<(), DataError>;
+    /// Upsert the supplements taken on a day (the day's plan). Writes locally + enqueues for sync; the
+    /// day's effective supplements come back in `log_day` (carry-forward). Authed-only — private per-day.
+    fn save_day_supplements(&self, input: DaySupplementsRecord) -> Result<(), DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
@@ -888,6 +892,27 @@ impl VegifyData for Db {
         // The upsert is a whole-row replace, so a single queued "saveProfile" always carries the latest
         // state — the server's own upsert is idempotent under a re-push.
         self.enqueue("saveProfile", to_json(&input)?)?;
+        Ok(())
+    }
+
+    fn save_day_supplements(&self, input: DaySupplementsRecord) -> Result<(), DataError> {
+        let uid = self.require_uid()?;
+        self.with_conn(|conn| {
+            vegify_core::save_day_supplements(
+                conn,
+                &uid,
+                &input.date,
+                &DaySupplements {
+                    b12: input.b12,
+                    vit_d: input.vit_d,
+                    algae_oil: input.algae_oil,
+                },
+            )
+            .map_err(Into::into)
+        })?;
+        // One row per (user, date); the upsert is a whole-row replace, so a queued "saveDaySupplements"
+        // always carries the date's latest state and re-pushes idempotently.
+        self.enqueue("saveDaySupplements", to_json(&input)?)?;
         Ok(())
     }
 
@@ -2055,7 +2080,7 @@ mod tests {
         // Fresh profile reads as all-null defaults (generic-adult targets).
         let before = VegifyData::get_nutrition_profile(&db).expect("get");
         assert!(
-            before.birth_year.is_none() && before.dri_sex.is_none() && !before.supplement_b12,
+            before.birth_year.is_none() && before.dri_sex.is_none() && !before.pregnancy,
             "an unset profile defaults to all-null"
         );
 
@@ -2067,9 +2092,6 @@ mod tests {
                 weight_kg: Some(80.0),
                 pregnancy: false,
                 lactation: false,
-                supplement_b12: true,
-                supplement_vit_d: false,
-                supplement_algae_oil: false,
             },
         )
         .expect("save profile");
@@ -2079,7 +2101,6 @@ mod tests {
         assert_eq!(after.birth_year, Some(1990));
         assert_eq!(after.dri_sex, Some(DriSex::Male));
         assert_eq!(after.weight_kg, Some(80.0));
-        assert!(after.supplement_b12, "the B12 flag persisted locally");
 
         // …and it queued the push (drained to POST /api/profile by the sync engine). The payload is the
         // camelCase wire body the server upserts — no userId (the server stamps it from the session).
@@ -2096,7 +2117,6 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_str(&queued).unwrap();
         assert_eq!(payload["birthYear"], serde_json::json!(1990));
         assert_eq!(payload["driSex"], "male");
-        assert_eq!(payload["supplementB12"], serde_json::json!(true));
         assert!(
             payload.get("userId").is_none(),
             "userId omitted — the server stamps it from the session"

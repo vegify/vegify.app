@@ -161,8 +161,12 @@
             },
             "type": "array"
           },
+          "supplements": {
+            "$ref": "#/components/schemas/DaySupplements",
+            "description": " The supplements taken on this day (effective, carry-forward). Renders the day's supplement\n checklist and drives the `supplementCovered` flags above."
+          },
           "targets": {
-            "description": " The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when\n unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets\n in one payload. Match a `total` to its `target` by nutrient name.",
+            "description": " The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when\n unset), with per-DAY supplement coverage applied. Returned per-day so the Day screen can render\n progress vs. targets in one payload. Match a `total` to its `target` by nutrient name.",
             "items": {
               "$ref": "#/components/schemas/NutrientTarget"
             },
@@ -181,9 +185,60 @@
           "entries",
           "calories",
           "totals",
-          "targets"
+          "targets",
+          "supplements"
         ],
         "title": "DayLog",
+        "type": "object"
+      },
+      "DaySupplements": {
+        "additionalProperties": false,
+        "description": " The supplements taken on a given DAY — the vegan-critical ones whose targets read as \"covered by a\n supplement\" rather than a food gap. This is per-DAY state (part of the day's plan), NOT a standing\n profile setting: whether you took your B12 today is a fact about today, and coverage should reflect\n it honestly. Carry-forward (`get_day_supplements`) makes a new day inherit your last day's routine so\n you don't re-check the same boxes every morning. Every field defaults to false (nothing taken).",
+        "properties": {
+          "algaeOil": {
+            "description": " Took an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.",
+            "type": "boolean"
+          },
+          "b12": {
+            "description": " Took a B12 supplement (or reliably ate fortified foods) ⇒ the B12 target shows as covered.",
+            "type": "boolean"
+          },
+          "vitD": {
+            "description": " Took a vitamin D supplement ⇒ the vitamin D target shows as covered.",
+            "type": "boolean"
+          }
+        },
+        "title": "DaySupplements",
+        "type": "object"
+      },
+      "DaySupplementsRecord": {
+        "additionalProperties": false,
+        "description": " A dated supplement record: the supplements taken on one `date`. Doubles as the authed-pull row (to\n rebuild the day_supplements table on a replica verbatim) and the `save_day_supplements` write payload.",
+        "properties": {
+          "algaeOil": {
+            "description": " Took an algae-oil (EPA+DHA) supplement that day.",
+            "type": "boolean"
+          },
+          "b12": {
+            "description": " Took a B12 supplement that day.",
+            "type": "boolean"
+          },
+          "date": {
+            "description": " User-local calendar date 'YYYY-MM-DD' this record pins (incl. the '1970-01-01' migration floor).",
+            "type": "string"
+          },
+          "vitD": {
+            "description": " Took a vitamin D supplement that day.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "b12",
+          "vitD",
+          "algaeOil"
+        ],
+        "title": "DaySupplementsRecord",
         "type": "object"
       },
       "DriSex": {
@@ -557,12 +612,19 @@
       },
       "LogPull": {
         "additionalProperties": false,
-        "description": " The viewer's FULL diary for authed device sync — a separate channel from the anonymous content pull,\n which never carries private log data. The desktop reconciles this into its local cache via\n `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild).",
+        "description": " The viewer's FULL diary for authed device sync — a separate channel from the anonymous content pull,\n which never carries private log data. The desktop reconciles this into its local cache via\n `apply_log_pull` (its OWN reconciliation, isolated from `apply_pull`'s content rebuild). Carries the\n day-supplement records alongside the entries — both are private per-day diary data on one channel.",
         "properties": {
           "entries": {
             "description": " Every live entry the viewer owns, newest logged first.",
             "items": {
               "$ref": "#/components/schemas/LogPullEntry"
+            },
+            "type": "array"
+          },
+          "supplements": {
+            "description": " Every day-supplement record the viewer owns (all dates), applied verbatim on the replica.",
+            "items": {
+              "$ref": "#/components/schemas/DaySupplementsRecord"
             },
             "type": "array"
           }
@@ -868,18 +930,6 @@
           },
           "pregnancy": {
             "description": " Pregnancy raises the iron / iodine / zinc / B12 / selenium DRIs; overrides the sex column.",
-            "type": "boolean"
-          },
-          "supplementAlgaeOil": {
-            "description": " Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it.",
-            "type": "boolean"
-          },
-          "supplementB12": {
-            "description": " Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered.",
-            "type": "boolean"
-          },
-          "supplementVitD": {
-            "description": " Takes a vitamin D supplement ⇒ the vitamin D target shows as covered.",
             "type": "boolean"
           },
           "weightKg": {
@@ -2740,6 +2790,34 @@
         "summary": "Sitemap source data"
       }
     },
+    "/api/day-supplements": {
+      "post": {
+        "description": "Requires bearer; owner-scoped; PRIVATE. Part of the day's plan — records which supplements were taken on `date`. Coverage carries forward to later days without their own record, and the day's effective supplements come back in GET /api/log/day.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DaySupplementsRecord"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ack"
+                }
+              }
+            },
+            "description": "Supplements saved"
+          }
+        },
+        "summary": "Upsert the supplements taken on a day"
+      }
+    },
     "/api/log/day": {
       "get": {
         "description": "Requires bearer; PRIVATE to the viewer. The date's entries plus server-computed nutrient totals (each entry rolled up through the same nested-recipe CTE recipes use) and the viewer's personalized vegan-aware daily targets (from their nutrition profile; generic-adult when unset).",
@@ -2996,7 +3074,7 @@
     },
     "/api/profile": {
       "get": {
-        "description": "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy/supplement inputs that drive personalized targets. All fields optional — absent ones default to the generic-adult DRI tier (an unset profile returns all nulls).",
+        "description": "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy inputs that drive personalized targets. All fields optional — absent ones default to the generic-adult DRI tier (an unset profile returns all nulls).",
         "responses": {
           "200": {
             "content": {

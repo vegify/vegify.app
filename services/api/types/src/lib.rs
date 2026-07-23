@@ -343,6 +343,11 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::NutritionProfile>()
         .register::<vegify_core::TargetBasis>()
         .register::<vegify_core::NutrientTarget>()
+        // Per-day supplements (moved off the profile — the day's plan drives coverage). DayLog carries
+        // `supplements: DaySupplements`, the pull carries `DaySupplementsRecord[]`, and the record is the
+        // POST /api/day-supplements body.
+        .register::<vegify_core::DaySupplements>()
+        .register::<vegify_core::DaySupplementsRecord>()
         // this crate (server-local wire shapes)
         .register::<UploadTicket>()
         .register::<User>()
@@ -527,9 +532,9 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
         Operation::get("/api/profile")
             .summary("The viewer's nutrition profile")
             .description(
-                "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy/supplement inputs \
-                 that drive personalized targets. All fields optional — absent ones default to the \
-                 generic-adult DRI tier (an unset profile returns all nulls).",
+                "Requires bearer; PRIVATE to the viewer. Age/sex/weight/pregnancy inputs that drive \
+                 personalized targets. All fields optional — absent ones default to the generic-adult \
+                 DRI tier (an unset profile returns all nulls).",
             )
             .response::<core::NutritionProfile>(200, "The viewer's nutrition profile (defaults when unset)"),
         Operation::post("/api/profile")
@@ -540,5 +545,14 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             )
             .request_body::<core::NutritionProfile>()
             .response::<Ack>(200, "Profile saved"),
+        Operation::post("/api/day-supplements")
+            .summary("Upsert the supplements taken on a day")
+            .description(
+                "Requires bearer; owner-scoped; PRIVATE. Part of the day's plan — records which \
+                 supplements were taken on `date`. Coverage carries forward to later days without their \
+                 own record, and the day's effective supplements come back in GET /api/log/day.",
+            )
+            .request_body::<core::DaySupplementsRecord>()
+            .response::<Ack>(200, "Supplements saved"),
     ]
 }
