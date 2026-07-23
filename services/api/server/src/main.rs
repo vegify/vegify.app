@@ -1811,7 +1811,10 @@ mod migration_tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(has_supp, 0, "a fresh profiles table has no supplement columns");
+        assert_eq!(
+            has_supp, 0,
+            "a fresh profiles table has no supplement columns"
+        );
         let seeded: i64 = conn
             .query_row("SELECT COUNT(*) FROM day_supplements", [], |r| r.get(0))
             .unwrap();
