@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react"
 
 import type { AppShellLinkProps } from "./app-shell"
 import { buttonClasses } from "./button"
+import { Checkbox } from "./checkbox"
 import { cn } from "./cn"
 import { InlineNumber } from "./inline"
 import { NutritionFacts, type NutritionFactsData } from "./nutrition-facts"
@@ -58,6 +59,14 @@ export type DayTargetVM = {
   note: string | null
 }
 
+/** The supplements taken on this day (effective, carry-forward from the last recorded day). Kept local
+ *  so @vegify/ui stays decoupled from @vegify/api-types (structurally the wire `DaySupplements`). */
+export type DaySupplementsVM = {
+  b12: boolean
+  vitD: boolean
+  algaeOil: boolean
+}
+
 /** One diary day as a view-model (each shell maps the server's `DayLog`, coercing null numbers). */
 export type DayVM = {
   /** The 'YYYY-MM-DD' local calendar date this covers. */
@@ -71,6 +80,8 @@ export type DayVM = {
   targets: DayTargetVM[]
   /** The viewer's recents, for the add-flow. */
   recents: DayRecentVM[]
+  /** The supplements taken on this day — drives the checklist and the targets' supplement coverage. */
+  supplements: DaySupplementsVM
 }
 
 /** The write port — present ⇒ the owner can log/edit/delete. Each shell wires these to its transport. */
@@ -86,6 +97,8 @@ export type DayLogAdapter = {
   search: (q: string) => Promise<IngredientSearchItem[]>
   /** Re-log yesterday's foods onto this day (each re-snapshots at today's values). Optional. */
   copyYesterday?: () => Promise<void>
+  /** Set which supplements were taken on this day (upserts the day's record; carries forward). */
+  setSupplements: (next: DaySupplementsVM) => Promise<void>
 }
 
 const pad = (n: number) => String(n).padStart(2, "0")
@@ -479,6 +492,57 @@ function DayTargets({
   )
 }
 
+/** The day's SUPPLEMENT checklist — part of the day's plan (moved off the profile). Checking one marks
+ *  its nutrient "covered" in the targets for THIS day (and carries forward to later days without their
+ *  own record). Guidance-toned, like the rest of the Day screen. Owner-only (rendered behind `log`). */
+function DaySupplementsChecklist({
+  supplements,
+  onChange
+}: {
+  supplements: DaySupplementsVM
+  onChange: (next: DaySupplementsVM) => Promise<void>
+}) {
+  // Optimistic local mirror so a toggle reflects immediately, before the write/refetch round-trips.
+  const [local, setLocal] = useState(supplements)
+  useEffect(() => setLocal(supplements), [supplements])
+  const toggle = (key: keyof DaySupplementsVM, v: boolean) => {
+    const next = { ...local, [key]: v }
+    setLocal(next)
+    void onChange(next)
+  }
+  const items: { key: keyof DaySupplementsVM; id: string; label: string }[] = [
+    { key: "b12", id: "supp-b12", label: "Vitamin B12" },
+    { key: "vitD", id: "supp-vit-d", label: "Vitamin D" },
+    { key: "algaeOil", id: "supp-algae", label: "Algae oil (EPA/DHA)" }
+  ]
+  return (
+    <section className="mt-8">
+      <h2 className="mb-1 font-bold font-serif text-lg tracking-tight">
+        Supplements
+      </h2>
+      <p className="mb-3 text-muted-foreground text-xs">
+        Check what you took today — it marks that nutrient as covered.
+      </p>
+      <div className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+        {items.map((it) => (
+          <label
+            key={it.key}
+            htmlFor={it.id}
+            className="flex items-center gap-2 text-sm"
+          >
+            <Checkbox
+              id={it.id}
+              checked={local[it.key]}
+              onCheckedChange={(v) => toggle(it.key, v === true)}
+            />
+            {it.label}
+          </label>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export function DayView({
   day,
   LinkComponent,
@@ -533,6 +597,14 @@ export function DayView({
           <div className="mt-2">
             <AddFoodRow log={log} recents={day.recents} />
           </div>
+        ) : null}
+
+        {/* Supplements are part of the day's plan (owner-only) — toggling drives targets coverage. */}
+        {log ? (
+          <DaySupplementsChecklist
+            supplements={day.supplements}
+            onChange={log.setSupplements}
+          />
         ) : null}
 
         {/* Mobile: targets live in the main flow (the aside is desktop-only). */}

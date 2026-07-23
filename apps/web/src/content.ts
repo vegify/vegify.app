@@ -11,6 +11,7 @@ import type {
   AggregatedNutrition,
   Amount,
   DayLog,
+  DaySupplementsRecord,
   IngredientCard,
   IngredientEditData,
   IngredientSlugHit,
@@ -142,6 +143,15 @@ export const deleteLogEntry = (id: string): Promise<void> =>
 export const getNutritionProfile = () => api<NutritionProfile>("/api/profile")
 export const saveNutritionProfile = (input: NutritionProfile): Promise<void> =>
   api("/api/profile", { method: "POST", body: input }).then(() => undefined)
+
+// Per-day supplements (PRIVATE; part of the day's plan). Upserts the date's record; the day's effective
+// supplements (carry-forward) come back in getLogDay.
+export const saveDaySupplements = (
+  input: DaySupplementsRecord
+): Promise<void> =>
+  api("/api/day-supplements", { method: "POST", body: input }).then(
+    () => undefined
+  )
 
 // --- mutations (the server stamps userId from the session — a client-supplied owner is never trusted) ---
 

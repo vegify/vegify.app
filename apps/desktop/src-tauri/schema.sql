@@ -226,10 +226,18 @@ CREATE TABLE IF NOT EXISTS `profiles` (
 	`weight_kg` real,
 	`pregnancy` integer,
 	`lactation` integer,
-	`supplement_b12` integer,
-	`supplement_vit_d` integer,
-	`supplement_algae_oil` integer,
 	`created_at` integer,
 	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE TABLE IF NOT EXISTS `day_supplements` (
+	`user_id` text NOT NULL,
+	`date` text NOT NULL,
+	`b12` integer,
+	`vit_d` integer,
+	`algae_oil` integer,
+	`created_at` integer,
+	`updated_at` integer,
+	PRIMARY KEY(`user_id`, `date`),
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
 );

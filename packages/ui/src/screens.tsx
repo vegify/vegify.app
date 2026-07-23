@@ -1784,9 +1784,6 @@ export type NutritionProfileValues = {
   weightKg?: number | null
   pregnancy?: boolean
   lactation?: boolean
-  supplementB12?: boolean
-  supplementVitD?: boolean
-  supplementAlgaeOil?: boolean
 }
 
 const selectClasses =
@@ -1799,8 +1796,8 @@ function fmtWeight(n: number): string {
 }
 
 /** The nutrition PROFILE form (P1.3). Feeds vegify-core's targets — birth year + reference sex pick the
- *  DRI table, weight enables a g/kg protein target, pregnancy/lactation and supplement flags adjust the
- *  vegan overlay. Presentational + guidance-toned; the shell wires `onSave` to its transport. */
+ *  DRI table, weight enables a g/kg protein target, pregnancy/lactation adjust the DRIs. Supplements are
+ *  NOT here — they're per-day, on the Day screen. Presentational; the shell wires `onSave` to transport. */
 function NutritionProfileForm({
   profile,
   onSave
@@ -1832,9 +1829,6 @@ function NutritionProfileForm({
   }, [weightUnit, weight])
   const [pregnancy, setPregnancy] = useState(!!profile.pregnancy)
   const [lactation, setLactation] = useState(!!profile.lactation)
-  const [b12, setB12] = useState(!!profile.supplementB12)
-  const [vitD, setVitD] = useState(!!profile.supplementVitD)
-  const [algae, setAlgae] = useState(!!profile.supplementAlgaeOil)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -1851,10 +1845,7 @@ function NutritionProfileForm({
         driSex: driSex || null,
         weightKg: kg,
         pregnancy: driSex === "female" ? pregnancy : false,
-        lactation: driSex === "female" ? lactation : false,
-        supplementB12: b12,
-        supplementVitD: vitD,
-        supplementAlgaeOil: algae
+        lactation: driSex === "female" ? lactation : false
       })
       setSaved(true)
     } finally {
@@ -1958,40 +1949,6 @@ function NutritionProfileForm({
           </label>
         </div>
       ) : null}
-
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 font-medium text-sm">
-          Supplements you take
-        </legend>
-        <label htmlFor="supp-b12" className="flex items-center gap-2 text-sm">
-          <Checkbox
-            id="supp-b12"
-            checked={b12}
-            onCheckedChange={(v) => setB12(v === true)}
-          />
-          Vitamin B12
-        </label>
-        <label htmlFor="supp-vit-d" className="flex items-center gap-2 text-sm">
-          <Checkbox
-            id="supp-vit-d"
-            checked={vitD}
-            onCheckedChange={(v) => setVitD(v === true)}
-          />
-          Vitamin D
-        </label>
-        <label htmlFor="supp-algae" className="flex items-center gap-2 text-sm">
-          <Checkbox
-            id="supp-algae"
-            checked={algae}
-            onCheckedChange={(v) => setAlgae(v === true)}
-          />
-          Algae oil (EPA/DHA)
-        </label>
-        <p className="text-muted-foreground text-xs">
-          A flagged supplement shows its nutrient as covered rather than a gap
-          to fill from food.
-        </p>
-      </fieldset>
 
       <div className="flex items-center gap-3">
         <button

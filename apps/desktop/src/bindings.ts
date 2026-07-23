@@ -258,6 +258,11 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  saveDaySupplements(input: DaySupplementsRecord): Promise<null> {
+    return invoke("save_day_supplements", { input });
+  },
+
+  /** @throws {DataError} */
   syncNow(): Promise<null> {
     return invoke("sync_now");
   },
@@ -439,10 +444,46 @@ export type DayLog = {
 	totals: NutrientTotal[],
 	/**
 	 *  The viewer's personalized vegan-aware daily targets (from their profile; generic-adult when
-	 *  unset). Date-independent, but returned per-day so the Day screen can render progress vs. targets
-	 *  in one payload. Match a `total` to its `target` by nutrient name.
+	 *  unset), with per-DAY supplement coverage applied. Returned per-day so the Day screen can render
+	 *  progress vs. targets in one payload. Match a `total` to its `target` by nutrient name.
 	 */
 	targets: NutrientTarget[],
+	/**
+	 *  The supplements taken on this day (effective, carry-forward). Renders the day's supplement
+	 *  checklist and drives the `supplementCovered` flags above.
+	 */
+	supplements: DaySupplements,
+};
+
+/**
+ *  The supplements taken on a given DAY — the vegan-critical ones whose targets read as "covered by a
+ *  supplement" rather than a food gap. This is per-DAY state (part of the day's plan), NOT a standing
+ *  profile setting: whether you took your B12 today is a fact about today, and coverage should reflect
+ *  it honestly. Carry-forward (`get_day_supplements`) makes a new day inherit your last day's routine so
+ *  you don't re-check the same boxes every morning. Every field defaults to false (nothing taken).
+ */
+export type DaySupplements = {
+	/**  Took a B12 supplement (or reliably ate fortified foods) ⇒ the B12 target shows as covered. */
+	b12?: boolean,
+	/**  Took a vitamin D supplement ⇒ the vitamin D target shows as covered. */
+	vitD?: boolean,
+	/**  Took an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it. */
+	algaeOil?: boolean,
+};
+
+/**
+ *  A dated supplement record: the supplements taken on one `date`. Doubles as the authed-pull row (to
+ *  rebuild the day_supplements table on a replica verbatim) and the `save_day_supplements` write payload.
+ */
+export type DaySupplementsRecord = {
+	/**  User-local calendar date 'YYYY-MM-DD' this record pins (incl. the '1970-01-01' migration floor). */
+	date: string,
+	/**  Took a B12 supplement that day. */
+	b12: boolean,
+	/**  Took a vitamin D supplement that day. */
+	vitD: boolean,
+	/**  Took an algae-oil (EPA+DHA) supplement that day. */
+	algaeOil: boolean,
 };
 
 /**
@@ -665,12 +706,6 @@ export type NutritionProfile = {
 	pregnancy?: boolean,
 	/**  Lactation DRIs (distinct from pregnancy); overrides the sex column. */
 	lactation?: boolean,
-	/**  Takes a B12 supplement (or reliably eats fortified foods) ⇒ the B12 target shows as covered. */
-	supplementB12?: boolean,
-	/**  Takes a vitamin D supplement ⇒ the vitamin D target shows as covered. */
-	supplementVitD?: boolean,
-	/**  Takes an algae-oil (EPA+DHA) supplement ⇒ the omega-3 note reflects it. */
-	supplementAlgaeOil?: boolean,
 };
 
 /**

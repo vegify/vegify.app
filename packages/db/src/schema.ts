@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm"
 import {
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -306,13 +307,29 @@ export const profiles = sqliteTable("profiles", {
   // Pregnancy / lactation raise several DRIs (iron, iodine, zinc, B12, selenium). Booleans; null = no.
   pregnancy: integer("pregnancy", { mode: "boolean" }),
   lactation: integer("lactation", { mode: "boolean" }),
-  // Supplement flags: when set, B12 / vitamin D / algae-oil (EPA+DHA) targets show as "covered" rather
-  // than a gap the user must fill from food — the vegan-aware nuance no generic tracker models.
-  supplementB12: integer("supplement_b12", { mode: "boolean" }),
-  supplementVitD: integer("supplement_vit_d", { mode: "boolean" }),
-  supplementAlgaeOil: integer("supplement_algae_oil", { mode: "boolean" }),
   ...timestamps
 })
+
+// The supplements taken on a given DAY — PRIVATE per-day diary data (never public, never in the anon
+// pull or sitemap), moved off `profiles` because whether you took your B12 today is a fact about the
+// day, not a standing setting. Coverage in vegify-core's `targets` reads THIS (per date, with
+// carry-forward from the most recent earlier row), so a flagged supplement shows its nutrient as
+// covered for that day rather than a gap. One row per (user, date); every flag defaults to not-taken.
+export const daySupplements = sqliteTable(
+  "day_supplements",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // User-local calendar date 'YYYY-MM-DD' this record pins (incl. the '1970-01-01' migration floor).
+    date: text("date").notNull(),
+    b12: integer("b12", { mode: "boolean" }),
+    vitD: integer("vit_d", { mode: "boolean" }),
+    algaeOil: integer("algae_oil", { mode: "boolean" }),
+    ...timestamps
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.date] })]
+)
 
 export const nutrients = sqliteTable("nutrients", {
   id: pk(),

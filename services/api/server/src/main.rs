@@ -1263,6 +1263,35 @@ async fn save_nutrition_profile(
     Ok(Json(json!({ "ok": true })))
 }
 
+/// POST /api/day-supplements — upsert the supplements taken on a specific date (the day's plan). Body =
+/// `{ date, b12, vitD, algaeOil }`. Changes that day's supplement coverage (and, by carry-forward, later
+/// days without their own record) on the next `GET /api/log/day`. PRIVATE, owner-scoped. Fans a WS
+/// "diary" change (like the log writes) so the owner's other devices re-pull.
+async fn save_day_supplements(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<vegify_core::DaySupplementsRecord>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    db(&state, move |conn| {
+        let me = require_user(conn, &token)?;
+        vegify_core::save_day_supplements(
+            conn,
+            &me.id,
+            &input.date,
+            &vegify_core::DaySupplements {
+                b12: input.b12,
+                vit_d: input.vit_d,
+                algae_oil: input.algae_oil,
+            },
+        )
+        .map_err(AppError::from)
+    })
+    .await?;
+    state.notify_change("diary");
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// Idempotent additive migration applied on boot. The live EBS DB predates the password-reset table
 /// and the `users.email_verified_at` column; the server is the sole writer, so this is the migration
 /// path (the server analogue of the web's old `ensure-schema.mjs`). Safe to re-run every boot.
@@ -1342,11 +1371,18 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             weight_kg REAL,
             pregnancy INTEGER,
             lactation INTEGER,
-            supplement_b12 INTEGER,
-            supplement_vit_d INTEGER,
-            supplement_algae_oil INTEGER,
             created_at INTEGER,
             updated_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS day_supplements (
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            date TEXT NOT NULL,
+            b12 INTEGER,
+            vit_d INTEGER,
+            algae_oil INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER,
+            PRIMARY KEY (user_id, date)
         );",
     )?;
     // 1:1 direct messages + the notification feed (server-owned, like posts — online-only, never in
@@ -1437,6 +1473,34 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         if has_deleted == 0 {
             conn.execute("ALTER TABLE ingredients ADD COLUMN deleted_at INTEGER", [])?;
         }
+    }
+    // MIGRATION: supplements moved from `profiles` (a standing setting) to per-day `day_supplements`.
+    // On a DB that predates the move, the profiles table still carries the old supplement columns; seed
+    // a single carry-forward FLOOR row (date '1970-01-01') per user from those flags so pre-existing
+    // coverage survives (get_day_supplements picks the most-recent row <= the viewed date). Guarded on
+    // the old columns still existing (a fresh DB never grew them) and idempotent (skips users who already
+    // have a row). The dead profiles.supplement_* columns are then left untouched — SQLite can't cheaply
+    // drop a column, and nothing reads them anymore.
+    let has_supp_col: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'supplement_b12'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_supp_col == 1 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT INTO day_supplements (user_id, date, b12, vit_d, algae_oil, created_at, updated_at)
+             SELECT user_id, '1970-01-01',
+                    COALESCE(supplement_b12, 0), COALESCE(supplement_vit_d, 0),
+                    COALESCE(supplement_algae_oil, 0), ?1, ?1
+             FROM profiles
+             WHERE (supplement_b12 = 1 OR supplement_vit_d = 1 OR supplement_algae_oil = 1)
+               AND user_id NOT IN (SELECT user_id FROM day_supplements)",
+            [now],
+        )?;
     }
     Ok(())
 }
@@ -1593,6 +1657,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/log/day", get(log_day))
         .route("/api/log/recents", get(log_recents))
         .route("/api/log/pull", get(log_pull))
+        // Per-day supplements (PRIVATE — part of the day's plan). POST upserts the date's record; the
+        // day's effective supplements come back in GET /api/log/day, and all records ride the log pull.
+        .route("/api/day-supplements", post(save_day_supplements))
         // Nutrition PROFILE (PRIVATE per-user — drives personalized vegan-aware targets). GET reads it
         // (defaults when unset), POST upserts it.
         .route(
@@ -1678,5 +1745,76 @@ mod migration_tests {
             )
             .unwrap();
         assert_eq!(added, 1, "email_verified_at should be added exactly once");
+    }
+
+    #[test]
+    fn supplements_migrate_from_profile_to_a_carry_forward_floor_row() {
+        // Reproduce a PRE-move DB: `profiles` still carries the old supplement columns, and a user has
+        // B12 + algae-oil flagged (John's live shape). This is the risky path the move must preserve.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, email TEXT, password_hash TEXT, created_at INTEGER, updated_at INTEGER);
+             INSERT INTO users(id, name, email) VALUES ('u1', 'John', 'j@x');
+             CREATE TABLE profiles (
+                user_id TEXT PRIMARY KEY, birth_year INTEGER, dri_sex TEXT, weight_kg REAL,
+                pregnancy INTEGER, lactation INTEGER,
+                supplement_b12 INTEGER, supplement_vit_d INTEGER, supplement_algae_oil INTEGER,
+                created_at INTEGER, updated_at INTEGER);
+             INSERT INTO profiles(user_id, supplement_b12, supplement_vit_d, supplement_algae_oil)
+                VALUES ('u1', 1, 0, 1);",
+        )
+        .unwrap();
+
+        ensure_schema(&conn).unwrap();
+
+        // A single floor row ('1970-01-01') carries the old flags, so carry-forward covers every real day.
+        let (date, b12, vit_d, algae): (String, i64, i64, i64) = conn
+            .query_row(
+                "SELECT date, b12, vit_d, algae_oil FROM day_supplements WHERE user_id = 'u1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(date, "1970-01-01");
+        assert_eq!((b12, vit_d, algae), (1, 0, 1), "the old flags carried over");
+
+        // Idempotent: a second boot must NOT insert a duplicate (the user already has a row).
+        ensure_schema(&conn).unwrap();
+        let rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM day_supplements WHERE user_id = 'u1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 1, "re-run seeds no duplicate floor row");
+
+        // The effective supplements for any real day inherit the floor via carry-forward.
+        let eff = vegify_core::get_day_supplements(&conn, "u1", "2026-07-23").unwrap();
+        assert!(eff.b12 && eff.algae_oil && !eff.vit_d, "coverage preserved");
+    }
+
+    #[test]
+    fn fresh_db_never_grows_supplement_columns_and_skips_the_seed() {
+        // A brand-new DB: profiles is created WITHOUT the old supplement columns, so the guarded seed is
+        // a no-op (and never errors reading columns that don't exist).
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, email TEXT, password_hash TEXT, created_at INTEGER, updated_at INTEGER);",
+        )
+        .unwrap();
+        ensure_schema(&conn).unwrap();
+        let has_supp: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'supplement_b12'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_supp, 0, "a fresh profiles table has no supplement columns");
+        let seeded: i64 = conn
+            .query_row("SELECT COUNT(*) FROM day_supplements", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(seeded, 0, "nothing to migrate ⇒ no floor rows");
     }
 }

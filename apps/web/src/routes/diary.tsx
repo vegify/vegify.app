@@ -60,7 +60,12 @@ const getDay = createServerFn({ method: "GET" })
         ingredientId: r.ingredientId,
         name: r.name,
         lastGrams: r.lastGrams
-      }))
+      })),
+      supplements: {
+        b12: day.supplements.b12 ?? false,
+        vitD: day.supplements.vitD ?? false,
+        algaeOil: day.supplements.algaeOil ?? false
+      }
     }
   })
 
@@ -120,6 +125,15 @@ const searchFn = createServerFn({ method: "GET" })
     return searchIngredients(data.q)
   })
 
+const saveSupplements = createServerFn({ method: "POST" })
+  .validator(
+    (p: { date: string; b12: boolean; vitD: boolean; algaeOil: boolean }) => p
+  )
+  .handler(async ({ data }) => {
+    const { saveDaySupplements } = await import("../content")
+    await saveDaySupplements(data)
+  })
+
 const dayQuery = (date: string) =>
   queryOptions({
     queryKey: ["diary", date],
@@ -177,6 +191,10 @@ function DiaryDay({ date }: { date: string }) {
     search: (q) => searchFn({ data: { q } }),
     copyYesterday: async () => {
       await copyDay({ data: { from: addDays(date, -1), to: date } })
+      await refresh()
+    },
+    setSupplements: async (next) => {
+      await saveSupplements({ data: { date, ...next } })
       await refresh()
     }
   }
