@@ -153,6 +153,7 @@ const toInput = (d: IngredientEditData): IngredientFormInput => ({
   price: d.price,
   caloriesPer100g: d.caloriesPer100g,
   servingGrams: d.servingGrams,
+  servingUnit: d.servingUnit,
   packageGrams: d.packageGrams,
   nutrients: d.nutrients.map((n) => ({
     name: n.name,

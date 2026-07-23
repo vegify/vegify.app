@@ -133,6 +133,11 @@ export const vegifyData = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). None ⇒ no
+	 *  serving declared. Round-trips through the ingredient form so it can be renamed.
+	 */
+	servingUnit: string | null,
 	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
 	/**  Current visibility. */
@@ -172,6 +177,11 @@ export const vegifyData = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). None ⇒ no
+	 *  serving declared. Round-trips through the ingredient form so it can be renamed.
+	 */
+	servingUnit: string | null,
 	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
 	/**  Current visibility. */
@@ -548,6 +558,11 @@ export type IngredientEditData = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). None ⇒ no
+	 *  serving declared. Round-trips through the ingredient form so it can be renamed.
+	 */
+	servingUnit: string | null,
 	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
 	/**  Current visibility. */
@@ -592,6 +607,11 @@ export type IngredientSearchResult = {
 	 *  default line quantity).
 	 */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the composer
+	 *  offers it as a count unit whose grams factor is `serving_grams`. None ⇒ no serving declared.
+	 */
+	servingUnit: string | null,
 	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
 	/**  Per-100 g nutrient readings, for the composer's live nutrition preview. */
@@ -832,6 +852,12 @@ export type RecipeEditItem = {
 	name: string,
 	/**  Line quantity in grams (canonical). */
 	grams: number | null,
+	/**  The count in `unit` the author entered (e.g. 2 for "2 buns"); mirrors grams on a legacy line. */
+	amount: number | null,
+	/**  Display unit for `amount`; None ⇒ grams. */
+	unit: string | null,
+	/**  "units" (show `amount unit`) or "grams" (show grams) — how the line was entered. */
+	preferred: string,
 	/**  Calories per 100 g, when known — the edit screen's live math. */
 	caloriesPer100g: number | null,
 	/**  Per-100 g readings for the edit screen's live nutrition roll-up. */
@@ -860,14 +886,20 @@ export type RecipeItem = {
 	deleted: boolean,
 };
 
-/**  One line of a SaveRecipeInput: which ingredient, how many grams. */
+/**
+ *  One line of a SaveRecipeInput: which ingredient, how much. `grams` is always canonical (all
+ *  nutrition math reads it); `amount` + `unit` are the display form the user entered (e.g. 2 "bun"),
+ *  preserved so the line reads naturally instead of as raw grams.
+ */
 export type RecipeItemInput = {
 	/**  The ingredient this line references. */
 	ingredientId: string,
 	/**  Line quantity in grams (canonical). */
 	grams: number | null,
-	/**  Display unit the user picked; None = grams. */
+	/**  Display unit the user picked; None ⇒ grams. */
 	unit: string | null,
+	/**  The count in `unit` (e.g. 2 for "2 buns"). None ⇒ legacy grams-only line (amount == grams). */
+	amount?: number | null,
 };
 
 /**  Resolution of a recipe slug (current or historical) to its row. */
@@ -943,6 +975,11 @@ export type SaveIngredientInput = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; None ⇒ "serving"). Stored on the
+	 *  serving amount's `unit`, so a recipe line can be entered as a count of it.
+	 */
+	servingUnit?: string | null,
 	/**  Package mass in grams, when declared. */
 	packageGrams: number | null,
 	/**  Per-100 g nutrient rows (replaces the stored set). */

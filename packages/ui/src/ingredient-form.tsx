@@ -16,6 +16,9 @@ export type IngredientFormInput = {
   price: number | null // cents
   caloriesPer100g: number | null
   servingGrams: number | null
+  /** The serving's unit name (a count unit like "bun"/"slice"; null ⇒ "serving"). Lets recipes enter
+   *  a count of this ingredient instead of raw grams. */
+  servingUnit: string | null
   packageGrams: number | null
   nutrients: { name: string; amountPer100g: number; unit: string }[]
 }
@@ -28,6 +31,7 @@ export type IngredientFormDefaults = {
   description?: string | null
   priceCents?: number | null
   servingGrams?: number | null
+  servingUnit?: string | null
   packageGrams?: number | null
   caloriesPerServing?: number | null
   nutrients?: { name: string; amountPerServing: number; unit: string }[]
@@ -65,6 +69,9 @@ export function IngredientForm({
   const [servingWeight, setServingWeight] = useState(
     defaults?.servingGrams != null ? String(defaults.servingGrams) : ""
   )
+  // The serving's unit name (a count unit like "bun"/"slice"), so recipes can log "1 bun" not "52 g".
+  // Blank ⇒ "serving" (the generic default).
+  const [servingUnit, setServingUnit] = useState(defaults?.servingUnit ?? "")
   const [calories, setCalories] = useState(
     defaults?.caloriesPerServing != null
       ? clean(defaults.caloriesPerServing)
@@ -111,6 +118,7 @@ export function IngredientForm({
           ? (Number(calories) * 100) / servingGrams
           : null,
       servingGrams,
+      servingUnit: servingUnit.trim() || null,
       packageGrams: numOrNull(packageWeight),
       nutrients: rows
         .filter((r) => r.name.trim())
@@ -220,6 +228,13 @@ export function IngredientForm({
                 type="number"
                 value={servingWeight}
                 onChange={(e) => setServingWeight(e.target.value)}
+                className="h-11"
+              />
+              <Input
+                aria-label="Serving unit name"
+                placeholder="Serving unit (e.g. bun, slice)"
+                value={servingUnit}
+                onChange={(e) => setServingUnit(e.target.value)}
                 className="h-11"
               />
             </div>

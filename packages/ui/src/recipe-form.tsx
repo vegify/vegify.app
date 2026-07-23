@@ -22,11 +22,14 @@ export type IngredientSearchItem = {
   id: string
   name: string
   servingGrams: number | null
+  /** The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). null ⇒ none. */
+  servingUnit: string | null
   caloriesPer100g: number | null
   readings: NutritionReading[]
 }
 
-/** Storage shape passed to onSave. */
+/** Storage shape passed to onSave. `grams` is canonical (all nutrition math reads it); `amount`+`unit`
+ *  are the display form the author entered (e.g. 2 "bun"), preserved so lines read naturally. */
 export type RecipeFormInput = {
   id?: string
   visibility: Visibility
@@ -35,7 +38,36 @@ export type RecipeFormInput = {
   directions: string | null
   servingGrams: number | null
   batchGrams: number | null
-  items: { ingredientId: string; grams: number }[]
+  items: {
+    ingredientId: string
+    grams: number
+    amount: number
+    unit: string | null
+  }[]
+}
+
+const OZ_GRAMS = 28.3495
+
+/** The unit options a row offers: its count unit (from the ingredient's serving, when declared) plus the
+ *  universal mass units. `grams` is the grams-per-one-of-`unit` factor. Count unit first ⇒ the default. */
+export function rowUnitOptions(
+  servingGrams: number | null,
+  servingUnit: string | null
+): { unit: string; grams: number }[] {
+  const opts: { unit: string; grams: number }[] = []
+  if (servingGrams && servingGrams > 0) {
+    opts.push({ unit: servingUnit || "serving", grams: servingGrams })
+  }
+  opts.push({ unit: "g", grams: 1 })
+  opts.push({ unit: "oz", grams: OZ_GRAMS })
+  return opts
+}
+
+/** Grams-per-one of `unit` for a row, given its count unit's grams. Mass units are universal. */
+function unitFactor(unit: string, servingGrams: number | null): number {
+  if (unit === "g") return 1
+  if (unit === "oz") return OZ_GRAMS
+  return servingGrams && servingGrams > 0 ? servingGrams : 1
 }
 
 /**
@@ -65,9 +97,13 @@ export function composeRecipeInput(state: RecipeEditState): RecipeFormInput {
     directions: state.directions,
     servingGrams: totalGrams > 0 ? totalGrams / servingsN : null,
     batchGrams: totalGrams > 0 ? totalGrams : null,
+    // The inline editor edits grams directly (units are the recipe form's job), so a grams line: the
+    // display amount mirrors grams with no unit — reads "N g", never a bogus count.
     items: state.items.map((i) => ({
       ingredientId: i.ingredientId,
-      grams: i.grams
+      grams: i.grams,
+      amount: i.grams,
+      unit: null
     }))
   }
 }
@@ -83,17 +119,33 @@ export type RecipeFormDefaults = {
     ingredientId: string
     name: string
     grams: number
+    /** The stored count in `unit` (mirrors grams on a legacy grams line). */
+    amount?: number | null
+    /** The stored display unit; null/"g" ⇒ grams. */
+    unit?: string | null
+    /** "units" ⇒ show/edit as a count of `unit`; else grams. */
+    preferred?: string | null
     caloriesPer100g: number | null
     readings: NutritionReading[]
   }>
 }
 
+/** A recipe form row. `count` is the quantity as entered, in `unit`; `grams` (canonical) = count ×
+ *  the unit's factor. `servingGrams` carries the row's count-unit factor so its options + math resolve. */
 type Row = {
   ingredientId: string
   name: string
-  grams: string
+  count: string
+  unit: string
+  servingGrams: number | null
+  servingUnit: string | null
   caloriesPer100g: number | null
   readings: NutritionReading[]
+}
+
+/** Canonical grams for a row: the entered count × its unit's grams factor. */
+function rowGrams(r: Row): number {
+  return (Number(r.count) || 0) * unitFactor(r.unit, r.servingGrams)
 }
 
 const clean = (n: number) => String(Math.round(n * 1e6) / 1e6)
@@ -121,13 +173,25 @@ export function RecipeForm({
     defaults?.servings != null ? clean(defaults.servings) : "1"
   )
   const [rows, setRows] = useState<Row[]>(
-    defaults?.items?.map((i) => ({
-      ingredientId: i.ingredientId,
-      name: i.name,
-      grams: clean(i.grams),
-      caloriesPer100g: i.caloriesPer100g,
-      readings: i.readings
-    })) ?? []
+    defaults?.items?.map((i) => {
+      // Reconstruct the entered form: a "units" line carries its count + unit, and the unit's grams
+      // factor is grams/amount (so the row's options + math resolve without the ingredient's serving).
+      const isUnits =
+        i.preferred === "units" &&
+        !!i.unit &&
+        i.unit !== "g" &&
+        (i.amount ?? 0) > 0
+      return {
+        ingredientId: i.ingredientId,
+        name: i.name,
+        count: clean(isUnits ? (i.amount ?? i.grams) : i.grams),
+        unit: isUnits ? (i.unit as string) : "g",
+        servingGrams: isUnits ? i.grams / (i.amount as number) : null,
+        servingUnit: isUnits ? (i.unit as string) : null,
+        caloriesPer100g: i.caloriesPer100g,
+        readings: i.readings
+      }
+    }) ?? []
   )
   const [saving, setSaving] = useState(false)
 
@@ -155,19 +219,19 @@ export function RecipeForm({
     }
   }, [query, picking, onSearch])
 
-  const totalGrams = rows.reduce((s, r) => s + (Number(r.grams) || 0), 0)
+  const totalGrams = rows.reduce((s, r) => s + rowGrams(r), 0)
   const servingsN = Math.max(1, Number(servings) || 1)
   const servingGrams = totalGrams > 0 ? totalGrams / servingsN : 0
 
   // live aggregate (grams-weighted) → recipe per-100g, same shape as getRecipeNutrition
   const calTotal = rows.reduce(
-    (s, r) => s + ((r.caloriesPer100g ?? 0) * (Number(r.grams) || 0)) / 100,
+    (s, r) => s + ((r.caloriesPer100g ?? 0) * rowGrams(r)) / 100,
     0
   )
   const calKnown = rows.some((r) => r.caloriesPer100g != null)
   const nutMap = new Map<string, { amt: number; unit: string }>()
   for (const r of rows) {
-    const grams = Number(r.grams) || 0
+    const grams = rowGrams(r)
     for (const reading of r.readings) {
       const prev = nutMap.get(reading.name) ?? { amt: 0, unit: reading.unit }
       nutMap.set(reading.name, {
@@ -190,12 +254,18 @@ export function RecipeForm({
   }
 
   function addIngredient(item: IngredientSearchItem) {
+    // Default to the ingredient's count unit ("1 bun") when it declares a serving, else 100 g — so a
+    // bun reads "1 bun", never "1 g" or a raw gram count.
+    const hasServing = !!item.servingGrams && item.servingGrams > 0
     setRows((rs) => [
       ...rs,
       {
         ingredientId: item.id,
         name: item.name,
-        grams: clean(item.servingGrams ?? 100),
+        count: hasServing ? "1" : "100",
+        unit: hasServing ? item.servingUnit || "serving" : "g",
+        servingGrams: item.servingGrams,
+        servingUnit: item.servingUnit,
         caloriesPer100g: item.caloriesPer100g,
         readings: item.readings
       }
@@ -215,8 +285,13 @@ export function RecipeForm({
       servingGrams: totalGrams > 0 ? totalGrams / servingsN : null,
       batchGrams: totalGrams > 0 ? totalGrams : null,
       items: rows
-        .filter((r) => r.ingredientId && Number(r.grams) > 0)
-        .map((r) => ({ ingredientId: r.ingredientId, grams: Number(r.grams) }))
+        .filter((r) => r.ingredientId && rowGrams(r) > 0)
+        .map((r) => ({
+          ingredientId: r.ingredientId,
+          grams: rowGrams(r),
+          amount: Number(r.count) || 0,
+          unit: r.unit
+        }))
     }
   }
 
@@ -315,33 +390,55 @@ export function RecipeForm({
             Ingredients
           </h2>
           <div className="space-y-2">
-            {rows.map((r, i) => (
-              <div key={r.ingredientId} className="flex items-center gap-2">
-                <Input
-                  aria-label={`Amount for ${r.name}`}
-                  type="number"
-                  value={r.grams}
-                  onChange={(e) =>
-                    setRows((rs) =>
-                      rs.map((x, j) =>
-                        j === i ? { ...x, grams: e.target.value } : x
+            {rows.map((r, i) => {
+              const options = rowUnitOptions(r.servingGrams, r.servingUnit)
+              return (
+                <div key={r.ingredientId} className="flex items-center gap-2">
+                  <Input
+                    aria-label={`Amount for ${r.name}`}
+                    type="number"
+                    value={r.count}
+                    onChange={(e) =>
+                      setRows((rs) =>
+                        rs.map((x, j) =>
+                          j === i ? { ...x, count: e.target.value } : x
+                        )
                       )
-                    )
-                  }
-                  className="h-11 w-20"
-                />
-                <span className="text-muted-foreground text-sm">g</span>
-                <span className="flex-1 truncate font-medium">{r.name}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${r.name}`}
-                  onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full text-destructive hover:bg-muted"
-                >
-                  <Trash2Icon className="size-4" />
-                </button>
-              </div>
-            ))}
+                    }
+                    className="h-11 w-20"
+                  />
+                  <select
+                    aria-label={`Unit for ${r.name}`}
+                    value={r.unit}
+                    onChange={(e) =>
+                      setRows((rs) =>
+                        rs.map((x, j) =>
+                          j === i ? { ...x, unit: e.target.value } : x
+                        )
+                      )
+                    }
+                    className="h-11 w-24 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring"
+                  >
+                    {options.map((o) => (
+                      <option key={o.unit} value={o.unit}>
+                        {o.unit}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="flex-1 truncate font-medium">{r.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${r.name}`}
+                    onClick={() =>
+                      setRows((rs) => rs.filter((_, j) => j !== i))
+                    }
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-destructive hover:bg-muted"
+                  >
+                    <Trash2Icon className="size-4" />
+                  </button>
+                </div>
+              )
+            })}
             {rows.length === 0 && (
               <p className="text-center text-muted-foreground text-sm">
                 No ingredients yet.

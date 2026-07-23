@@ -71,6 +71,7 @@ function EditIngredient() {
     description: ingredient.description,
     priceCents: ingredient.price,
     servingGrams,
+    servingUnit: ingredient.servingUnit,
     packageGrams: ingredient.packageGrams,
     caloriesPerServing:
       ingredient.caloriesPer100g != null

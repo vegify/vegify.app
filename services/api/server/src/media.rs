@@ -159,6 +159,7 @@ mod tests {
                 price: None,
                 calories_per_100g: None,
                 serving_grams: None,
+                serving_unit: None,
                 package_grams: None,
                 nutrients: vec![],
                 slug: None,

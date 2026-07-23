@@ -410,6 +410,17 @@
             ],
             "description": " Serving size in grams, when declared."
           },
+          "servingUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The serving's unit name (a count unit like \"bun\"/\"slice\"; \"serving\" by default). None ⇒ no\n serving declared. Round-trips through the ingredient form so it can be renamed."
+          },
           "slug": {
             "anyOf": [
               {
@@ -433,6 +444,7 @@
           "price",
           "caloriesPer100g",
           "servingGrams",
+          "servingUnit",
           "packageGrams",
           "visibility",
           "slug",
@@ -486,12 +498,24 @@
               }
             ],
             "description": " Serving size in grams, when the ingredient declares one (the composer's\n default line quantity)."
+          },
+          "servingUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The serving's unit name (a count unit like \"bun\"/\"slice\"; \"serving\" by default) — the composer\n offers it as a count unit whose grams factor is `serving_grams`. None ⇒ no serving declared."
           }
         },
         "required": [
           "id",
           "name",
           "servingGrams",
+          "servingUnit",
           "caloriesPer100g",
           "readings"
         ],
@@ -1190,6 +1214,17 @@
             ],
             "description": " Serving size in grams, when declared."
           },
+          "servingUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The serving's unit name (a count unit like \"bun\"/\"slice\"; \"serving\" by default) — the recipe\n composer offers it as a count unit. None ⇒ no serving declared."
+          },
           "slug": {
             "anyOf": [
               {
@@ -1226,6 +1261,7 @@
           "price",
           "caloriesPer100g",
           "servingGrams",
+          "servingUnit",
           "packageGrams",
           "slug",
           "deletedAt",
@@ -1238,6 +1274,18 @@
         "additionalProperties": false,
         "description": " One recipe line as pulled.",
         "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The count in `unit` (e.g. 2 for \"2 buns\") — carried so a replica shows the author's units, not\n raw grams. None on a legacy row (the applier falls back to grams)."
+          },
           "grams": {
             "description": " Line quantity in grams (canonical).",
             "format": "double",
@@ -1262,7 +1310,8 @@
         "required": [
           "ingredientId",
           "grams",
-          "unit"
+          "unit",
+          "amount"
         ],
         "title": "PullItem",
         "type": "object"
@@ -1710,6 +1759,11 @@
         "additionalProperties": false,
         "description": " RecipeForm edit-mode defaults: per-item nutrition included so each row shows live nutrition.",
         "properties": {
+          "amount": {
+            "description": " The count in `unit` the author entered (e.g. 2 for \"2 buns\"); mirrors grams on a legacy line.",
+            "format": "double",
+            "type": "number"
+          },
           "caloriesPer100g": {
             "anyOf": [
               {
@@ -1735,18 +1789,36 @@
             "description": " Ingredient display name.",
             "type": "string"
           },
+          "preferred": {
+            "description": " \"units\" (show `amount unit`) or \"grams\" (show grams) — how the line was entered.",
+            "type": "string"
+          },
           "readings": {
             "description": " Per-100 g readings for the edit screen's live nutrition roll-up.",
             "items": {
               "$ref": "#/components/schemas/Reading"
             },
             "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Display unit for `amount`; None ⇒ grams."
           }
         },
         "required": [
           "ingredientId",
           "name",
           "grams",
+          "amount",
+          "unit",
+          "preferred",
           "caloriesPer100g",
           "readings"
         ],

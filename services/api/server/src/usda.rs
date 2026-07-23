@@ -103,6 +103,7 @@ pub fn ingest(conn: &Connection, gz: &[u8]) -> Result<usize, Box<dyn std::error:
                 price: None,
                 calories_per_100g: calories,
                 serving_grams: None,
+                serving_unit: None,
                 package_grams: None,
                 nutrients: food
                     .nutrients
