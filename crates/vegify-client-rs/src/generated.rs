@@ -76,6 +76,9 @@ pub struct PullIngredient {
     pub caloriesPer100g: ::std::option::Option<f64>,
     /// Serving size in grams, when declared.
     pub servingGrams: ::std::option::Option<f64>,
+    /// The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the recipe
+    /// composer offers it as a count unit. None ⇒ no serving declared.
+    pub servingUnit: ::std::option::Option<::std::string::String>,
     /// Package mass in grams, when declared.
     pub packageGrams: ::std::option::Option<f64>,
     /// Current slug; mirrored verbatim so local links match the server.
@@ -98,6 +101,9 @@ pub struct PullItem {
     pub grams: f64,
     /// Display unit the author picked; None = grams.
     pub unit: ::std::option::Option<::std::string::String>,
+    /// The count in `unit` (e.g. 2 for "2 buns") — carried so a replica shows the author's units, not
+    /// raw grams. None on a legacy row (the applier falls back to grams).
+    pub amount: ::std::option::Option<f64>,
 }
 
 /// One full sync pull: every server row visible to the device's user.

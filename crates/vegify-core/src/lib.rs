@@ -240,6 +240,9 @@ pub struct IngredientSearchResult {
     /// Serving size in grams, when the ingredient declares one (the composer's
     /// default line quantity).
     pub serving_grams: Option<f64>,
+    /// The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the composer
+    /// offers it as a count unit whose grams factor is `serving_grams`. None ⇒ no serving declared.
+    pub serving_unit: Option<String>,
     /// Calories per 100 g, when known.
     pub calories_per_100g: Option<f64>,
     /// Per-100 g nutrient readings, for the composer's live nutrition preview.
@@ -256,6 +259,12 @@ pub struct RecipeEditItem {
     pub name: String,
     /// Line quantity in grams (canonical).
     pub grams: f64,
+    /// The count in `unit` the author entered (e.g. 2 for "2 buns"); mirrors grams on a legacy line.
+    pub amount: f64,
+    /// Display unit for `amount`; None ⇒ grams.
+    pub unit: Option<String>,
+    /// "units" (show `amount unit`) or "grams" (show grams) — how the line was entered.
+    pub preferred: String,
     /// Calories per 100 g, when known — the edit screen's live math.
     pub calories_per_100g: Option<f64>,
     /// Per-100 g readings for the edit screen's live nutrition roll-up.
@@ -315,6 +324,9 @@ pub struct IngredientEditData {
     pub calories_per_100g: Option<f64>,
     /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). None ⇒ no
+    /// serving declared. Round-trips through the ingredient form so it can be renamed.
+    pub serving_unit: Option<String>,
     /// Package mass in grams, when declared (price-per-100 g math).
     pub package_grams: Option<f64>,
     /// Current visibility.
@@ -368,6 +380,10 @@ pub struct SaveIngredientInput {
     pub calories_per_100g: Option<f64>,
     /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// The serving's unit name (a count unit like "bun"/"slice"; None ⇒ "serving"). Stored on the
+    /// serving amount's `unit`, so a recipe line can be entered as a count of it.
+    #[serde(default)]
+    pub serving_unit: Option<String>,
     /// Package mass in grams, when declared.
     pub package_grams: Option<f64>,
     /// Per-100 g nutrient rows (replaces the stored set).
@@ -381,14 +397,19 @@ pub struct SaveIngredientInput {
 
 #[derive(Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-/// One line of a SaveRecipeInput: which ingredient, how many grams.
+/// One line of a SaveRecipeInput: which ingredient, how much. `grams` is always canonical (all
+/// nutrition math reads it); `amount` + `unit` are the display form the user entered (e.g. 2 "bun"),
+/// preserved so the line reads naturally instead of as raw grams.
 pub struct RecipeItemInput {
     /// The ingredient this line references.
     pub ingredient_id: String,
     /// Line quantity in grams (canonical).
     pub grams: f64,
-    /// Display unit the user picked; None = grams.
+    /// Display unit the user picked; None ⇒ grams.
     pub unit: Option<String>,
+    /// The count in `unit` (e.g. 2 for "2 buns"). None ⇒ legacy grams-only line (amount == grams).
+    #[serde(default)]
+    pub amount: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Type)]
@@ -682,6 +703,9 @@ pub fn do_save_ingredient(
     user_id: Option<&str>,
 ) -> Result<String, Error> {
     let visibility = input.visibility.unwrap_or(Visibility::Public).as_str();
+    // The serving's unit name (a count unit like "bun"/"slice"); defaults to "serving". Stored on the
+    // serving amount so a recipe line can be entered as a count of it.
+    let serving_unit = input.serving_unit.as_deref().unwrap_or("serving");
     // Upsert by id: an existing row updates (owner-gated); a supplied-but-absent id inserts WITH that
     // id (an offline create's client ULID, or a row mirrored from the server by the sync pull); no id
     // mints a fresh ULID and inserts. Look up the row only when an id was supplied.
@@ -705,7 +729,7 @@ pub fn do_save_ingredient(
             return Err(Error::Db("You can only edit your own ingredients.".into()));
         }
         let serving_size_id =
-            upsert_amount(conn, serving.as_deref(), input.serving_grams, "serving")?;
+            upsert_amount(conn, serving.as_deref(), input.serving_grams, serving_unit)?;
         let batch_size_id = upsert_amount(conn, batch.as_deref(), input.package_grams, "package")?;
         conn.execute(
             "UPDATE ingredients SET name=?2, description=?3, price=?4, calories_per_100g=?5,
@@ -727,7 +751,7 @@ pub fn do_save_ingredient(
         )?;
         id.to_string()
     } else {
-        let serving_size_id = upsert_amount(conn, None, input.serving_grams, "serving")?;
+        let serving_size_id = upsert_amount(conn, None, input.serving_grams, serving_unit)?;
         let batch_size_id = upsert_amount(conn, None, input.package_grams, "package")?;
         let id = input.id.clone().unwrap_or_else(new_id);
         conn.execute(
@@ -986,11 +1010,18 @@ pub fn do_save_recipe(
         if item.ingredient_id.is_empty() || item.grams == 0.0 {
             continue;
         }
-        let unit = item.unit.as_deref().unwrap_or("g");
+        // Display form: `unit` labels the quantity, `amount` is the count in it. A non-gram unit
+        // (bun/slice/oz/…) is shown "as units"; a grams line (or a legacy amount-less payload) is shown
+        // as grams. Canonical `grams` is untouched either way — all nutrition math reads only grams.
+        let (unit, preferred) = match item.unit.as_deref() {
+            Some(u) if !u.is_empty() && u != "g" => (u, "units"),
+            _ => ("g", "grams"),
+        };
+        let amount = item.amount.unwrap_or(item.grams);
         let amount_id = new_id();
         conn.execute(
-            "INSERT INTO amounts(id, grams, amount, unit, preferred) VALUES (?1, ?2, ?2, ?3, 'grams')",
-            params![amount_id, item.grams, unit],
+            "INSERT INTO amounts(id, grams, amount, unit, preferred) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![amount_id, item.grams, amount, unit, preferred],
         )?;
         conn.execute(
             "INSERT INTO ingredient_in_recipe(id, \"order\", recipe_id, ingredient_id, amount_id)
@@ -1687,7 +1718,7 @@ fn load_ingredient_edit(
     let meta = conn
         .query_row(
             "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
-                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL, u.username
+                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL, u.username, sa.unit
              FROM ingredients i
              LEFT JOIN users u ON u.id = i.user_id
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
@@ -1707,6 +1738,7 @@ fn load_ingredient_edit(
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, bool>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
                 ))
             },
         )
@@ -1723,6 +1755,7 @@ fn load_ingredient_edit(
         slug,
         deleted,
         creator,
+        serving_unit,
     )) = meta
     else {
         return Ok(None);
@@ -1753,6 +1786,7 @@ fn load_ingredient_edit(
             price: price.map(|p| p as i32),
             calories_per_100g,
             serving_grams,
+            serving_unit,
             package_grams,
             visibility: Visibility::from_db(&visibility),
             slug,
@@ -2702,9 +2736,9 @@ pub fn search_ingredients(
     viewer: Option<&str>,
 ) -> Result<Vec<IngredientSearchResult>, Error> {
     let like = format!("%{}%", query.replace(['%', '_'], ""));
-    let rows: Vec<(String, String, Option<f64>)> = {
+    let rows: Vec<(String, String, Option<f64>, Option<String>)> = {
         let mut stmt = conn.prepare(
-            "SELECT i.id, i.name, sa.grams
+            "SELECT i.id, i.name, sa.grams, sa.unit
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              WHERE i.name LIKE ?1 AND i.deleted_at IS NULL
@@ -2713,18 +2747,19 @@ pub fn search_ingredients(
         )?;
         let v = stmt
             .query_map(params![like, viewer], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
     let mut out = Vec::new();
-    for (id, name, serving_grams) in rows {
+    for (id, name, serving_grams, serving_unit) in rows {
         let nut = aggregate_per100g(conn, &id)?;
         out.push(IngredientSearchResult {
             id,
             name,
             serving_grams,
+            serving_unit,
             calories_per_100g: nut.calories_per_100g,
             readings: nut.readings,
         });
@@ -2768,9 +2803,9 @@ pub fn recipe_for_edit(
         _ => None,
     };
 
-    let rows: Vec<(String, String, f64)> = {
+    let rows: Vec<(String, String, f64, f64, Option<String>, String)> = {
         let mut stmt = conn.prepare(
-            "SELECT i.id, i.name, a.grams
+            "SELECT i.id, i.name, a.grams, a.amount, a.unit, a.preferred
              FROM ingredient_in_recipe iir
              JOIN ingredients i ON i.id = iir.ingredient_id
              JOIN amounts a ON a.id = iir.amount_id
@@ -2782,18 +2817,25 @@ pub fn recipe_for_edit(
                     r.get(0)?,
                     r.get(1)?,
                     r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                    r.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                    r.get(4)?,
+                    r.get::<_, Option<String>>(5)?
+                        .unwrap_or_else(|| "grams".into()),
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
     let mut items = Vec::new();
-    for (ingredient_id, iname, grams) in rows {
+    for (ingredient_id, iname, grams, amount, unit, preferred) in rows {
         let nut = aggregate_per100g(conn, &ingredient_id)?;
         items.push(RecipeEditItem {
             ingredient_id,
             name: iname,
             grams,
+            amount,
+            unit,
+            preferred,
             calories_per_100g: nut.calories_per_100g,
             readings: nut.readings,
         });
@@ -3024,6 +3066,7 @@ mod delete_guard_tests {
                 price: None,
                 calories_per_100g: None,
                 serving_grams: None,
+                serving_unit: None,
                 package_grams: None,
                 nutrients: vec![],
                 slug: None,
@@ -3130,6 +3173,7 @@ mod delete_guard_tests {
                     ingredient_id: ingredient_id.to_string(),
                     grams: 500.0,
                     unit: None,
+                    amount: None,
                 }],
                 slug: None,
             },
@@ -3216,6 +3260,7 @@ mod log_tests {
                 price: None,
                 calories_per_100g: calories,
                 serving_grams: None,
+                serving_unit: None,
                 package_grams: None,
                 nutrients: nutrients
                     .into_iter()
@@ -3285,11 +3330,13 @@ mod log_tests {
                         ingredient_id: tofu.clone(),
                         grams: 100.0,
                         unit: None,
+                        amount: None,
                     },
                     RecipeItemInput {
                         ingredient_id: oil.clone(),
                         grams: 100.0,
                         unit: None,
+                        amount: None,
                     },
                 ],
                 slug: None,
@@ -3516,6 +3563,7 @@ mod log_tests {
                 price: None,
                 calories_per_100g: calories,
                 serving_grams: None,
+                serving_unit: None,
                 package_grams: None,
                 nutrients: nutrients
                     .into_iter()

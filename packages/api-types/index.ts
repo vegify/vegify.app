@@ -147,6 +147,11 @@ export type IngredientEditData = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default). None ⇒ no
+	 *  serving declared. Round-trips through the ingredient form so it can be renamed.
+	 */
+	servingUnit: string | null,
 	/**  Package mass in grams, when declared (price-per-100 g math). */
 	packageGrams: number | null,
 	/**  Current visibility. */
@@ -181,6 +186,11 @@ export type IngredientSearchResult = {
 	 *  default line quantity).
 	 */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the composer
+	 *  offers it as a count unit whose grams factor is `serving_grams`. None ⇒ no serving declared.
+	 */
+	servingUnit: string | null,
 	/**  Calories per 100 g, when known. */
 	caloriesPer100g: number | null,
 	/**  Per-100 g nutrient readings, for the composer's live nutrition preview. */
@@ -451,6 +461,11 @@ export type PullIngredient = {
 	caloriesPer100g: number | null,
 	/**  Serving size in grams, when declared. */
 	servingGrams: number | null,
+	/**
+	 *  The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the recipe
+	 *  composer offers it as a count unit. None ⇒ no serving declared.
+	 */
+	servingUnit: string | null,
 	/**  Package mass in grams, when declared. */
 	packageGrams: number | null,
 	/**  Current slug; mirrored verbatim so local links match the server. */
@@ -472,6 +487,11 @@ export type PullItem = {
 	grams: number | null,
 	/**  Display unit the author picked; None = grams. */
 	unit: string | null,
+	/**
+	 *  The count in `unit` (e.g. 2 for "2 buns") — carried so a replica shows the author's units, not
+	 *  raw grams. None on a legacy row (the applier falls back to grams).
+	 */
+	amount: number | null,
 };
 
 /**
@@ -625,6 +645,12 @@ export type RecipeEditItem = {
 	name: string,
 	/**  Line quantity in grams (canonical). */
 	grams: number | null,
+	/**  The count in `unit` the author entered (e.g. 2 for "2 buns"); mirrors grams on a legacy line. */
+	amount: number | null,
+	/**  Display unit for `amount`; None ⇒ grams. */
+	unit: string | null,
+	/**  "units" (show `amount unit`) or "grams" (show grams) — how the line was entered. */
+	preferred: string,
 	/**  Calories per 100 g, when known — the edit screen's live math. */
 	caloriesPer100g: number | null,
 	/**  Per-100 g readings for the edit screen's live nutrition roll-up. */

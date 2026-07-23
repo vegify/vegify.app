@@ -152,6 +152,9 @@ pub struct PullItem {
     pub grams: f64,
     /// Display unit the author picked; None = grams.
     pub unit: Option<String>,
+    /// The count in `unit` (e.g. 2 for "2 buns") — carried so a replica shows the author's units, not
+    /// raw grams. None on a legacy row (the applier falls back to grams).
+    pub amount: Option<f64>,
 }
 
 #[derive(Serialize, specta::Type)]
@@ -179,6 +182,9 @@ pub struct PullIngredient {
     pub calories_per_100g: Option<f64>,
     /// Serving size in grams, when declared.
     pub serving_grams: Option<f64>,
+    /// The serving's unit name (a count unit like "bun"/"slice"; "serving" by default) — the recipe
+    /// composer offers it as a count unit. None ⇒ no serving declared.
+    pub serving_unit: Option<String>,
     /// Package mass in grams, when declared.
     pub package_grams: Option<f64>,
     /// Current slug; mirrored verbatim so local links match the server.

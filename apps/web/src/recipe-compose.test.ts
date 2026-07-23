@@ -26,9 +26,11 @@ describe("composeRecipeInput", () => {
     const out = composeRecipeInput(base)
     expect(out.batchGrams).toBe(400)
     expect(out.servingGrams).toBe(200)
+    // The inline editor edits grams directly, so each line's display amount mirrors grams with no
+    // unit (reads "N g"). Unit-aware entry is the recipe form's job, not the inline path.
     expect(out.items).toEqual([
-      { ingredientId: "flour", grams: 300 },
-      { ingredientId: "water", grams: 100 }
+      { ingredientId: "flour", grams: 300, amount: 300, unit: null },
+      { ingredientId: "water", grams: 100, amount: 100, unit: null }
     ])
     expect(out.id).toBe("r1")
     expect(out.visibility).toBe("public")

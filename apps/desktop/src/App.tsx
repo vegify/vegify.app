@@ -132,6 +132,7 @@ const searchForForm = async (q: string) => {
     id: r.id,
     name: r.name,
     servingGrams: r.servingGrams,
+    servingUnit: r.servingUnit,
     caloriesPer100g: r.caloriesPer100g,
     readings: r.readings.map((x) => ({
       name: x.name,
@@ -186,7 +187,8 @@ const saveRecipeFromForm = (input: RecipeFormInput) =>
       items: input.items.map((it) => ({
         ingredientId: it.ingredientId,
         grams: it.grams,
-        unit: null
+        amount: it.amount,
+        unit: it.unit
       }))
     })
     .then((id) => {
@@ -203,6 +205,7 @@ const saveIngredientFromForm = (input: IngredientFormInput) =>
       price: input.price,
       caloriesPer100g: input.caloriesPer100g,
       servingGrams: input.servingGrams,
+      servingUnit: input.servingUnit,
       packageGrams: input.packageGrams,
       nutrients: input.nutrients
     })
@@ -1078,6 +1081,9 @@ const recipeEditRoute = createRoute({
         ingredientId: it.ingredientId,
         name: it.name,
         grams: num(it.grams),
+        amount: num(it.amount),
+        unit: it.unit,
+        preferred: it.preferred,
         caloriesPer100g: it.caloriesPer100g,
         readings: it.readings.map((x) => ({
           name: x.name,
@@ -1193,6 +1199,7 @@ const ingredientDetailRoute = createRoute({
         price: next.price,
         caloriesPer100g: next.caloriesPer100g,
         servingGrams: next.servingGrams,
+        servingUnit: next.servingUnit,
         packageGrams: next.packageGrams,
         nutrients: next.nutrients.map((n) => ({
           name: n.name,
@@ -1286,6 +1293,7 @@ const ingredientEditRoute = createRoute({
       description: d.description,
       priceCents: d.price,
       servingGrams: d.servingGrams,
+      servingUnit: d.servingUnit,
       packageGrams: d.packageGrams,
       caloriesPerServing:
         d.caloriesPer100g != null ? d.caloriesPer100g * scale : null,

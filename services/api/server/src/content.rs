@@ -48,7 +48,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
     // Each recipe's items, in declaration order (FK references, not joined rows).
     {
         let mut istmt = conn.prepare(
-            "SELECT iir.ingredient_id, a.grams, a.unit
+            "SELECT iir.ingredient_id, a.grams, a.unit, a.amount, a.preferred
              FROM ingredient_in_recipe iir
              JOIN amounts a ON a.id = iir.amount_id
              WHERE iir.recipe_id = ?1 ORDER BY iir.\"order\"",
@@ -56,10 +56,19 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
         for r in &mut recipes {
             r.items = istmt
                 .query_map([&r.id], |row| {
+                    // Carry the count only for a "units"-preferred line — a grams line's `amount`
+                    // mirrors its grams and would just reproduce a grams display on the replica.
+                    let preferred: String = row.get::<_, Option<String>>(4)?.unwrap_or_default();
+                    let amount = if preferred == "units" {
+                        row.get::<_, Option<f64>>(3)?
+                    } else {
+                        None
+                    };
                     Ok(PullItem {
                         ingredient_id: row.get(0)?,
                         grams: row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
                         unit: row.get(2)?,
+                        amount,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -69,7 +78,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
     let mut ingredients: Vec<PullIngredient> = {
         let mut stmt = conn.prepare(
             "SELECT i.id, i.user_id, i.visibility, i.name, i.description, i.price, i.calories_per_100g,
-                    sa.grams, ba.grams, i.slug, i.deleted_at
+                    sa.grams, ba.grams, i.slug, i.deleted_at, sa.unit
              FROM ingredients i
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
              LEFT JOIN amounts ba ON ba.id = i.batch_size_id
@@ -88,6 +97,7 @@ pub fn pull(conn: &Connection, viewer: Option<&str>) -> Result<PullPayload, AppE
                     price: row.get(5)?,
                     calories_per_100g: row.get(6)?,
                     serving_grams: row.get(7)?,
+                    serving_unit: row.get(11)?,
                     package_grams: row.get(8)?,
                     slug: row.get(9)?,
                     deleted_at: row.get(10)?,
@@ -182,6 +192,7 @@ mod tests {
             price: None,
             calories_per_100g: Some(100.0),
             serving_grams: None,
+            serving_unit: None,
             package_grams: None,
             nutrients: vec![IngredientNutrientInput {
                 name: "Protein".into(),
