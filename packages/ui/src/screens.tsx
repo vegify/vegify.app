@@ -55,6 +55,12 @@ import {
   INGREDIENT_SHORTCUTS,
   useDetailShortcuts
 } from "./use-detail-shortcuts"
+import {
+  displayToKg,
+  kgToDisplay,
+  useWeightUnit,
+  type WeightUnit
+} from "./use-weight-unit"
 
 /**
  * SHARED SCREENS — the actual pages (recipe list, detail, ingredient list/detail, search, home),
@@ -1786,6 +1792,12 @@ export type NutritionProfileValues = {
 const selectClasses =
   "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
+/** Round a weight for display: 1 decimal, trailing .0 stripped (kg or lb). */
+function fmtWeight(n: number): string {
+  const r = Math.round(n * 10) / 10
+  return Number.isInteger(r) ? r.toString() : r.toFixed(1)
+}
+
 /** The nutrition PROFILE form (P1.3). Feeds vegify-core's targets — birth year + reference sex pick the
  *  DRI table, weight enables a g/kg protein target, pregnancy/lactation and supplement flags adjust the
  *  vegan overlay. Presentational + guidance-toned; the shell wires `onSave` to its transport. */
@@ -1802,7 +1814,22 @@ function NutritionProfileForm({
   const [driSex, setDriSex] = useState<"" | "male" | "female">(
     profile.driSex ?? ""
   )
-  const [weightKg, setWeightKg] = useState(profile.weightKg?.toString() ?? "")
+  // The weight input holds the value in the CURRENTLY SELECTED unit; canonical kg is derived on save.
+  // Body weight is always stored as kg (see `use-weight-unit`) — the unit toggle is display-only.
+  const { unit: weightUnit, setUnit: setWeightUnit } = useWeightUnit()
+  const [weight, setWeight] = useState(profile.weightKg?.toString() ?? "")
+  // When the unit flips (incl. the SSR→localStorage hydration flip), convert the field in place so the
+  // number the user sees stays the same body weight in the new unit. `prevUnit` gates re-conversion.
+  const prevUnit = useRef<WeightUnit>(weightUnit)
+  useEffect(() => {
+    if (prevUnit.current === weightUnit) return
+    const v = Number.parseFloat(weight)
+    if (Number.isFinite(v)) {
+      const kg = displayToKg(v, prevUnit.current)
+      setWeight(fmtWeight(kgToDisplay(kg, weightUnit)))
+    }
+    prevUnit.current = weightUnit
+  }, [weightUnit, weight])
   const [pregnancy, setPregnancy] = useState(!!profile.pregnancy)
   const [lactation, setLactation] = useState(!!profile.lactation)
   const [b12, setB12] = useState(!!profile.supplementB12)
@@ -1816,11 +1843,13 @@ function NutritionProfileForm({
     setSaved(false)
     try {
       const by = Number.parseInt(birthYear, 10)
-      const wt = Number.parseFloat(weightKg)
+      const wt = Number.parseFloat(weight)
+      const kg =
+        Number.isFinite(wt) && wt > 0 ? displayToKg(wt, weightUnit) : null
       await onSave({
         birthYear: Number.isFinite(by) ? by : null,
         driSex: driSex || null,
-        weightKg: Number.isFinite(wt) && wt > 0 ? wt : null,
+        weightKg: kg,
         pregnancy: driSex === "female" ? pregnancy : false,
         lactation: driSex === "female" ? lactation : false,
         supplementB12: b12,
@@ -1867,17 +1896,38 @@ function NutritionProfileForm({
           </p>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="weight-kg">Weight (kg)</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="weight">Weight</Label>
+            <div className="flex rounded-lg bg-muted p-0.5 text-xs">
+              {(["kg", "lb"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  aria-pressed={weightUnit === u}
+                  onClick={() => setWeightUnit(u)}
+                  className={cn(
+                    "rounded-md px-2 py-0.5 font-medium transition-colors",
+                    weightUnit === u
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
           <Input
-            id="weight-kg"
+            id="weight"
             type="number"
             inputMode="decimal"
             placeholder="optional"
-            value={weightKg}
-            onChange={(e) => setWeightKg(e.target.value)}
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
           />
           <p className="text-muted-foreground text-xs">
-            Enables a body-weight-based protein target.
+            Enables a body-weight-based protein target. Stored in metric —
+            switch units any time.
           </p>
         </div>
       </div>
