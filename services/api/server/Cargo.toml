@@ -29,7 +29,7 @@ argon2 = "0.5"
 getrandom = "0.4"
 sha2 = "0.11"
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 # Structured observability: tower-http TraceLayer emits a per-request span (method/path/status/latency),
 # formatted + RUST_LOG-filtered by tracing-subscriber; handler info!/error! surface writes + auth outcomes.
 tracing = "0.1"
