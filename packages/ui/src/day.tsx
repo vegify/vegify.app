@@ -67,6 +67,19 @@ export type DaySupplementsVM = {
   algaeOil: boolean
 }
 
+/** One deterministic, source-cited nutritional insight from the trailing 7 days. See
+ *  vegify-core's `compute_insights` for the rules. Guidance-toned, never alarming. */
+export type DayInsightVM = {
+  /** Machine-readable key (e.g. "iron-vitamin-c", "b12-supplement"). */
+  key: string
+  /** Short actionable headline. */
+  title: string
+  /** 1-2 sentence guidance with actual numbers and vegan-specific food suggestions. */
+  body: string
+  /** Source citation (NIH ODS / IOM). */
+  citation: string
+}
+
 /** One diary day as a view-model (each shell maps the server's `DayLog`, coercing null numbers). */
 export type DayVM = {
   /** The 'YYYY-MM-DD' local calendar date this covers. */
@@ -82,6 +95,8 @@ export type DayVM = {
   recents: DayRecentVM[]
   /** The supplements taken on this day — drives the checklist and the targets' supplement coverage. */
   supplements: DaySupplementsVM
+  /** Insights from the trailing 7 days of food logs. Empty when < 3 days are logged. */
+  insights: DayInsightVM[]
 }
 
 /** The write port — present ⇒ the owner can log/edit/delete. Each shell wires these to its transport. */
@@ -543,6 +558,48 @@ function DaySupplementsChecklist({
   )
 }
 
+/** THE INSIGHTS CARD — deterministic weekly guidance from the trailing 7 days. Source-cited,
+ *  vegan-specific, guidance-toned (never alarming — ED-adjacent audience). Shows only when the
+ *  compute layer produced insights (≥ 3 logged days in the window + at least one nutrient below
+ *  target). The card carries the "this week" perspective; per-day progress is in `DayTargets`. */
+function InsightsCard({
+  insights,
+  className
+}: {
+  insights: DayInsightVM[]
+  className?: string
+}) {
+  if (insights.length === 0) return null
+  return (
+    <div className={cn("text-foreground", className)}>
+      <div className="mb-3 border-foreground border-b-2 pb-1">
+        <h2 className="font-bold font-serif text-lg tracking-tight">
+          This week
+        </h2>
+        <p className="text-muted-foreground text-xs">
+          Insights from the past 7 days of food logs
+        </p>
+      </div>
+      <ul className="space-y-3">
+        {insights.map((insight) => (
+          <li
+            key={insight.key}
+            className="rounded-lg bg-card p-3 ring-1 ring-foreground/10"
+          >
+            <h3 className="font-medium text-sm">{insight.title}</h3>
+            <p className="mt-1 text-muted-foreground text-xs leading-snug">
+              {insight.body}
+            </p>
+            <p className="mt-1.5 text-[0.65rem] text-muted-foreground/60 italic">
+              {insight.citation}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function DayView({
   day,
   LinkComponent,
@@ -613,12 +670,17 @@ export function DayView({
           totals={day.totals}
           className="mt-8 lg:hidden"
         />
+
+        {/* Mobile: weekly insights after per-day targets. */}
+        <InsightsCard insights={day.insights} className="mt-8 lg:hidden" />
       </div>
 
       <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
         <div className="space-y-8 lg:sticky lg:top-6">
           {/* Targets are the primary readout (P1.3); the full FDA panel follows as reference. */}
           <DayTargets targets={day.targets} totals={day.totals} />
+          {/* Weekly insights between targets and the FDA reference panel. */}
+          <InsightsCard insights={day.insights} />
           <NutritionFacts data={nutrition} />
         </div>
       </aside>

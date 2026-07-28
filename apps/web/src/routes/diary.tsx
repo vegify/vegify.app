@@ -65,7 +65,13 @@ const getDay = createServerFn({ method: "GET" })
         b12: day.supplements.b12 ?? false,
         vitD: day.supplements.vitD ?? false,
         algaeOil: day.supplements.algaeOil ?? false
-      }
+      },
+      insights: (day.insights ?? []).map((i) => ({
+        key: i.key,
+        title: i.title,
+        body: i.body,
+        citation: i.citation
+      }))
     }
   })
 

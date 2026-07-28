@@ -1211,6 +1211,10 @@ pub struct DayLog {
     /// The supplements taken on this day (effective, carry-forward). Renders the day's supplement
     /// checklist and drives the `supplementCovered` flags above.
     pub supplements: DaySupplements,
+    /// Deterministic insights from the trailing 7 days of food logs — actionable, source-cited
+    /// guidance for the vegan-critical nutrients. Empty when fewer than 3 days are logged in the
+    /// window (insufficient data to be meaningful). See `compute_insights`.
+    pub insights: Vec<Insight>,
 }
 
 #[derive(Serialize, Type)]
@@ -1463,6 +1467,37 @@ pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, E
     let supplements = get_day_supplements(conn, user_id, date)?;
     let target_list = targets(&get_nutrition_profile(conn, user_id)?, &supplements, year);
 
+    // 4. Insights: deterministic rules over the trailing 7 days (the viewed date minus 6 days through
+    // the viewed date, inclusive). SQLite's date() function handles the arithmetic. Empty when fewer
+    // than 3 days in the window have entries (insufficient data).
+    let mut wstmt = conn.prepare(
+        "SELECT len.name, len.unit, SUM(len.amount_per_100g * a.grams / 100.0) AS total
+         FROM log_entry_nutrient len
+         JOIN log_entries le ON le.id = len.log_entry_id
+         JOIN amounts a ON a.id = le.amount_id
+         WHERE le.user_id = ?1 AND le.date >= date(?2, '-6 days') AND le.date <= ?2
+               AND le.deleted_at IS NULL
+         GROUP BY len.name, len.unit
+         ORDER BY len.name",
+    )?;
+    let week_totals = wstmt
+        .query_map(params![user_id, date], |row| {
+            Ok(NutrientTotal {
+                name: row.get(0)?,
+                unit: row.get(1)?,
+                amount: row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let days_logged: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT date) FROM log_entries
+         WHERE user_id = ?1 AND date >= date(?2, '-6 days') AND date <= ?2
+               AND deleted_at IS NULL",
+        params![user_id, date],
+        |row| row.get(0),
+    )?;
+    let insights = compute_insights(&week_totals, days_logged, &target_list);
+
     Ok(DayLog {
         date: date.to_string(),
         entries,
@@ -1470,6 +1505,7 @@ pub fn log_day(conn: &Connection, user_id: &str, date: &str) -> Result<DayLog, E
         totals,
         targets: target_list,
         supplements,
+        insights,
     })
 }
 
@@ -1915,6 +1951,23 @@ pub struct NutrientTarget {
     pub note: Option<String>,
 }
 
+/// A deterministic, source-cited nutritional insight derived from trailing-7-day food log data.
+/// Each rule compares the user's recent intake against their personalized targets and surfaces
+/// guidance when intake falls short. Guidance-toned by design (ED-adjacent audience): never
+/// alarming or shame-inducing. NO LLM in v0 — pure deterministic rules.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Insight {
+    /// Machine-readable key for client-side rendering (e.g. "iron-vitamin-c", "b12-supplement").
+    pub key: String,
+    /// Short actionable headline.
+    pub title: String,
+    /// 1–2 sentence guidance with the user's actual numbers and vegan-specific food suggestions.
+    pub body: String,
+    /// Source citation (NIH ODS / IOM).
+    pub citation: String,
+}
+
 /// Adult DRI age brackets (this app targets adults; a <19 age folds into the 19–50 tier).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum AgeBracket {
@@ -2230,6 +2283,298 @@ pub fn targets(
             supplement_covered: false,
             note: Some(note),
         });
+    }
+
+    out
+}
+
+/// Format a nutrient amount to one decimal place for insight bodies; trailing .0 stripped
+/// (e.g. "14.4", "14", "0.8"). Reuses `round1`.
+fn fmt_amount(x: f64) -> String {
+    let r = round1(x);
+    if r.fract().abs() < f64::EPSILON {
+        format!("{}", r as i64)
+    } else {
+        format!("{r:.1}")
+    }
+}
+
+/// Compute deterministic, source-cited nutritional insights from trailing-7-day food log data.
+/// Each rule compares the daily average (`week_totals` summed / `days_logged`) against the user's
+/// personalized targets and surfaces guidance when intake falls short. Returns nothing when fewer
+/// than 3 days are logged (insufficient data to be meaningful).
+///
+/// Guidance-toned: "your iron averaged X — pairing with vitamin C helps," never "you failed."
+/// The vegan overlay is the differentiator: every tip is plant-diet-specific.
+///
+/// NO LLM dependency — pure deterministic rules with cited constants (v0).
+pub fn compute_insights(
+    week_totals: &[NutrientTotal],
+    days_logged: i64,
+    targets: &[NutrientTarget],
+) -> Vec<Insight> {
+    if days_logged < 3 {
+        return vec![];
+    }
+    let d = days_logged as f64;
+
+    let avg_for = |name: &str| -> f64 {
+        week_totals
+            .iter()
+            .find(|t| t.name == name)
+            .map(|t| t.amount / d)
+            .unwrap_or(0.0)
+    };
+
+    let target_for =
+        |name: &str| -> Option<&NutrientTarget> { targets.iter().find(|t| t.name == name) };
+
+    let mut out = Vec::new();
+
+    // IRON — the headline vegan insight: non-heme iron + vitamin C pairing.
+    // Citation: NIH ODS Iron Fact Sheet — "Vitamin C (ascorbic acid) … enhances the absorption of
+    // nonheme iron"; IOM (2001) DRI sets the ×1.8 multiplier for vegetarian diets.
+    if let Some(tgt) = target_for("Iron") {
+        let avg = avg_for("Iron");
+        if avg < tgt.amount && !tgt.supplement_covered {
+            out.push(Insight {
+                key: "iron-vitamin-c".into(),
+                title: "Pair iron-rich foods with vitamin C".into(),
+                body: format!(
+                    "Your iron intake averaged {} {}/day this week (target: {} {}). \
+                     Plant-based (non-heme) iron absorbs 2\u{2013}3\u{00d7} better when eaten with \
+                     vitamin C sources \u{2014} citrus, bell peppers, or broccoli at the same meal.",
+                    fmt_amount(avg),
+                    tgt.unit,
+                    fmt_amount(tgt.amount),
+                    tgt.unit
+                ),
+                citation: "NIH Office of Dietary Supplements \u{2014} Iron Fact Sheet for \
+                           Health Professionals"
+                    .into(),
+            });
+        }
+    }
+
+    // B12 — the non-negotiable vegan supplement. Only fires when not supplemented.
+    // Citation: NIH ODS Vitamin B12 — "natural food sources of vitamin B12 are limited to animal foods."
+    if let Some(tgt) = target_for("Vitamin B12") {
+        if !tgt.supplement_covered {
+            let avg = avg_for("Vitamin B12");
+            if avg < tgt.amount {
+                out.push(Insight {
+                    key: "b12-supplement".into(),
+                    title: "Consider a B12 supplement".into(),
+                    body: format!(
+                        "Vitamin B12 intake averaged {} {}/day this week (target: {} {}), \
+                         and no supplement is logged. B12 has no reliable plant food source \u{2014} \
+                         a supplement or consistently fortified foods (nutritional yeast, fortified \
+                         plant milk) are essential on a vegan diet.",
+                        fmt_amount(avg),
+                        tgt.unit,
+                        fmt_amount(tgt.amount),
+                        tgt.unit
+                    ),
+                    citation: "NIH Office of Dietary Supplements \u{2014} Vitamin B12 Fact Sheet \
+                               for Health Professionals"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // OMEGA-3 (ALA) — algae oil consideration for direct EPA+DHA.
+    // Citation: NIH ODS Omega-3 — ALA→EPA conversion <15%.
+    if let Some(tgt) = target_for("Omega-3 Fatty Acids") {
+        if !tgt.supplement_covered {
+            let avg = avg_for("Omega-3 Fatty Acids");
+            if avg < tgt.amount {
+                out.push(Insight {
+                    key: "omega3-algae".into(),
+                    title: "Omega-3 intake is below your target".into(),
+                    body: format!(
+                        "Omega-3 (ALA) averaged {} {}/day this week (target: {} {}). \
+                         Flaxseed, chia seeds, and walnuts are rich sources. \
+                         The body converts little ALA to EPA/DHA (<15%), so many vegans add \
+                         an algae-based omega-3 supplement for direct EPA+DHA.",
+                        fmt_amount(avg),
+                        tgt.unit,
+                        fmt_amount(tgt.amount),
+                        tgt.unit
+                    ),
+                    citation: "NIH Office of Dietary Supplements \u{2014} Omega-3 Fatty Acids \
+                               Fact Sheet for Health Professionals"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // CALCIUM — no vegan multiplier, but plant-based intake often runs low.
+    if let Some(tgt) = target_for("Calcium") {
+        let avg = avg_for("Calcium");
+        if avg < tgt.amount {
+            out.push(Insight {
+                key: "calcium-low".into(),
+                title: "Calcium intake is below your target".into(),
+                body: format!(
+                    "Calcium averaged {} {}/day this week (target: {} {}). \
+                     Calcium-set tofu, fortified plant milks, tahini, and low-oxalate greens \
+                     (kale, bok choy) are the most bioavailable plant sources.",
+                    fmt_amount(avg),
+                    tgt.unit,
+                    fmt_amount(tgt.amount),
+                    tgt.unit
+                ),
+                citation: "NIH Office of Dietary Supplements \u{2014} Calcium Fact Sheet for \
+                           Health Professionals"
+                    .into(),
+            });
+        }
+    }
+
+    // IODINE — USDA plant data carries no iodine, so the total is typically 0. When the 7-day total
+    // is effectively 0, show a data-limitation note rather than a "low intake" insight (the latter
+    // would fire every single week and add no actionable value). When some iodine data IS present but
+    // below target, show the standard low-intake insight.
+    if let Some(tgt) = target_for("Iodine") {
+        let week_total = week_totals
+            .iter()
+            .find(|t| t.name == "Iodine")
+            .map(|t| t.amount)
+            .unwrap_or(0.0);
+        if week_total < 1e-6 {
+            out.push(Insight {
+                key: "iodine-data".into(),
+                title: "Iodine may need attention".into(),
+                body: "Most food databases have limited iodine data, so tracked intake often \
+                       reads as zero even with an adequate diet. Reliable plant-based sources are \
+                       scarce \u{2014} iodized salt (measured) or a supplement providing \
+                       150 \u{00b5}g/day covers the RDA."
+                    .into(),
+                citation: "NIH Office of Dietary Supplements \u{2014} Iodine Fact Sheet for \
+                           Health Professionals"
+                    .into(),
+            });
+        } else {
+            let avg = week_total / d;
+            if avg < tgt.amount {
+                out.push(Insight {
+                    key: "iodine-low".into(),
+                    title: "Iodine intake is below your target".into(),
+                    body: format!(
+                        "Iodine averaged {} {}/day this week (target: {} {}). \
+                         Use iodized salt or a supplement \u{2014} seaweed iodine varies enormously.",
+                        fmt_amount(avg),
+                        tgt.unit,
+                        fmt_amount(tgt.amount),
+                        tgt.unit
+                    ),
+                    citation: "NIH Office of Dietary Supplements \u{2014} Iodine Fact Sheet for \
+                               Health Professionals"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // PROTEIN — the vegan 1.0 g/kg target; highlight body-weight personalization when set.
+    // Citation: IOM (2005) Macronutrients DRI — 0.8 g/kg reference, 1.0 g/kg for plant-based.
+    if let Some(tgt) = target_for("Protein") {
+        let avg = avg_for("Protein");
+        if avg < tgt.amount {
+            let note = if tgt.vegan_adjusted {
+                "Legumes, soy, seitan, and whole grains together cover all amino acids. \
+                 Your target is set at 1.0 g/kg to offset plant protein\u{2019}s lower digestibility."
+            } else {
+                "Add your weight in Settings for a personalized target (plant-adjusted g/kg). \
+                 Legumes, soy, and grains together supply complete protein."
+            };
+            out.push(Insight {
+                key: "protein-low".into(),
+                title: "Protein intake is below your target".into(),
+                body: format!(
+                    "Protein averaged {} {}/day this week (target: {} {}). {note}",
+                    fmt_amount(avg),
+                    tgt.unit,
+                    fmt_amount(tgt.amount),
+                    tgt.unit
+                ),
+                citation: "IOM Dietary Reference Intakes for Protein (2005)".into(),
+            });
+        }
+    }
+
+    // VITAMIN D — supplement-aware; few plant foods carry it.
+    if let Some(tgt) = target_for("Vitamin D") {
+        if !tgt.supplement_covered {
+            let avg = avg_for("Vitamin D");
+            if avg < tgt.amount {
+                out.push(Insight {
+                    key: "vitamin-d-supplement".into(),
+                    title: "Consider a vitamin D supplement".into(),
+                    body: format!(
+                        "Vitamin D intake averaged {} {}/day this week (target: {} {}). \
+                         Few foods naturally contain vitamin D \u{2014} most people benefit from \
+                         a vegan D3 (lichen-derived) or D2 supplement, especially at higher \
+                         latitudes.",
+                        fmt_amount(avg),
+                        tgt.unit,
+                        fmt_amount(tgt.amount),
+                        tgt.unit
+                    ),
+                    citation: "NIH Office of Dietary Supplements \u{2014} Vitamin D Fact Sheet \
+                               for Health Professionals"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // ZINC — vegan overlay ×1.5 for phytate binding.
+    if let Some(tgt) = target_for("Zinc") {
+        let avg = avg_for("Zinc");
+        if avg < tgt.amount {
+            out.push(Insight {
+                key: "zinc-low".into(),
+                title: "Zinc intake is below your target".into(),
+                body: format!(
+                    "Zinc averaged {} {}/day this week (target: {} {}). \
+                     Legumes, nuts, seeds, and whole grains are good sources. \
+                     Soaking and sprouting reduce phytate and improve absorption.",
+                    fmt_amount(avg),
+                    tgt.unit,
+                    fmt_amount(tgt.amount),
+                    tgt.unit
+                ),
+                citation: "NIH Office of Dietary Supplements \u{2014} Zinc Fact Sheet for \
+                           Health Professionals"
+                    .into(),
+            });
+        }
+    }
+
+    // SELENIUM — Brazil nuts are the easy plant-based fix.
+    if let Some(tgt) = target_for("Selenium") {
+        let avg = avg_for("Selenium");
+        if avg < tgt.amount {
+            out.push(Insight {
+                key: "selenium-low".into(),
+                title: "Selenium intake is below your target".into(),
+                body: format!(
+                    "Selenium averaged {} {}/day this week (target: {} {}). \
+                     Brazil nuts are exceptionally rich \u{2014} just 1\u{2013}2 per day \
+                     can meet the RDA. Other sources include whole grains and legumes.",
+                    fmt_amount(avg),
+                    tgt.unit,
+                    fmt_amount(tgt.amount),
+                    tgt.unit
+                ),
+                citation: "NIH Office of Dietary Supplements \u{2014} Selenium Fact Sheet for \
+                           Health Professionals"
+                    .into(),
+            });
+        }
     }
 
     out
@@ -4057,5 +4402,286 @@ mod targets_tests {
             )
             .unwrap();
         assert_eq!(count, 1, "one row per user");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::float_cmp, missing_docs)]
+mod insights_tests {
+    use super::*;
+
+    fn default_targets() -> Vec<NutrientTarget> {
+        targets(
+            &NutritionProfile::default(),
+            &DaySupplements::default(),
+            2026,
+        )
+    }
+
+    fn supplemented_targets() -> Vec<NutrientTarget> {
+        targets(
+            &NutritionProfile::default(),
+            &DaySupplements {
+                b12: true,
+                vit_d: true,
+                algae_oil: true,
+            },
+            2026,
+        )
+    }
+
+    fn has_insight(insights: &[Insight], key: &str) -> bool {
+        insights.iter().any(|i| i.key == key)
+    }
+
+    #[test]
+    fn no_insights_when_fewer_than_3_days_logged() {
+        let totals = vec![NutrientTotal {
+            name: "Iron".into(),
+            amount: 0.0,
+            unit: "mg".into(),
+        }];
+        let t = default_targets();
+        assert!(
+            compute_insights(&totals, 2, &t).is_empty(),
+            "2 days < minimum 3"
+        );
+        assert!(
+            compute_insights(&totals, 0, &t).is_empty(),
+            "0 days < minimum 3"
+        );
+        // At 3 days, insights should fire (nutrients are 0, below targets).
+        assert!(
+            !compute_insights(&totals, 3, &t).is_empty(),
+            "3 days meets the minimum"
+        );
+    }
+
+    #[test]
+    fn insights_fire_when_nutrients_are_below_targets() {
+        // 7-day totals of 0 across 5 days ⇒ everything below target.
+        let totals = vec![];
+        let t = default_targets();
+        let insights = compute_insights(&totals, 5, &t);
+        assert!(has_insight(&insights, "iron-vitamin-c"));
+        assert!(has_insight(&insights, "b12-supplement"));
+        assert!(has_insight(&insights, "omega3-algae"));
+        assert!(has_insight(&insights, "calcium-low"));
+        assert!(
+            has_insight(&insights, "iodine-data"),
+            "zero iodine ⇒ data note"
+        );
+        assert!(has_insight(&insights, "protein-low"));
+        assert!(has_insight(&insights, "vitamin-d-supplement"));
+        assert!(has_insight(&insights, "zinc-low"));
+        assert!(has_insight(&insights, "selenium-low"));
+    }
+
+    #[test]
+    fn insights_suppressed_when_nutrients_meet_targets() {
+        // 7-day totals that exceed every target (5 days logged → avg = total/5).
+        let t = default_targets();
+        let totals: Vec<NutrientTotal> = t
+            .iter()
+            .map(|tgt| NutrientTotal {
+                name: tgt.name.clone(),
+                unit: tgt.unit.clone(),
+                // total = target * days * 1.1 → avg exceeds target
+                amount: tgt.amount * 5.0 * 1.1,
+            })
+            .collect();
+        let insights = compute_insights(&totals, 5, &t);
+        assert!(
+            insights.is_empty(),
+            "no insights when all nutrients are met; got: {:?}",
+            insights.iter().map(|i| &i.key).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn supplement_covered_suppresses_b12_and_vitamin_d_and_omega3() {
+        // Nutrients are 0 (below target), but supplements are active.
+        let t = supplemented_targets();
+        let insights = compute_insights(&[], 5, &t);
+        assert!(
+            !has_insight(&insights, "b12-supplement"),
+            "B12 supplement is active"
+        );
+        assert!(
+            !has_insight(&insights, "vitamin-d-supplement"),
+            "vitamin D supplement is active"
+        );
+        assert!(
+            !has_insight(&insights, "omega3-algae"),
+            "algae oil supplement is active"
+        );
+        // Non-supplement nutrients should still fire.
+        assert!(has_insight(&insights, "iron-vitamin-c"));
+        assert!(has_insight(&insights, "calcium-low"));
+    }
+
+    #[test]
+    fn iodine_data_limitation_vs_low_intake() {
+        let t = default_targets();
+
+        // Zero iodine ⇒ data limitation note (not "low").
+        let no_iodine = compute_insights(&[], 5, &t);
+        assert!(has_insight(&no_iodine, "iodine-data"));
+        assert!(!has_insight(&no_iodine, "iodine-low"));
+
+        // Some iodine but below target ⇒ low-intake insight (not data note).
+        let some_iodine = vec![NutrientTotal {
+            name: "Iodine".into(),
+            amount: 100.0, // 100 µg total / 5 days = 20 µg/day avg, target 150 µg
+            unit: "µg".into(),
+        }];
+        let insights = compute_insights(&some_iodine, 5, &t);
+        assert!(has_insight(&insights, "iodine-low"));
+        assert!(!has_insight(&insights, "iodine-data"));
+    }
+
+    #[test]
+    fn protein_insight_mentions_gkg_when_weight_set() {
+        let with_weight = targets(
+            &NutritionProfile {
+                weight_kg: Some(80.0),
+                dri_sex: Some(DriSex::Male),
+                ..Default::default()
+            },
+            &DaySupplements::default(),
+            2026,
+        );
+        let insights = compute_insights(&[], 5, &with_weight);
+        let protein = insights.iter().find(|i| i.key == "protein-low").unwrap();
+        assert!(
+            protein.body.contains("1.0 g/kg"),
+            "mentions g/kg when weight is set: {}",
+            protein.body
+        );
+
+        let no_weight = default_targets();
+        let insights2 = compute_insights(&[], 5, &no_weight);
+        let protein2 = insights2.iter().find(|i| i.key == "protein-low").unwrap();
+        assert!(
+            protein2.body.contains("Settings"),
+            "prompts to set weight when absent: {}",
+            protein2.body
+        );
+    }
+
+    #[test]
+    fn insight_bodies_contain_actual_numbers() {
+        let t = default_targets();
+        // Iron total: 50 mg over 5 days ⇒ avg = 10 mg/day.
+        let totals = vec![NutrientTotal {
+            name: "Iron".into(),
+            amount: 50.0,
+            unit: "mg".into(),
+        }];
+        let insights = compute_insights(&totals, 5, &t);
+        let iron = insights.iter().find(|i| i.key == "iron-vitamin-c").unwrap();
+        assert!(
+            iron.body.contains("10 mg/day"),
+            "body should contain the average: {}",
+            iron.body
+        );
+        // Target for generic profile is 32.4 mg.
+        assert!(
+            iron.body.contains("32.4 mg"),
+            "body should contain the target: {}",
+            iron.body
+        );
+    }
+
+    // Integration test: verify insights flow through log_day with the real schema + SQL queries.
+    #[test]
+    fn log_day_computes_insights_from_trailing_7_days() {
+        const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
+            .unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')",
+            [],
+        )
+        .unwrap();
+
+        // Create an ingredient with iron (5 mg/100g) and protein (10 g/100g).
+        let food = do_save_ingredient(
+            &c,
+            &SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Public),
+                name: "Test Food".into(),
+                description: None,
+                price: None,
+                calories_per_100g: Some(100.0),
+                serving_grams: None,
+                serving_unit: None,
+                package_grams: None,
+                nutrients: vec![
+                    IngredientNutrientInput {
+                        name: "Iron".into(),
+                        amount_per_100g: 5.0,
+                        unit: "mg".into(),
+                    },
+                    IngredientNutrientInput {
+                        name: "Protein".into(),
+                        amount_per_100g: 10.0,
+                        unit: "g".into(),
+                    },
+                ],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+
+        // Log 100g on each of 4 days (enough to clear the 3-day minimum).
+        for (date, ts) in [
+            ("2026-07-22", 1000),
+            ("2026-07-23", 2000),
+            ("2026-07-24", 3000),
+            ("2026-07-25", 4000),
+        ] {
+            do_save_log_entry(
+                &c,
+                &SaveLogEntryInput {
+                    id: None,
+                    ingredient_id: food.clone(),
+                    date: date.into(),
+                    slot: None,
+                    grams: 100.0,
+                    unit: None,
+                    logged_at: Some(ts),
+                },
+                "u1",
+            )
+            .unwrap();
+        }
+
+        // Viewing 2026-07-25: trailing 7 days = 07-19..07-25, but entries exist only on 07-22..07-25.
+        let day = log_day(&c, "u1", "2026-07-25").unwrap();
+
+        // Should have insights (4 days logged ≥ 3 minimum).
+        assert!(
+            !day.insights.is_empty(),
+            "insights should be present with 4 logged days"
+        );
+
+        // Iron insight should fire: avg = (5 mg * 4 days) / 4 = 5 mg/day, target = 32.4 mg.
+        assert!(
+            day.insights.iter().any(|i| i.key == "iron-vitamin-c"),
+            "iron is below target (5 mg vs 32.4 mg)"
+        );
+
+        // A day outside the window should not include those entries.
+        let far_day = log_day(&c, "u1", "2026-08-05").unwrap();
+        assert!(
+            far_day.insights.is_empty(),
+            "no entries in the trailing 7 days of 2026-08-05"
+        );
     }
 }

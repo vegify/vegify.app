@@ -71,6 +71,12 @@ export type DayLog = {
 	 *  checklist and drives the `supplementCovered` flags above.
 	 */
 	supplements: DaySupplements,
+	/**
+	 *  Deterministic insights from the trailing 7 days of food logs — actionable, source-cited
+	 *  guidance for the vegan-critical nutrients. Empty when fewer than 3 days are logged in the
+	 *  window (insufficient data to be meaningful). See `compute_insights`.
+	 */
+	insights: Insight[],
 };
 
 /**
@@ -211,6 +217,23 @@ export type IngredientSlugHit = {
 	 *  `/<username>/ingredients/<slug>` (the catalog stays at the global path).
 	 */
 	username: string | null,
+};
+
+/**
+ *  A deterministic, source-cited nutritional insight derived from trailing-7-day food log data.
+ *  Each rule compares the user's recent intake against their personalized targets and surfaces
+ *  guidance when intake falls short. Guidance-toned by design (ED-adjacent audience): never
+ *  alarming or shame-inducing. NO LLM in v0 — pure deterministic rules.
+ */
+export type Insight = {
+	/**  Machine-readable key for client-side rendering (e.g. "iron-vitamin-c", "b12-supplement"). */
+	key: string,
+	/**  Short actionable headline. */
+	title: string,
+	/**  1–2 sentence guidance with the user's actual numbers and vegan-specific food suggestions. */
+	body: string,
+	/**  Source citation (NIH ODS / IOM). */
+	citation: string,
 };
 
 /**
