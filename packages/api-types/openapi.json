@@ -161,6 +161,13 @@
             },
             "type": "array"
           },
+          "insights": {
+            "description": " Deterministic insights from the trailing 7 days of food logs — actionable, source-cited\n guidance for the vegan-critical nutrients. Empty when fewer than 3 days are logged in the\n window (insufficient data to be meaningful). See `compute_insights`.",
+            "items": {
+              "$ref": "#/components/schemas/Insight"
+            },
+            "type": "array"
+          },
           "supplements": {
             "$ref": "#/components/schemas/DaySupplements",
             "description": " The supplements taken on this day (effective, carry-forward). Renders the day's supplement\n checklist and drives the `supplementCovered` flags above."
@@ -186,7 +193,8 @@
           "calories",
           "totals",
           "targets",
-          "supplements"
+          "supplements",
+          "insights"
         ],
         "title": "DayLog",
         "type": "object"
@@ -552,6 +560,36 @@
           "username"
         ],
         "title": "IngredientSlugHit",
+        "type": "object"
+      },
+      "Insight": {
+        "additionalProperties": false,
+        "description": " A deterministic, source-cited nutritional insight derived from trailing-7-day food log data.\n Each rule compares the user's recent intake against their personalized targets and surfaces\n guidance when intake falls short. Guidance-toned by design (ED-adjacent audience): never\n alarming or shame-inducing. NO LLM in v0 — pure deterministic rules.",
+        "properties": {
+          "body": {
+            "description": " 1–2 sentence guidance with the user's actual numbers and vegan-specific food suggestions.",
+            "type": "string"
+          },
+          "citation": {
+            "description": " Source citation (NIH ODS / IOM).",
+            "type": "string"
+          },
+          "key": {
+            "description": " Machine-readable key for client-side rendering (e.g. \"iron-vitamin-c\", \"b12-supplement\").",
+            "type": "string"
+          },
+          "title": {
+            "description": " Short actionable headline.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "body",
+          "citation"
+        ],
+        "title": "Insight",
         "type": "object"
       },
       "LogEntryView": {
