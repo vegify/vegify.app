@@ -66,5 +66,8 @@ tauri-plugin-tracing = "0.3"
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 tracing-subscriber = "0.3"
 
+[package.metadata.cargo-machete]
+ignored = ["vegify-client-rs"]  # lib name is vegify_client; machete cannot match
+
 [lints]
 workspace = true

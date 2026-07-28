@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["tauri"],
+  "workspaces": {
+    ".": {
+      "ignoreDependencies": ["@biomejs/biome", "@tailwindcss/cli"]
+    },
+    "apps/web": {},
+    "packages/ui": {},
+    "packages/tokens": {
+      "ignoreDependencies": ["@fontsource/bitter"]
+    },
+    "packages/config": {},
+    "packages/db": {},
+    "infra": {
+      "entry": ["bin/*.ts", "lib/*.ts"],
+      "ignoreDependencies": ["tsx"]
+    }
+  }
+}

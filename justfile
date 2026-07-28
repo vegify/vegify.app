@@ -11,11 +11,16 @@ default:
     @just --list
 
 # Everything CI enforces. Run before every push.
-check: lint tokens typecheck web-test build rust
+check: lint unused-deps tokens typecheck web-test build rust
 
 # JS deps, frozen exactly as CI installs them.
 install:
     pnpm install --frozen-lockfile
+
+# Unused-dependency check (JS via knip, Rust via cargo-machete).
+unused-deps:
+    pnpm exec knip --dependencies
+    cargo machete
 
 # One lint/format layer for the whole workspace (biome; config at the root).
 lint:
