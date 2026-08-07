@@ -6297,6 +6297,7 @@ version = "0.1.0"
 dependencies = [
  "rusqlite",
  "serde",
+ "serde_json",
  "specta",
  "ulid",
 ]
@@ -6324,6 +6325,7 @@ dependencies = [
  "tower-http 0.7.0",
  "tracing",
  "tracing-subscriber",
+ "ureq",
  "vegify-api-types",
  "vegify-config",
  "vegify-core",

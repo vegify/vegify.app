@@ -285,6 +285,21 @@ pub struct Notification {
     pub read: bool,
 }
 
+// ---- branded foods (P2.1 / gate D1) ----
+
+/// A promote-on-first-use request: the `source` + `externalId` pair the client just received on a
+/// branded lookup, handed straight back to join that food into the communal catalog. Nothing else is
+/// accepted — the payload the server promotes is the one IT cached, never one the client supplies, so
+/// a caller can't inject arbitrary nutrition into the shared catalog under a USDA/OFF byline.
+#[derive(Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PromoteBrandedBody {
+    /// Which third party the food came from (`"usda-branded"` or `"off"`).
+    pub source: vegify_core::BrandedSource,
+    /// That source's id for the food (an FDC `fdcId`, or the OFF barcode).
+    pub external_id: String,
+}
+
 /// A DM send, as the client must state it. The server's own deserializer stays lenient (missing
 /// fields answer 400 with a message rather than a deserialization error); the CONTRACT is that
 /// both fields are required.
@@ -355,6 +370,13 @@ pub fn api_types() -> specta::Types {
         // POST /api/day-supplements body.
         .register::<vegify_core::DaySupplements>()
         .register::<vegify_core::DaySupplementsRecord>()
+        // vegify-core branded foods (P2.1 / gate D1 — the separable on-demand branded store). The
+        // diet shapes ride on BrandedFood.dietFlags; they are ADVISORY findings, never a vegan
+        // certification (see crates/vegify-core/src/diet.rs).
+        .register::<vegify_core::BrandedSource>()
+        .register::<vegify_core::DietCategory>()
+        .register::<vegify_core::DietFlag>()
+        .register::<vegify_core::BrandedFood>()
         // this crate (server-local wire shapes)
         .register::<UploadTicket>()
         .register::<User>()
@@ -367,6 +389,7 @@ pub fn api_types() -> specta::Types {
         .register::<Thread>()
         .register::<Notification>()
         .register::<SendMessageBody>()
+        .register::<PromoteBrandedBody>()
         .register::<SavedId>()
         .register::<Ack>()
 }
@@ -440,6 +463,37 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             )
             .query_param::<String>("q")
             .response::<core::ContentSearchResult>(200, "Ranked recipe + ingredient hits"),
+        Operation::get("/api/branded/search")
+            .summary("Branded-food search (on-demand, cached)")
+            .description(
+                "Public, IP-budgeted. Answers from the local branded cache first and tops up from \
+                 USDA FoodData Central's Branded dataset only when the cache under-fills, so a repeat \
+                 lookup costs no outbound request and the data is never stale. Results are CACHED, \
+                 not promoted: nothing joins the communal catalog until POST /api/branded/promote.",
+            )
+            .query_param::<String>("q")
+            .response::<Vec<core::BrandedFood>>(200, "Matching branded foods, ranked"),
+        Operation::get("/api/branded/barcode")
+            .summary("Resolve a barcode (GTIN/UPC/EAN) to a branded food")
+            .description(
+                "Public, IP-budgeted. USDA Branded (CC0) is tried first and Open Food Facts (ODbL) \
+                 only as the fallback, so the share-alike lane stays as small as the data allows. \
+                 Null = not found in either source; the client should offer manual entry, not an \
+                 error. Every result carries the attribution line the client must render.",
+            )
+            .query_param::<String>("gtin")
+            .response::<Option<core::BrandedFood>>(200, "The branded food, or null"),
+        Operation::post("/api/branded/promote")
+            .summary("Promote a looked-up branded food into the catalog")
+            .description(
+                "Requires bearer. Promote-on-first-use: joins a CACHED branded food into the \
+                 communal ingredient catalog as an unowned, public, provenance-stamped row and \
+                 returns its ingredient id (what the diary then logs against). Idempotent — a food \
+                 already promoted returns the same id. Authed because it is the only branded call \
+                 that writes to the shared catalog.",
+            )
+            .request_body::<PromoteBrandedBody>()
+            .response::<SavedId>(200, "The promoted ingredient's id"),
         Operation::get("/api/content/pull")
             .summary("Full content sync pull")
             .description(

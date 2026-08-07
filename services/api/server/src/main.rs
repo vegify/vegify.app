@@ -10,8 +10,13 @@ mod blog;
 mod content;
 mod email;
 mod error;
+/// On-demand USDA FoodData Central **Branded** lookups (P2.1 / gate D1) — distinct from `usda`, which
+/// boot-ingests the curated plants artifact from S3.
+mod fdc;
 mod messages;
 mod notifications;
+/// Open Food Facts barcode lookups (P2.2) — the ODbL-isolated fallback lane for `fdc`.
+mod off;
 mod safety;
 mod usda;
 // Reserved handles + username validation for the future `vegify.app/<username>/<recipe>` URLs. Locked
@@ -1095,6 +1100,149 @@ async fn search_all(
     Ok(Json(out))
 }
 
+// ---- branded foods (P2.1 / gate D1 — decided by John 2026-08-07, option 2 of the brief: on-demand
+// fetch + cache + promote-on-first-use into a SEPARABLE store).
+//
+// The shape of every lookup here is the same three steps, and the ORDER is the point:
+//   1. answer from the local cache (instant, free, works when USDA/OFF are down);
+//   2. top up from the third party ONLY when the cache under-fills — so a re-scan of the same shelf
+//      costs zero outbound requests and the data is still never stale (a miss is always a live fetch);
+//   3. write what came back into the cache.
+// Promotion into the communal catalog is a SEPARATE, authed call, made when the user actually picks a
+// result — that is the "first use" in promote-on-first-use, and it is what keeps the catalog free of
+// the ~2M branded rows nobody here will ever log. ----
+
+/// Cap on how many branded hits one lookup returns (and requests from FDC).
+const BRANDED_LIMIT: usize = 20;
+
+#[derive(Deserialize)]
+struct GtinQuery {
+    gtin: Option<String>,
+}
+
+/// `GET /api/branded/search?q=` — branded foods by brand or product name. Public (the catalog is
+/// public), rate-limited per IP on top of the general middleware budget because a miss spends one of
+/// our USDA requests.
+async fn branded_search(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<vegify_core::BrandedFood>>, AppError> {
+    let q = query.q.unwrap_or_default().trim().to_string();
+    if q.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+    ratelimit::guard(&state.rate, ratelimit::BRANDED_LOOKUP_IP, &ip)
+        .map_err(AppError::RateLimited)?;
+
+    let cached = {
+        let q = q.clone();
+        db(&state, move |conn| {
+            vegify_core::search_cached_branded(conn, &q, BRANDED_LIMIT).map_err(AppError::from)
+        })
+        .await?
+    };
+    if cached.len() >= BRANDED_LIMIT {
+        return Ok(Json(cached));
+    }
+
+    // Cache under-filled ⇒ go to USDA. Network work runs on the blocking pool WITHOUT holding a DB
+    // connection (the `db` helper checks one out for the whole closure, which an 8s HTTP call has no
+    // business doing on a pool of 8).
+    let fetched = {
+        let q = q.clone();
+        tokio::task::spawn_blocking(move || fdc::search(&q, BRANDED_LIMIT as u32))
+            .await
+            .map_err(AppError::internal)?
+    };
+    if fetched.is_empty() {
+        return Ok(Json(cached));
+    }
+    let out = db(&state, move |conn| {
+        for food in &fetched {
+            vegify_core::cache_branded_food(conn, food)?;
+        }
+        vegify_core::search_cached_branded(conn, &q, BRANDED_LIMIT).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
+/// `GET /api/branded/barcode?gtin=` — resolve a scanned/typed barcode. USDA Branded (CC0) is tried
+/// first and Open Food Facts (ODbL) only as the fallback, in both the cache read and the live lookup,
+/// so the share-alike lane stays as small as the data allows. `null` = nothing found anywhere, which
+/// the client should treat as "enter it by hand", not as an error.
+async fn branded_barcode(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Query(query): Query<GtinQuery>,
+) -> Result<Json<Option<vegify_core::BrandedFood>>, AppError> {
+    let gtin = query.gtin.unwrap_or_default().trim().to_string();
+    if gtin.is_empty() {
+        return Err(AppError::BadRequest("A barcode is required.".into()));
+    }
+    ratelimit::guard(&state.rate, ratelimit::BRANDED_LOOKUP_IP, &ip)
+        .map_err(AppError::RateLimited)?;
+
+    let cached = {
+        let gtin = gtin.clone();
+        db(&state, move |conn| {
+            vegify_core::cached_branded_food_by_gtin(conn, &gtin).map_err(AppError::from)
+        })
+        .await?
+    };
+    if let Some(hit) = cached {
+        return Ok(Json(Some(hit)));
+    }
+
+    let fetched = {
+        let gtin = gtin.clone();
+        tokio::task::spawn_blocking(move || fdc::by_gtin(&gtin).or_else(|| off::by_barcode(&gtin)))
+            .await
+            .map_err(AppError::internal)?
+    };
+    let Some(food) = fetched else {
+        return Ok(Json(None));
+    };
+    let stored = db(&state, move |conn| {
+        vegify_core::cache_branded_food(conn, &food)?;
+        vegify_core::cached_branded_food(conn, food.source, &food.external_id)
+            .map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(stored))
+}
+
+/// `POST /api/branded/promote` — **promote-on-first-use**: join a looked-up branded food into the
+/// communal catalog and return the ingredient id the client then logs against.
+///
+/// Authed on purpose. Promotion is the only step that writes to the shared catalog, so gating it on a
+/// signed-in account is what keeps an anonymous scraper from filling the communal ingredient list with
+/// branded rows nobody asked for. Idempotent — a food already promoted returns the same id.
+async fn promote_branded(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<vegify_api_types::PromoteBrandedBody>,
+) -> Result<Json<Value>, AppError> {
+    let token = bearer_token(&headers).ok_or(AppError::Unauthorized)?;
+    let source = body.source;
+    let external_id = body.external_id;
+    if external_id.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "A branded-food id is required.".into(),
+        ));
+    }
+    let id = db(&state, move |conn| {
+        require_user(conn, &token)?;
+        vegify_core::promote_branded_food(conn, source, &external_id).map_err(AppError::from)
+    })
+    .await?;
+    // A promoted row is an ordinary public ingredient from here on, so every connected client should
+    // re-pull and pick it up — no branded-specific sync channel exists, and none is wanted.
+    state.notify_change("ingredient");
+    Ok(Json(json!({ "id": id })))
+}
+
 async fn pull(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1410,6 +1558,13 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     // FTS5 unified search index over ingredient/recipe names (P2.4) — shared setup with the desktop's
     // local cache, so both sides can never drift (see vegify_core::ensure_search_index).
     vegify_core::ensure_search_index(conn)?;
+    // The separable branded-foods store (P2.1 / gate D1, John 2026-08-07). SERVER-ONLY and
+    // deliberately not Drizzle-tracked — it is a cache of third-party data, not user data or app
+    // content, and its whole teardown is `DROP TABLE branded_foods` (no FKs in either direction, no
+    // child tables, no user rows inside it). Promoted foods reach the clients as ordinary ingredients
+    // on the existing content pull, so the desktop never needs this table.
+    // See crates/vegify-core/src/branded.rs for the separability guarantee and its proof test.
+    vegify_core::ensure_branded_store(conn)?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -1658,6 +1813,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
         .route("/api/content/search-all", get(search_all))
+        // Branded foods (P2.1/P2.2): lookup is public + IP-budgeted; promotion is authed because it
+        // writes to the shared catalog.
+        .route("/api/branded/search", get(branded_search))
+        .route("/api/branded/barcode", get(branded_barcode))
+        .route("/api/branded/promote", post(promote_branded))
         .route("/api/content/pull", get(pull))
         // Public profile by handle — optionally-authed (a signed-in viewer also sees their own
         // non-public recipes on their own profile). Unlike the rest of /api/content, no auth required.

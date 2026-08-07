@@ -75,6 +75,19 @@ pub mod server {
         non_empty("VEGIFY_MEDIA_BUCKET")
     }
 
+    /// API key for USDA FoodData Central, used by the on-demand branded-foods lookup (P2.1 / gate
+    /// D1). The key is SERVER-SIDE ONLY — clients call our `/api/branded/*` endpoints, never FDC —
+    /// so it is the server's secret to hold, never a shipped app-bundle string.
+    ///
+    /// Defaults to USDA's public `DEMO_KEY`, which works out of the box for development and for a
+    /// self-hoster kicking the tires but is throttled to roughly 30 requests/hour (50/day) PER IP.
+    /// A default is safe here in a way `public_url`/`email_from` defaults would not be: the wrong
+    /// value can only mean "throttled sooner", never "silently acting as someone else's deployment".
+    /// Deployments set a real key (free, instant, from api.data.gov) via `VEGIFY_FDC_API_KEY`.
+    pub fn fdc_api_key() -> String {
+        non_empty("VEGIFY_FDC_API_KEY").unwrap_or_else(|| "DEMO_KEY".to_string())
+    }
+
     /// Admin email allowlist (comma-separated, VEGIFY_ADMIN_EMAILS) — accounts allowed to INVITE new
     /// users while public signups stay closed (invite-only). Empty = no admins (the default). Emails
     /// are compared lowercased/trimmed, matching how they're stored.
