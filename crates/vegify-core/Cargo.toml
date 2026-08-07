@@ -10,6 +10,9 @@ description = "Vegify shared DAL — SQLite-backed content model (recipes/ingred
 # `bundled` compiles SQLite in. Same version the desktop pins, so Cargo unifies to one libsqlite3-sys.
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
+# The branded store keeps its per-100g readings as ONE JSON column rather than a child table, so the
+# whole cache is a single droppable table with no orphan set (see branded.rs's separability notes).
+serde_json = "1"
 # Pinned to match the desktop's ttipc/specta so the `Type` impls are the SAME trait the
 # `#[procedures]` macro consumes (a version skew would make them distinct traits and fail to compile).
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }

@@ -12,6 +12,19 @@
 //! Mutations are ported from packages/db/src/mutations.ts (with the amounts cascade-cleanup fixes);
 //! ids are client-generated ULIDs (text) so offline rows never collide and stay authoritative.
 
+//! P2.1 (gate D1) adds two sibling modules, re-exported flat so every consumer keeps the single
+//! `vegify_core::X` path this crate has always offered. `branded` holds the SEPARABLE branded-foods
+//! store and promote-on-first-use; `diet` holds the WORD-AWARE animal-derived matching over branded
+//! ingredient statements. They are their own files because the branded layer is meant to be
+//! understandable — and droppable — as a unit; read `branded.rs`'s module docs for what "separable"
+//! is guaranteed to mean and how it is enforced.
+
+mod branded;
+mod diet;
+
+pub use branded::*;
+pub use diet::*;
+
 use std::collections::HashSet;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -348,7 +361,9 @@ pub struct IngredientEditData {
 
 // ---- write/input wire types (mirror @vegify/db mutation inputs) ----
 
-#[derive(Serialize, Deserialize, Type)]
+// Clone + Debug: the branded store carries these as its cached per-100g payload and hands a clone to
+// `do_save_ingredient` on promotion (branded.rs).
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 /// One nutrient row of a SaveIngredientInput, normalized per 100 g.
 pub struct IngredientNutrientInput {
@@ -3135,14 +3150,16 @@ pub fn ensure_search_index(conn: &Connection) -> rusqlite::Result<()> {
 /// Chocolate" for a query of "chocolate" only via WORD, while "Milk" itself wins outright via EXACT.
 /// This is the exact-match-first behavior the market brief flags as a real quality differentiator
 /// (a competitor's diet filter mismatching "milk" the substring vs. "milk" the word, this window).
+/// `pub(crate)` so the branded store ranks its cache the SAME way the catalog ranks (one ranking
+/// discipline, not two) — see `branded::search_cached_branded`.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-enum MatchTier {
+pub(crate) enum MatchTier {
     ExactPrefix,
     WordPrefix,
     Substring,
 }
 
-fn match_tier(name: &str, query_lower: &str) -> MatchTier {
+pub(crate) fn match_tier(name: &str, query_lower: &str) -> MatchTier {
     let name_lower = name.to_lowercase();
     if name_lower.starts_with(query_lower) {
         MatchTier::ExactPrefix

@@ -88,6 +88,151 @@
         "title": "Amount",
         "type": "object"
       },
+      "BrandedFood": {
+        "additionalProperties": false,
+        "description": " One branded food: the third-party record as fetched, plus the cache/promotion bookkeeping. This is\n BOTH the row shape of the separable store and the wire shape the lookup endpoints return, on\n purpose — there is no server-side transformation worth a second type, and one type means the\n promotion contract (`source` + `externalId`) is the same identifier the client just received.",
+        "properties": {
+          "attribution": {
+            "description": " The attribution line the client must render (see [`BrandedSource::attribution`]).",
+            "type": "string"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Brand owner / brand name, when stated."
+          },
+          "caloriesPer100g": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Calories per 100 g, when stated."
+          },
+          "dietFlags": {
+            "description": " Advisory animal-derived terms found in `ingredients_text`, matched as WORDS with plant\n qualifiers suppressed. **Never a vegan certification** — see `crate::diet`.",
+            "items": {
+              "$ref": "#/components/schemas/DietFlag"
+            },
+            "type": "array"
+          },
+          "externalId": {
+            "description": " That source's own id for the food — an FDC `fdcId`, or the OFF barcode. With `source`, the\n store's primary key and the promotion request's whole payload.",
+            "type": "string"
+          },
+          "gtin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Barcode (GTIN/UPC/EAN) when the source carries one — the key P2.2's scan path looks up by."
+          },
+          "ingredientId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The promoted catalog ingredient's id, once someone has used this food. None ⇒ cached only."
+          },
+          "ingredientsText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The label's ingredient statement, verbatim. The input to [`animal_derived_flags`] — and the\n reason word-aware matching is not optional (see `crate::diet`)."
+          },
+          "name": {
+            "description": " Product name as the source states it.",
+            "type": "string"
+          },
+          "nutrients": {
+            "description": " Per-100g nutrient readings, already mapped into the catalog's nutrient vocabulary.",
+            "items": {
+              "$ref": "#/components/schemas/IngredientNutrientInput"
+            },
+            "type": "array"
+          },
+          "servingGrams": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Declared serving size in grams, when stated."
+          },
+          "servingUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " The serving's unit name as stated (e.g. \"cup\", \"bar\"); None ⇒ grams."
+          },
+          "source": {
+            "$ref": "#/components/schemas/BrandedSource",
+            "description": " Which third party this came from."
+          }
+        },
+        "required": [
+          "source",
+          "externalId",
+          "gtin",
+          "name",
+          "brand",
+          "servingGrams",
+          "servingUnit",
+          "ingredientsText",
+          "caloriesPer100g",
+          "nutrients",
+          "ingredientId",
+          "dietFlags",
+          "attribution"
+        ],
+        "title": "BrandedFood",
+        "type": "object"
+      },
+      "BrandedSource": {
+        "description": " Which third party a cached branded row came from. Half of the store's primary key, and the thing\n that decides both the provenance stamp and the licensing lane a promoted row lands in.",
+        "enum": [
+          "usda-branded",
+          "off"
+        ],
+        "title": "BrandedSource",
+        "type": "string",
+        "x-specta-enum-descriptions": {
+          "off": "Open Food Facts. **ODbL, share-alike** — rows stay identifiable and attributed forever.",
+          "usda-branded": "USDA FoodData Central, Branded Foods dataset. Public domain (CC0) — no downstream constraint."
+        }
+      },
       "ContentSearchResult": {
         "additionalProperties": false,
         "description": " Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a\n recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check\n against `recipes`, not a separate index). Powers the chrome/global search on both shells,\n replacing the old client-side \"fetch every card, filter in JS\" search (web's `search.tsx`,\n desktop's `SearchOverlay`) with a real ranked, server/local-cache-side query.",
@@ -273,6 +418,50 @@
           "algaeOil"
         ],
         "title": "DaySupplementsRecord",
+        "type": "object"
+      },
+      "DietCategory": {
+        "description": " What kind of animal product a flagged term names — the grouping the UI renders and the reason a\n flag is worth surfacing separately (someone avoiding dairy is not necessarily avoiding honey).",
+        "enum": [
+          "dairy",
+          "egg",
+          "meat",
+          "fish",
+          "insect"
+        ],
+        "title": "DietCategory",
+        "type": "string",
+        "x-specta-enum-descriptions": {
+          "dairy": "Milk-derived (milk, butter, cheese, cream, whey, casein, lactose, ghee).",
+          "egg": "Hen/other egg components (egg, albumen, ovalbumin).",
+          "fish": "Aquatic animals (fish, anchovy, shellfish).",
+          "insect": "Insect-derived (honey, beeswax, shellac, carmine/cochineal).",
+          "meat": "Land-animal flesh or its rendered/extracted products (gelatin, lard, tallow, collagen, rennet)."
+        }
+      },
+      "DietFlag": {
+        "additionalProperties": false,
+        "description": " One animal-derived term found in an ingredient statement, with the exact text that matched so the\n UI can show the user WHERE the flag came from rather than asserting a verdict at them.",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/DietCategory",
+            "description": " Which animal-product family the term belongs to."
+          },
+          "matched": {
+            "description": " The matched span exactly as it appears in the source statement (e.g. \"Milk\"), so the client can\n quote the label instead of paraphrasing it.",
+            "type": "string"
+          },
+          "term": {
+            "description": " The canonical term that matched (lowercase, e.g. \"milk\").",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "matched",
+          "category"
+        ],
+        "title": "DietFlag",
         "type": "object"
       },
       "DriSex": {
@@ -488,6 +677,32 @@
           "nutrients"
         ],
         "title": "IngredientEditData",
+        "type": "object"
+      },
+      "IngredientNutrientInput": {
+        "additionalProperties": false,
+        "description": " One nutrient row of a SaveIngredientInput, normalized per 100 g.",
+        "properties": {
+          "amountPer100g": {
+            "description": " Quantity per 100 g.",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": " Nutrient name (e.g. \"Iron\").",
+            "type": "string"
+          },
+          "unit": {
+            "description": " Unit for the quantity (g, mg, µg).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "amountPer100g",
+          "unit"
+        ],
+        "title": "IngredientNutrientInput",
         "type": "object"
       },
       "IngredientSearchResult": {
@@ -1182,6 +1397,26 @@
           "avatarKey"
         ],
         "title": "Profile",
+        "type": "object"
+      },
+      "PromoteBrandedBody": {
+        "additionalProperties": false,
+        "description": " A promote-on-first-use request: the `source` + `externalId` pair the client just received on a\n branded lookup, handed straight back to join that food into the communal catalog. Nothing else is\n accepted — the payload the server promotes is the one IT cached, never one the client supplies, so\n a caller can't inject arbitrary nutrition into the shared catalog under a USDA/OFF byline.",
+        "properties": {
+          "externalId": {
+            "description": " That source's id for the food (an FDC `fdcId`, or the OFF barcode).",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BrandedSource",
+            "description": " Which third party the food came from (`\"usda-branded\"` or `\"off\"`)."
+          }
+        },
+        "required": [
+          "source",
+          "externalId"
+        ],
+        "title": "PromoteBrandedBody",
         "type": "object"
       },
       "PullIngredient": {
@@ -2450,6 +2685,98 @@
           }
         },
         "summary": "Who am I"
+      }
+    },
+    "/api/branded/barcode": {
+      "get": {
+        "description": "Public, IP-budgeted. USDA Branded (CC0) is tried first and Open Food Facts (ODbL) only as the fallback, so the share-alike lane stays as small as the data allows. Null = not found in either source; the client should offer manual entry, not an error. Every result carries the attribution line the client must render.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "gtin",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BrandedFood"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "The branded food, or null"
+          }
+        },
+        "summary": "Resolve a barcode (GTIN/UPC/EAN) to a branded food"
+      }
+    },
+    "/api/branded/promote": {
+      "post": {
+        "description": "Requires bearer. Promote-on-first-use: joins a CACHED branded food into the communal ingredient catalog as an unowned, public, provenance-stamped row and returns its ingredient id (what the diary then logs against). Idempotent — a food already promoted returns the same id. Authed because it is the only branded call that writes to the shared catalog.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteBrandedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedId"
+                }
+              }
+            },
+            "description": "The promoted ingredient's id"
+          }
+        },
+        "summary": "Promote a looked-up branded food into the catalog"
+      }
+    },
+    "/api/branded/search": {
+      "get": {
+        "description": "Public, IP-budgeted. Answers from the local branded cache first and tops up from USDA FoodData Central's Branded dataset only when the cache under-fills, so a repeat lookup costs no outbound request and the data is never stale. Results are CACHED, not promoted: nothing joins the communal catalog until POST /api/branded/promote.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BrandedFood"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Matching branded foods, ranked"
+          }
+        },
+        "summary": "Branded-food search (on-demand, cached)"
       }
     },
     "/api/content/blog": {

@@ -69,6 +69,16 @@ pub const TOKEN_CONFIRM_IP: Limit = Limit {
     max: 10,
     window: Duration::from_secs(60),
 };
+/// Branded-food lookups per IP. This one protects a resource the others don't: our OUTBOUND quota at
+/// USDA FoodData Central and our standing as a polite Open Food Facts consumer. Only a cache MISS
+/// spends a third-party request, so a real user re-scanning the same shelf costs nothing — 60/hour is
+/// far past honest grocery-logging behaviour and well short of anything that would burn the key's
+/// hourly allowance (and DEMO_KEY's is only ~30/hour, which is exactly why this budget exists).
+pub const BRANDED_LOOKUP_IP: Limit = Limit {
+    name: "branded-ip",
+    max: 60,
+    window: Duration::from_secs(60 * 60),
+};
 /// A GENERAL per-IP budget across EVERY endpoint (applied as middleware) — defense-in-depth beyond
 /// the auth-specific limits above. It bounds any single source's load on the nano and slows naive
 /// scrapers of the public read endpoints (content pull, search, profiles), while staying generous

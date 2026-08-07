@@ -44,6 +44,10 @@ aws-sdk-sesv2 = "1"
 aws-sdk-s3 = "1"
 # Gunzip the embedded USDA catalog seed (pure-Rust backend — fine under musl cross).
 flate2 = "1"
+# On-demand branded-food lookups (P2.1/P2.2): FoodData Central + Open Food Facts. Blocking, called
+# from spawn_blocking — the same discipline every rusqlite touch here already uses, and the same
+# transport vegify-client-rs already carries, so this adds no new HTTP stack to the workspace.
+ureq = { version = "3", features = ["json", "gzip"] }
 
 [[bin]]
 name = "vegify-server"
