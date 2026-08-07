@@ -1078,6 +1078,23 @@ async fn search(
     Ok(Json(out))
 }
 
+/// Unified catalog search (P2.4) — ranked recipe + standalone-ingredient hits. Replaces the clients'
+/// old "fetch every card, filter in JS" chrome/global search.
+async fn search_all(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<vegify_core::ContentSearchResult>, AppError> {
+    let token = bearer_token(&headers);
+    let q = query.q.unwrap_or_default();
+    let out = db(&state, move |conn| {
+        let viewer = auth::optional_viewer(conn, token);
+        vegify_core::search_content(conn, q, viewer.as_deref()).map_err(AppError::from)
+    })
+    .await?;
+    Ok(Json(out))
+}
+
 async fn pull(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1390,6 +1407,9 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     messages::ensure_tables(conn)?;
     notifications::ensure_tables(conn)?;
     safety::ensure_tables(conn)?;
+    // FTS5 unified search index over ingredient/recipe names (P2.4) — shared setup with the desktop's
+    // local cache, so both sides can never drift (see vegify_core::ensure_search_index).
+    vegify_core::ensure_search_index(conn)?;
     // SQLite has no `ADD COLUMN IF NOT EXISTS` — guard the ALTER with a pragma check so re-runs don't error.
     let has_col: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'email_verified_at'",
@@ -1637,6 +1657,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/invite", post(invite_account))
         .route("/api/content/ingredient-edit", get(ingredient_edit))
         .route("/api/content/search", get(search))
+        .route("/api/content/search-all", get(search_all))
         .route("/api/content/pull", get(pull))
         // Public profile by handle — optionally-authed (a signed-in viewer also sees their own
         // non-public recipes on their own profile). Unlike the rest of /api/content, no auth required.

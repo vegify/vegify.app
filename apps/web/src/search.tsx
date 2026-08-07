@@ -7,25 +7,19 @@ import {
   SearchResultsView
 } from "@vegify/ui/screens"
 
-// Database-wide search: recipe names + standalone-ingredient names. Small dataset, so it filters in
-// JS; swap for a LIKE query if the catalog grows. Mirrors the desktop's chrome search.
+// Database-wide search: recipe names + standalone-ingredient names, ranked server-side (FTS5,
+// exact-prefix > word-prefix > substring — P2.4). Mirrors the desktop's chrome search.
 const searchAll = createServerFn({ method: "GET" })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
-    // The backend's lists are already viewer-scoped (recipe as-ingredients excluded); filter by name
-    // in JS — the catalog is small. Swap for a server-side query if it grows. Mirrors the desktop.
-    const { listRecipeCards, listIngredientCards } = await import("./content")
-    const q = data.toLowerCase()
-    const [recipes, ingredients] = await Promise.all([
-      listRecipeCards(),
-      listIngredientCards()
-    ])
-    const recipeHits: RecipeListItem[] = recipes.filter((r) =>
-      r.name.toLowerCase().includes(q)
-    )
-    const ingredientHits: IngredientListItem[] = ingredients.filter((i) =>
-      i.name.toLowerCase().includes(q)
-    )
+    const { searchContent, mediaUrl } = await import("./content")
+    const { recipes, ingredients } = await searchContent(data)
+    // Mirrors the recipe list route's card→list-item mapping (photoKey -> absolute photoUrl).
+    const recipeHits: RecipeListItem[] = recipes.map((r) => ({
+      ...r,
+      photoUrl: mediaUrl(r.photoKey)
+    }))
+    const ingredientHits: IngredientListItem[] = ingredients
     return { recipes: recipeHits, ingredients: ingredientHits }
   })
 

@@ -495,21 +495,17 @@ function SignInRequired({ action }: { action: string }) {
 
 // Chrome search overlay — queries the DAL and renders the SHARED SearchResultsView (same as web).
 // A TanStack Query keyed on the query string; placeholderData keeps the prior results on screen while
-// the next keystroke loads, so the list doesn't flicker to empty between inputs (mirrors web).
+// the next keystroke loads, so the list doesn't flicker to empty between inputs (mirrors web). Ranked
+// server/local-cache-side (FTS5, exact-prefix > word-prefix > substring — P2.4), replacing the old
+// "fetch every recipe, filter in JS" approach.
 function SearchOverlay({ query }: { query: string }) {
   const { data } = useQuery({
     queryKey: ["search", query],
     queryFn: async () => {
-      const [recipes, ings] = await Promise.all([
-        vegifyData.listRecipes({}),
-        vegifyData.searchIngredients(query)
-      ])
-      const q = query.toLowerCase()
+      const { recipes, ingredients } = await vegifyData.searchContent(query)
       return {
-        recipes: recipes
-          .filter((r) => r.name.toLowerCase().includes(q))
-          .map(toRecipeListItem),
-        ingredients: ings.map((i) => ({
+        recipes: recipes.map(toRecipeListItem),
+        ingredients: ingredients.map((i) => ({
           id: i.id,
           name: i.name,
           caloriesPer100g: i.caloriesPer100g

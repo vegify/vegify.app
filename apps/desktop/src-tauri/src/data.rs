@@ -369,6 +369,9 @@ fn ensure_content_schema(conn: &Connection) -> Result<(), DataError> {
     if has_slug == 0 {
         conn.execute("ALTER TABLE ingredients ADD COLUMN slug TEXT", [])?;
     }
+    // FTS5 unified search index over ingredient/recipe names (P2.4) — shared setup with the server's
+    // `ensure_schema`, so both sides can never drift (see vegify_core::ensure_search_index).
+    vegify_core::ensure_search_index(conn)?;
     Ok(())
 }
 
@@ -641,6 +644,9 @@ pub trait VegifyData {
     fn ingredient_for_edit(&self, id: String) -> Result<Option<IngredientEditData>, DataError>;
     /// Name search over visible ingredients (the recipe composer's box).
     fn search_ingredients(&self, query: String) -> Result<Vec<IngredientSearchResult>, DataError>;
+    /// Unified ranked search over recipes + standalone ingredients — the chrome/global search box
+    /// (replaces the old client-side full-catalog filter; P2.4).
+    fn search_content(&self, query: String) -> Result<ContentSearchResult, DataError>;
     /// Create or update an ingredient; returns its id. Enqueues the
     /// mutation for sync.
     fn save_ingredient(&self, input: SaveIngredientInput) -> Result<String, DataError>;
@@ -791,6 +797,12 @@ impl VegifyData for Db {
         let me = self.current_uid();
         let conn = self.conn();
         vegify_core::search_ingredients(&conn, query, me.as_deref()).map_err(Into::into)
+    }
+
+    fn search_content(&self, query: String) -> Result<ContentSearchResult, DataError> {
+        let me = self.current_uid();
+        let conn = self.conn();
+        vegify_core::search_content(&conn, query, me.as_deref()).map_err(Into::into)
     }
 
     fn save_ingredient(&self, mut input: SaveIngredientInput) -> Result<String, DataError> {
@@ -1111,6 +1123,20 @@ mod tests {
             r.name, per_serving, r.id
         );
         assert!((per_serving - 307.5).abs() < 0.5, "got {per_serving:.2}");
+    }
+
+    // The chrome/global search DAL method (P2.4), against the real seeded local cache — proves the
+    // desktop's FTS5 index (built by `ensure_content_schema` on `Db::open`) actually powers it, not
+    // just the vegify-core unit tests' synthetic fixtures.
+    #[test]
+    fn search_content_hits_the_local_fts5_index() {
+        let db = Db::open(&crate::db_path()).expect("open");
+        let res = VegifyData::search_content(&db, "Flour".into()).expect("search");
+        assert!(
+            res.ingredients.iter().any(|i| i.name.contains("Flour")),
+            "the seeded Flour ingredient should surface: {:?}",
+            res.ingredients.iter().map(|i| &i.name).collect::<Vec<_>>()
+        );
     }
 
     // The exact path the write UI drives: search an ingredient → save a recipe USING it as an item

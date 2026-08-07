@@ -330,6 +330,7 @@ pub fn api_types() -> specta::Types {
         .register::<vegify_core::RecipeEditData>()
         .register::<vegify_core::IngredientCard>()
         .register::<vegify_core::IngredientSearchResult>()
+        .register::<vegify_core::ContentSearchResult>()
         .register::<vegify_core::IngredientEditData>()
         .register::<vegify_core::RecipeSlugHit>()
         .register::<vegify_core::IngredientSlugHit>()
@@ -431,6 +432,14 @@ pub fn api_operations() -> Vec<specta_openapi::Operation> {
             .description("Public. The recipe composer's search box.")
             .query_param::<String>("q")
             .response::<Vec<core::IngredientSearchResult>>(200, "Matching ingredients"),
+        Operation::get("/api/content/search-all")
+            .summary("Unified catalog search")
+            .description(
+                "Public. Ranked recipe + standalone-ingredient hits (exact-prefix > word-prefix > \
+                 substring). The chrome/global search box on both shells.",
+            )
+            .query_param::<String>("q")
+            .response::<core::ContentSearchResult>(200, "Ranked recipe + ingredient hits"),
         Operation::get("/api/content/pull")
             .summary("Full content sync pull")
             .description(

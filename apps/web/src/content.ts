@@ -10,6 +10,7 @@
 import type {
   AggregatedNutrition,
   Amount,
+  ContentSearchResult,
   DayLog,
   DaySupplementsRecord,
   IngredientCard,
@@ -41,6 +42,7 @@ import { api, apiUrl } from "./api"
 export type {
   AggregatedNutrition,
   Amount,
+  ContentSearchResult,
   DayLog,
   IngredientCard,
   IngredientEditData,
@@ -102,6 +104,10 @@ export const getIngredientEdit = (id: string) =>
   api<IngredientEditData | null>(`/api/content/ingredient-edit${byId(id)}`)
 export const searchIngredients = (q: string) =>
   api<IngredientSearchItem[]>(`/api/content/search?q=${encodeURIComponent(q)}`)
+// Unified ranked recipe + ingredient search — the chrome/global search box (P2.4). Replaces the old
+// "fetch every card, filter in JS" approach.
+export const searchContent = (q: string) =>
+  api<ContentSearchResult>(`/api/content/search-all?q=${encodeURIComponent(q)}`)
 // Public profile by handle (optionally-authed: the forwarded cookie lets a viewer see their own
 // non-public recipes on their own profile). Null when the handle has no account.
 export const getProfile = (username: string) =>

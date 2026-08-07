@@ -213,6 +213,11 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  searchContent(query: string): Promise<ContentSearchResult> {
+    return invoke("search_content", { query });
+  },
+
+  /** @throws {DataError} */
   saveIngredient(input: SaveIngredientInput): Promise<string> {
     return invoke("save_ingredient", { input });
   },
@@ -420,6 +425,20 @@ export type AuthUser = {
 	 *  snake_case `email_verified` is mapped in [`VegifyClient::sign_in`]/[`sign_up`]).
 	 */
 	emailVerified: boolean,
+};
+
+/**
+ *  Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a
+ *  recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check
+ *  against `recipes`, not a separate index). Powers the chrome/global search on both shells,
+ *  replacing the old client-side "fetch every card, filter in JS" search (web's `search.tsx`,
+ *  desktop's `SearchOverlay`) with a real ranked, server/local-cache-side query.
+ */
+export type ContentSearchResult = {
+	/**  Ranked recipe hits. */
+	recipes: RecipeCard[],
+	/**  Ranked standalone-ingredient hits (recipes excluded — same split as `list_ingredients`). */
+	ingredients: IngredientCard[],
 };
 
 /**  One conversation row of the DM list, newest-message first. */

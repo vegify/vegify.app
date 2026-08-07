@@ -3074,31 +3074,200 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
     })
 }
 
+// ---- P2.4: FTS5-backed unified search (replaces the old LIKE cap-20 + the clients' full-catalog
+// client-side filter). See `ensure_search_index` for the index/trigger setup and `ranked_content_matches`
+// for the ranking algorithm; both are D1-independent (no branded-foods storage involved — this is
+// purely about the existing communal catalog's name index).
+
+/// Idempotent creation of the FTS5 full-text index over content (ingredient + recipe) names, plus the
+/// triggers that keep it synced with `ingredients` inserts/renames/deletes. Called from both the
+/// server's `ensure_schema` and the desktop's `ensure_content_schema` (the shared-DAL pattern — ONE
+/// implementation, never two schemas to keep in sync). FTS5 support on the pinned bundled SQLite
+/// (rusqlite 0.40 / libsqlite3-sys 0.38) is verified by `fts5_index_is_available` below, against a
+/// real bundled connection — not assumed.
+///
+/// Deliberately NOT an external-content table: `id`/`name` are plainly duplicated into the FTS5 row
+/// rather than joining back to `ingredients` by rowid, because `ingredients.id` is a TEXT ULID, not
+/// FTS5's implicit integer rowid. Everything else that can change independently of the name — soft
+/// delete, visibility, ownership, recipe-vs-plain-ingredient classification — is resolved by joining
+/// `content_search` back to `ingredients`/`recipes` at QUERY time (see `ranked_content_matches`),
+/// never denormalized here, so none of it can go stale relative to a trigger.
+/// Returns a plain `rusqlite::Result` (not the crate's own `Error`) so both consumers — the server's
+/// `ensure_schema` (already `rusqlite::Result<()>`) and the desktop's `ensure_content_schema` (which
+/// has `From<rusqlite::Error> for DataError`) — can call it with a bare `?`, no wrapping/unwrapping.
+pub fn ensure_search_index(conn: &Connection) -> rusqlite::Result<()> {
+    // Guard on `ingredients` existing: a trigger `ON ingredients` can't be created before the table
+    // is, and some callers' migration tests boot a bare `users`-only DB to exercise ensure_schema's
+    // additive steps in isolation (mirroring the `ingredients.slug` guard just below in the server's
+    // own migration). A no-op here is correct — there's nothing to index yet.
+    let has_ingredients: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ingredients'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_ingredients == 0 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS content_search USING fts5(id UNINDEXED, name);
+         CREATE TRIGGER IF NOT EXISTS content_search_ai AFTER INSERT ON ingredients BEGIN
+           INSERT INTO content_search(id, name) VALUES (new.id, new.name);
+         END;
+         CREATE TRIGGER IF NOT EXISTS content_search_au AFTER UPDATE OF name ON ingredients BEGIN
+           UPDATE content_search SET name = new.name WHERE id = new.id;
+         END;
+         CREATE TRIGGER IF NOT EXISTS content_search_ad AFTER DELETE ON ingredients BEGIN
+           DELETE FROM content_search WHERE id = old.id;
+         END;",
+    )?;
+    // One-time (idempotent, safe to re-run every boot) backfill for rows that predate the index, or
+    // were inserted on a connection before this migration ran on it. `NOT IN` over a UNINDEXED column
+    // is a plain equality lookup SQLite hashes into an ephemeral index — fine at this catalog's scale.
+    conn.execute(
+        "INSERT INTO content_search(id, name)
+         SELECT id, name FROM ingredients WHERE id NOT IN (SELECT id FROM content_search)",
+        [],
+    )?;
+    Ok(())
+}
+
+/// A text-match tier used to rank search results — lower sorts first. "Coconut Milk" beats "Milk
+/// Chocolate" for a query of "chocolate" only via WORD, while "Milk" itself wins outright via EXACT.
+/// This is the exact-match-first behavior the market brief flags as a real quality differentiator
+/// (a competitor's diet filter mismatching "milk" the substring vs. "milk" the word, this window).
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+enum MatchTier {
+    ExactPrefix,
+    WordPrefix,
+    Substring,
+}
+
+fn match_tier(name: &str, query_lower: &str) -> MatchTier {
+    let name_lower = name.to_lowercase();
+    if name_lower.starts_with(query_lower) {
+        MatchTier::ExactPrefix
+    } else if name_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| word.starts_with(query_lower))
+    {
+        MatchTier::WordPrefix
+    } else {
+        MatchTier::Substring
+    }
+}
+
+/// Build an FTS5 prefix MATCH query from a raw user string: each alphanumeric run becomes a `term*`
+/// prefix token, implicitly AND-ed across terms — "choc cak" matches "Chocolate Cake" via token
+/// prefixes on both words. Punctuation is dropped entirely (not escaped) rather than risk feeding
+/// FTS5 query-syntax characters like `"`/`^`/`-` through unsanitized. Empty/punctuation-only input
+/// has no terms → None (caller falls back to the substring pass alone).
+fn fts5_prefix_query(query_lower: &str) -> Option<String> {
+    let terms: Vec<String> = query_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("{s}*"))
+        .collect();
+    if terms.is_empty() {
+        None
+    } else {
+        Some(terms.join(" "))
+    }
+}
+
+/// Ranked, viewer-scoped, deduped `(id, name)` matches for `query` against the catalog's name index —
+/// the shared core of both `search_ingredients` and `search_content`. Same visibility scoping as the
+/// old LIKE search (public + own). Empty query ⇒ every visible row, name order (the old `LIKE '%%'`
+/// behavior). Ranking: an FTS5 token-prefix MATCH pass supplies the ExactPrefix/WordPrefix tiers
+/// (fast — indexed); a LIKE substring pass tops up the remainder ONLY when the FTS5 pass under-fills
+/// `limit`, covering mid-word hits FTS5's tokenizer can't reach (e.g. "olate" inside "chocolate") —
+/// the expensive scan is the exception, not the rule, unlike the old unconditional LIKE cap-20.
+fn ranked_content_matches(
+    conn: &Connection,
+    query: &str,
+    viewer: Option<&str>,
+    limit: usize,
+) -> Result<Vec<(String, String)>, Error> {
+    let query_lower = query.trim().to_lowercase();
+    if query_lower.is_empty() {
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.name FROM ingredients i
+             WHERE i.deleted_at IS NULL AND (i.visibility = 'public' OR i.user_id = ?1)
+             ORDER BY i.name LIMIT ?2",
+        )?;
+        let v = stmt
+            .query_map(params![viewer, limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        return Ok(v);
+    }
+
+    let mut hits: Vec<(String, String, MatchTier)> = Vec::new();
+    if let Some(fts_query) = fts5_prefix_query(&query_lower) {
+        let mut stmt = conn.prepare(
+            "SELECT content_search.id, content_search.name FROM content_search
+             JOIN ingredients i ON i.id = content_search.id
+             WHERE content_search MATCH ?1 AND i.deleted_at IS NULL
+               AND (i.visibility = 'public' OR i.user_id = ?2)",
+        )?;
+        let rows = stmt
+            .query_map(params![fts_query, viewer], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (id, name) in rows {
+            let tier = match_tier(&name, &query_lower);
+            hits.push((id, name, tier));
+        }
+    }
+
+    if hits.len() < limit {
+        let seen: HashSet<String> = hits.iter().map(|(id, ..)| id.clone()).collect();
+        let like = format!("%{}%", query_lower.replace(['%', '_'], ""));
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.name FROM ingredients i
+             WHERE lower(i.name) LIKE ?1 AND i.deleted_at IS NULL
+               AND (i.visibility = 'public' OR i.user_id = ?2)",
+        )?;
+        let rows = stmt
+            .query_map(params![like, viewer], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (id, name) in rows {
+            if !seen.contains(&id) {
+                hits.push((id, name, MatchTier::Substring));
+            }
+        }
+    }
+
+    hits.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.1.cmp(&b.1)));
+    hits.truncate(limit);
+    Ok(hits.into_iter().map(|(id, name, _)| (id, name)).collect())
+}
+
 /// Ingredient search (isListed: public + own — same scoping as the lists), with per-100g nutrition.
+/// Powers the recipe composer's search box and the day log's add-flow. Ranked (see
+/// `ranked_content_matches`); no more artificial cap-20 on a legitimate exact/word-prefix match.
 pub fn search_ingredients(
     conn: &Connection,
     query: String,
     viewer: Option<&str>,
 ) -> Result<Vec<IngredientSearchResult>, Error> {
-    let like = format!("%{}%", query.replace(['%', '_'], ""));
-    let rows: Vec<(String, String, Option<f64>, Option<String>)> = {
-        let mut stmt = conn.prepare(
-            "SELECT i.id, i.name, sa.grams, sa.unit
-             FROM ingredients i
-             LEFT JOIN amounts sa ON sa.id = i.serving_size_id
-             WHERE i.name LIKE ?1 AND i.deleted_at IS NULL
-               AND (i.visibility = 'public' OR i.user_id = ?2)
-             ORDER BY i.name LIMIT 20",
-        )?;
-        let v = stmt
-            .query_map(params![like, viewer], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        v
-    };
-    let mut out = Vec::new();
-    for (id, name, serving_grams, serving_unit) in rows {
+    const LIMIT: usize = 30;
+    let matches = ranked_content_matches(conn, &query, viewer, LIMIT)?;
+    let mut out = Vec::with_capacity(matches.len());
+    for (id, name) in matches {
+        let (serving_grams, serving_unit): (Option<f64>, Option<String>) = conn
+            .query_row(
+                "SELECT sa.grams, sa.unit FROM ingredients i
+                 LEFT JOIN amounts sa ON sa.id = i.serving_size_id
+                 WHERE i.id = ?1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((None, None));
         let nut = aggregate_per100g(conn, &id)?;
         out.push(IngredientSearchResult {
             id,
@@ -3110,6 +3279,371 @@ pub fn search_ingredients(
         });
     }
     Ok(out)
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+/// Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a
+/// recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check
+/// against `recipes`, not a separate index). Powers the chrome/global search on both shells,
+/// replacing the old client-side "fetch every card, filter in JS" search (web's `search.tsx`,
+/// desktop's `SearchOverlay`) with a real ranked, server/local-cache-side query.
+pub struct ContentSearchResult {
+    /// Ranked recipe hits.
+    pub recipes: Vec<RecipeCard>,
+    /// Ranked standalone-ingredient hits (recipes excluded — same split as `list_ingredients`).
+    pub ingredients: Vec<IngredientCard>,
+}
+
+fn recipe_card_by_ingredient_id(
+    conn: &Connection,
+    ingredient_id: &str,
+) -> Result<Option<RecipeCard>, Error> {
+    conn.query_row(
+        "SELECT r.id, i.name, r.subtitle, u.username, i.slug,
+                (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
+         FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
+         LEFT JOIN users u ON u.id = i.user_id
+         WHERE r.as_ingredient_id = ?1",
+        [ingredient_id],
+        |row| {
+            Ok(RecipeCard {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                subtitle: row.get(2)?,
+                username: row.get(3)?,
+                slug: row.get(4)?,
+                photo_key: row.get(5)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+fn ingredient_card_by_id(conn: &Connection, id: &str) -> Result<Option<IngredientCard>, Error> {
+    conn.query_row(
+        "SELECT i.id, i.name, i.calories_per_100g, i.slug, u.username
+         FROM ingredients i LEFT JOIN users u ON u.id = i.user_id
+         WHERE i.id = ?1",
+        [id],
+        |row| {
+            Ok(IngredientCard {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                calories_per_100g: row.get(2)?,
+                slug: row.get(3)?,
+                username: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+/// Unified ranked search over the visible catalog (recipes + standalone ingredients) — the chrome/
+/// global search on both shells. Same ranking as `search_ingredients`; `limit` bounds EACH partition
+/// so a query that mostly hits recipes doesn't starve ingredient hits or vice versa (the shared match
+/// pool is overfetched accordingly before splitting).
+pub fn search_content(
+    conn: &Connection,
+    query: String,
+    viewer: Option<&str>,
+) -> Result<ContentSearchResult, Error> {
+    const LIMIT: usize = 20;
+    let matches = ranked_content_matches(conn, &query, viewer, LIMIT * 4)?;
+    let mut recipes = Vec::new();
+    let mut ingredients = Vec::new();
+    for (id, _name) in matches {
+        if recipes.len() >= LIMIT && ingredients.len() >= LIMIT {
+            break;
+        }
+        if recipes.len() < LIMIT {
+            if let Some(card) = recipe_card_by_ingredient_id(conn, &id)? {
+                recipes.push(card);
+                continue;
+            }
+        }
+        if ingredients.len() < LIMIT {
+            if let Some(card) = ingredient_card_by_id(conn, &id)? {
+                ingredients.push(card);
+            }
+        }
+    }
+    Ok(ContentSearchResult {
+        recipes,
+        ingredients,
+    })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, missing_docs)] // test code: unwrap IS the assertion
+mod search_tests {
+    use super::*;
+
+    /// The REAL client schema (drift-test-pinned to the drizzle source in the desktop crate).
+    const CLIENT_SCHEMA: &str = include_str!("../../../apps/desktop/src-tauri/schema.sql");
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        ensure_search_index(&c).unwrap();
+        // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it,
+        // since `search_content`'s recipe-card fetch selects it.
+        c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
+            .unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email, username) VALUES ('u1', 'Ada', 'a@x', 'ada')",
+            [],
+        )
+        .unwrap();
+        c
+    }
+
+    fn leaf(c: &Connection, name: &str) -> String {
+        do_save_ingredient(
+            c,
+            &SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Public),
+                name: name.into(),
+                description: None,
+                price: None,
+                calories_per_100g: None,
+                serving_grams: None,
+                serving_unit: None,
+                package_grams: None,
+                nutrients: vec![],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap()
+    }
+
+    fn recipe(c: &Connection, name: &str, ingredient_id: &str) -> String {
+        do_save_recipe(
+            c,
+            &SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Public),
+                name: name.into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![RecipeItemInput {
+                    ingredient_id: ingredient_id.to_string(),
+                    grams: 500.0,
+                    unit: None,
+                    amount: None,
+                }],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap()
+    }
+
+    /// FTS5 is compiled into the pinned bundled SQLite (rusqlite 0.40 / libsqlite3-sys 0.38) — do NOT
+    /// assume it; the P2.4 spec explicitly calls for verifying this. A real virtual-table create +
+    /// prefix MATCH against a real bundled connection is the only trustworthy check.
+    #[test]
+    fn fts5_is_available_in_the_pinned_bundled_sqlite() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE VIRTUAL TABLE t USING fts5(name);")
+            .unwrap();
+        c.execute("INSERT INTO t(name) VALUES ('Chocolate Cake')", [])
+            .unwrap();
+        let hit: String = c
+            .query_row("SELECT name FROM t WHERE t MATCH 'choc*'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(hit, "Chocolate Cake");
+    }
+
+    #[test]
+    fn ensure_search_index_backfills_rows_that_predate_the_index() {
+        // A bare connection with NO index/triggers yet (unlike `conn()`, which already calls
+        // `ensure_search_index`) — simulates an existing catalog on a DB that predates the index, the
+        // load-bearing case (an already-live server/desktop cache before this migration landed).
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        c.execute_batch(CLIENT_SCHEMA).unwrap();
+        c.execute(
+            "INSERT INTO users (id, name, email) VALUES ('u1', 'Ada', 'a@x')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO ingredients (id, name, visibility) VALUES ('pre1', 'Old Row', 'public')",
+            [],
+        )
+        .unwrap();
+        ensure_search_index(&c).unwrap();
+        let after: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM content_search WHERE id = 'pre1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(after, 1, "the backfill picks up the pre-existing row");
+        // Idempotent: a second run doesn't duplicate it.
+        ensure_search_index(&c).unwrap();
+        let again: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM content_search WHERE id = 'pre1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(again, 1, "re-running the backfill is a no-op");
+    }
+
+    #[test]
+    fn triggers_keep_the_index_synced_on_rename_and_delete() {
+        let c = conn();
+        let id = leaf(&c, "Original Name");
+        assert_eq!(
+            search_ingredients(&c, "Original".into(), None)
+                .unwrap()
+                .len(),
+            1
+        );
+        c.execute(
+            "UPDATE ingredients SET name = 'Renamed' WHERE id = ?1",
+            [&id],
+        )
+        .unwrap();
+        assert!(
+            search_ingredients(&c, "Original".into(), None)
+                .unwrap()
+                .is_empty(),
+            "the old name must no longer match"
+        );
+        assert_eq!(
+            search_ingredients(&c, "Renamed".into(), None)
+                .unwrap()
+                .len(),
+            1,
+            "the new name matches"
+        );
+        c.execute("DELETE FROM ingredients WHERE id = ?1", [&id])
+            .unwrap();
+        assert!(
+            search_ingredients(&c, "Renamed".into(), None)
+                .unwrap()
+                .is_empty(),
+            "a hard delete removes it from the index too"
+        );
+    }
+
+    #[test]
+    fn ranking_prefers_exact_prefix_then_word_prefix_over_substring() {
+        let c = conn();
+        leaf(&c, "Milk Chocolate Bar"); // word-prefix hit for "choc" (2nd word starts with it)
+        leaf(&c, "Chocolate Cake"); // exact-prefix hit for "choc" (the whole name starts with it)
+        leaf(&c, "Hot Chocolate"); // word-prefix hit for "choc"
+
+        let hits = search_ingredients(&c, "choc".into(), None).unwrap();
+        let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names[0], "Chocolate Cake", "exact-prefix must rank first");
+        assert_eq!(
+            &names[1..3],
+            ["Hot Chocolate", "Milk Chocolate Bar"],
+            "word-prefix hits rank next, alphabetically among themselves: {names:?}"
+        );
+    }
+
+    #[test]
+    fn ranking_falls_back_to_substring_only_for_a_true_mid_word_hit() {
+        let c = conn();
+        // "Blueberry" doesn't START with "berry" (nor does any word in the name) — FTS5's token-prefix
+        // MATCH can't reach it, so this exercises the LIKE substring fallback pass specifically.
+        leaf(&c, "Blueberry Muffin");
+        leaf(&c, "Berry Smoothie"); // a genuine word-prefix hit, for contrast
+
+        let hits = search_ingredients(&c, "berry".into(), None).unwrap();
+        let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Berry Smoothie", "Blueberry Muffin"],
+            "word-prefix ('Berry Smoothie') outranks the mid-word substring ('Blueberry Muffin')"
+        );
+    }
+
+    #[test]
+    fn search_respects_visibility_scoping_like_the_old_like_search() {
+        let c = conn();
+        c.execute(
+            "INSERT INTO users (id, name, email) VALUES ('u2', 'Bob', 'b@x')",
+            [],
+        )
+        .unwrap();
+        do_save_ingredient(
+            &c,
+            &SaveIngredientInput {
+                id: None,
+                visibility: Some(Visibility::Private),
+                name: "Bobs Secret Tofu".into(),
+                description: None,
+                price: None,
+                calories_per_100g: None,
+                serving_grams: None,
+                serving_unit: None,
+                package_grams: None,
+                nutrients: vec![],
+                slug: None,
+            },
+            Some("u2"),
+        )
+        .unwrap();
+
+        assert!(
+            search_ingredients(&c, "Secret".into(), None)
+                .unwrap()
+                .is_empty(),
+            "anonymous viewers never see a private row"
+        );
+        assert!(
+            search_ingredients(&c, "Secret".into(), Some("u1"))
+                .unwrap()
+                .is_empty(),
+            "a different signed-in viewer never sees another user's private row"
+        );
+        assert_eq!(
+            search_ingredients(&c, "Secret".into(), Some("u2"))
+                .unwrap()
+                .len(),
+            1,
+            "the owner sees their own private row"
+        );
+    }
+
+    #[test]
+    fn search_content_partitions_recipes_from_standalone_ingredients() {
+        let c = conn();
+        let flour = leaf(&c, "Bread Flour");
+        recipe(&c, "Bread Pudding", &flour);
+
+        let res = search_content(&c, "Bread".into(), None).unwrap();
+        assert_eq!(res.recipes.len(), 1);
+        assert_eq!(res.recipes[0].name, "Bread Pudding");
+        assert_eq!(res.ingredients.len(), 1);
+        assert_eq!(res.ingredients[0].name, "Bread Flour");
+    }
+
+    #[test]
+    fn empty_query_lists_visible_rows_in_name_order() {
+        let c = conn();
+        leaf(&c, "Zucchini");
+        leaf(&c, "Apple");
+        let hits = search_ingredients(&c, String::new(), None).unwrap();
+        let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names, vec!["Apple", "Zucchini"]);
+    }
 }
 
 /// Recipe edit-load defaults. Owner-only (`i.user_id = ?2` is the isOwner rule inline; NULL never
@@ -3389,6 +3923,7 @@ mod delete_guard_tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
+        ensure_search_index(&c).unwrap();
         // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it.
         c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
             .unwrap();
@@ -3578,6 +4113,7 @@ mod log_tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
+        ensure_search_index(&c).unwrap();
         // username is a SERVER-side ensure_schema addition (not in the client schema) — mirror it.
         c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
             .unwrap();
@@ -4141,6 +4677,7 @@ mod targets_tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
+        ensure_search_index(&c).unwrap();
         c.execute(
             "INSERT INTO users (id, name, email) VALUES ('u1', 'Ada', 'a@x')",
             [],
@@ -4600,6 +5137,7 @@ mod insights_tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         c.execute_batch(CLIENT_SCHEMA).unwrap();
+        ensure_search_index(&c).unwrap();
         c.execute_batch("ALTER TABLE users ADD COLUMN username TEXT;")
             .unwrap();
         c.execute(

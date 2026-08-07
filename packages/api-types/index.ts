@@ -30,6 +30,20 @@ export type Amount = {
 	grams: number | null,
 };
 
+/**
+ *  Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a
+ *  recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check
+ *  against `recipes`, not a separate index). Powers the chrome/global search on both shells,
+ *  replacing the old client-side "fetch every card, filter in JS" search (web's `search.tsx`,
+ *  desktop's `SearchOverlay`) with a real ranked, server/local-cache-side query.
+ */
+export type ContentSearchResult = {
+	/**  Ranked recipe hits. */
+	recipes: RecipeCard[],
+	/**  Ranked standalone-ingredient hits (recipes excluded — same split as `list_ingredients`). */
+	ingredients: IngredientCard[],
+};
+
 /**  One conversation row of the DM list, newest-message first. */
 export type ConversationSummary = {
 	/**  Conversation id. */
