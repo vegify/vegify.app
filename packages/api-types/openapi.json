@@ -88,6 +88,32 @@
         "title": "Amount",
         "type": "object"
       },
+      "ContentSearchResult": {
+        "additionalProperties": false,
+        "description": " Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a\n recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check\n against `recipes`, not a separate index). Powers the chrome/global search on both shells,\n replacing the old client-side \"fetch every card, filter in JS\" search (web's `search.tsx`,\n desktop's `SearchOverlay`) with a real ranked, server/local-cache-side query.",
+        "properties": {
+          "ingredients": {
+            "description": " Ranked standalone-ingredient hits (recipes excluded — same split as `list_ingredients`).",
+            "items": {
+              "$ref": "#/components/schemas/IngredientCard"
+            },
+            "type": "array"
+          },
+          "recipes": {
+            "description": " Ranked recipe hits.",
+            "items": {
+              "$ref": "#/components/schemas/RecipeCard"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recipes",
+          "ingredients"
+        ],
+        "title": "ContentSearchResult",
+        "type": "object"
+      },
       "ConversationSummary": {
         "additionalProperties": false,
         "description": " One conversation row of the DM list, newest-message first.",
@@ -2880,6 +2906,33 @@
           }
         },
         "summary": "Ingredient search"
+      }
+    },
+    "/api/content/search-all": {
+      "get": {
+        "description": "Public. Ranked recipe + standalone-ingredient hits (exact-prefix > word-prefix > substring). The chrome/global search box on both shells.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSearchResult"
+                }
+              }
+            },
+            "description": "Ranked recipe + ingredient hits"
+          }
+        },
+        "summary": "Unified catalog search"
       }
     },
     "/api/content/sitemap": {
