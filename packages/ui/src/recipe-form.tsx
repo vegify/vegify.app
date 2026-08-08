@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import {
+  BarcodeIcon,
   CarrotIcon,
   ImageIcon,
   PlusIcon,
@@ -10,6 +11,13 @@ import {
   Trash2Icon
 } from "lucide-react"
 
+import {
+  BarcodeEntry,
+  type BrandedAdapter,
+  type BrandedFoodVM,
+  BrandedResults,
+  brandedAsSearchItem
+} from "./branded"
 import { Input } from "./input"
 import {
   NutritionFacts,
@@ -155,12 +163,15 @@ export function RecipeForm({
   onSearch,
   onSave,
   onDelete,
+  branded,
   createIngredientHref = "/ingredients/new"
 }: {
   defaults?: RecipeFormDefaults
   onSearch: (query: string) => Promise<IngredientSearchItem[]>
   onSave: (input: RecipeFormInput) => Promise<void>
   onDelete?: () => Promise<void>
+  /** Branded/packaged-food lookup (P2.1/P2.2). Optional — without it the composer is unchanged. */
+  branded?: BrandedAdapter
   createIngredientHref?: string
 }) {
   const [name, setName] = useState(defaults?.name ?? "")
@@ -200,6 +211,12 @@ export function RecipeForm({
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<IngredientSearchItem[]>([])
   const [searching, setSearching] = useState(false)
+  // Branded lookup is an explicit action, not search-as-you-type — /api/branded/* fronts a third-party
+  // quota and is budgeted at 60 lookups/hour per IP. Same rule as the Day screen's add-flow.
+  const [brandedResults, setBrandedResults] = useState<BrandedFoodVM[]>([])
+  const [brandedFor, setBrandedFor] = useState<string | null>(null)
+  const [brandedBusy, setBrandedBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     if (!picking) return
@@ -272,7 +289,37 @@ export function RecipeForm({
     ])
     setQuery("")
     setResults([])
+    setBrandedResults([])
+    setBrandedFor(null)
+    setScanning(false)
     setPicking(false)
+  }
+
+  /** Promote-on-select: the branded record joins the communal catalog and comes back as an ordinary
+   *  ingredient id, which is what the row stores — nothing downstream knows it was ever branded. */
+  async function addBranded(food: BrandedFoodVM) {
+    if (!branded || brandedBusy) return
+    setBrandedBusy(true)
+    try {
+      const ingredientId = await branded.promote(food)
+      addIngredient(brandedAsSearchItem(food, ingredientId))
+    } finally {
+      setBrandedBusy(false)
+    }
+  }
+
+  async function searchBranded() {
+    const q = query.trim()
+    if (!branded || !q || brandedBusy) return
+    setBrandedBusy(true)
+    setBrandedFor(q)
+    try {
+      setBrandedResults(await branded.search(q))
+    } catch {
+      setBrandedResults([])
+    } finally {
+      setBrandedBusy(false)
+    }
   }
 
   function buildInput(): RecipeFormInput {
@@ -448,17 +495,39 @@ export function RecipeForm({
 
           {picking ? (
             <div className="mt-3 rounded-xl border border-border p-3">
-              <div className="relative">
-                <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label="Search ingredients"
-                  autoFocus
-                  placeholder="Search ingredients…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="h-11 pl-9"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="Search ingredients"
+                    autoFocus
+                    placeholder="Search ingredients…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="h-11 pl-9"
+                  />
+                </div>
+                {branded ? (
+                  <button
+                    type="button"
+                    aria-label="Enter a barcode"
+                    aria-pressed={scanning}
+                    onClick={() => setScanning((s) => !s)}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-input text-muted-foreground transition hover:text-foreground"
+                  >
+                    <BarcodeIcon className="size-4" />
+                  </button>
+                ) : null}
               </div>
+              {branded && scanning ? (
+                <div className="mt-2">
+                  <BarcodeEntry
+                    branded={branded}
+                    onResolved={(food) => void addBranded(food)}
+                    onCancel={() => setScanning(false)}
+                  />
+                </div>
+              ) : null}
               <ul className="mt-2 max-h-56 overflow-y-auto">
                 {searching && (
                   <li className="px-2 py-1.5 text-muted-foreground text-sm">
@@ -493,6 +562,35 @@ export function RecipeForm({
                     </a>
                   </li>
                 )}
+
+                {/* Branded records are the fallback beneath the curated catalog, behind an explicit ask. */}
+                {branded && !searching && query.trim() ? (
+                  brandedFor === query.trim() ? (
+                    brandedResults.length === 0 && !brandedBusy ? (
+                      <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+                        No branded matches.
+                      </li>
+                    ) : (
+                      <BrandedResults
+                        foods={brandedResults}
+                        onPick={(f) => void addBranded(f)}
+                        busy={brandedBusy}
+                        searching={brandedBusy}
+                      />
+                    )
+                  ) : (
+                    <li className="mt-1 border-border border-t pt-1">
+                      <button
+                        type="button"
+                        disabled={brandedBusy}
+                        onClick={() => void searchBranded()}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-primary text-sm hover:bg-accent disabled:opacity-60"
+                      >
+                        Search branded &amp; packaged foods for “{query.trim()}”
+                      </button>
+                    </li>
+                  )
+                ) : null}
               </ul>
             </div>
           ) : (
