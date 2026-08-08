@@ -10,6 +10,8 @@
 import type {
   AggregatedNutrition,
   Amount,
+  BrandedFood,
+  BrandedSource,
   ContentSearchResult,
   DayLog,
   DaySupplementsRecord,
@@ -42,6 +44,8 @@ import { api, apiUrl } from "./api"
 export type {
   AggregatedNutrition,
   Amount,
+  BrandedFood,
+  BrandedSource,
   ContentSearchResult,
   DayLog,
   IngredientCard,
@@ -108,6 +112,28 @@ export const searchIngredients = (q: string) =>
 // "fetch every card, filter in JS" approach.
 export const searchContent = (q: string) =>
   api<ContentSearchResult>(`/api/content/search-all?q=${encodeURIComponent(q)}`)
+// --- branded / packaged foods (P2.1/P2.2) ---
+// Public + IP-budgeted (60 lookups/hour — the bucket protects the OUTBOUND USDA quota), cache-first,
+// USDA (CC0) tried before Open Food Facts (ODbL) so the share-alike lane stays as small as the data
+// allows. Neither read PROMOTES: a looked-up food is nobody's catalog entry until promoteBranded.
+export const searchBranded = (q: string) =>
+  api<BrandedFood[]>(`/api/branded/search?q=${encodeURIComponent(q)}`)
+// A barcode no source can resolve comes back as `null` with a 200 — that is manual entry, never a 500.
+export const lookupBarcode = (gtin: string) =>
+  api<BrandedFood | null>(
+    `/api/branded/barcode?gtin=${encodeURIComponent(gtin)}`
+  )
+// AUTHED — the only branded route that writes the shared catalog (so anonymous scrapers can't fill the
+// communal list). Idempotent: promoting an already-promoted food returns the same ingredient id.
+export const promoteBranded = (
+  source: BrandedSource,
+  externalId: string
+): Promise<string> =>
+  api<{ id: string }>("/api/branded/promote", {
+    method: "POST",
+    body: { source, externalId }
+  }).then((r) => r.id)
+
 // Public profile by handle (optionally-authed: the forwarded cookie lets a viewer see their own
 // non-public recipes on their own profile). Null when the handle has no account.
 export const getProfile = (username: string) =>

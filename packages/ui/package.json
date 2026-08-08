@@ -8,6 +8,7 @@
     "./auth-form": "./src/auth-form.tsx",
     "./blog": "./src/blog.tsx",
     "./blog-charts": "./src/blog-charts.tsx",
+    "./branded": "./src/branded.tsx",
     "./breadcrumb": "./src/breadcrumb.tsx",
     "./button": "./src/button.tsx",
     "./card": "./src/card.tsx",

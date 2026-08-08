@@ -11,6 +11,7 @@ import {
   type RecipeFormInput
 } from "@vegify/ui/recipe-form"
 
+import { webBrandedAdapter } from "../branded"
 import type { RecipeEditData } from "../content"
 
 const getRecipeFn = createServerFn({ method: "GET" })
@@ -85,6 +86,7 @@ function EditRecipe() {
     <RecipeForm
       defaults={defaults}
       onSearch={(q) => searchFn({ data: q })}
+      branded={webBrandedAdapter}
       onSave={async (input) => {
         const id = await saveFn({ data: input })
         // The recipe changed → its list card, detail view, and edit form all refetch on next read.

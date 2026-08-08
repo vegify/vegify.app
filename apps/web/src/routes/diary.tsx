@@ -14,6 +14,7 @@ import {
   todayLocal
 } from "@vegify/ui/day"
 
+import { webBrandedAdapter } from "../branded"
 import { LinkAdapter } from "../link"
 
 // The diary is authed-only (a PRIVATE per-user food log). `/diary` is a new top-level route not in the
@@ -202,7 +203,8 @@ function DiaryDay({ date }: { date: string }) {
     setSupplements: async (next) => {
       await saveSupplements({ data: { date, ...next } })
       await refresh()
-    }
+    },
+    branded: webBrandedAdapter
   }
 
   return (

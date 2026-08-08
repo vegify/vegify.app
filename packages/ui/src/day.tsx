@@ -1,7 +1,13 @@
 import { type ComponentType, useEffect, useRef, useState } from "react"
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react"
+import { BarcodeIcon, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react"
 
 import type { AppShellLinkProps } from "./app-shell"
+import {
+  BarcodeEntry,
+  type BrandedAdapter,
+  type BrandedFoodVM,
+  BrandedResults
+} from "./branded"
 import { buttonClasses } from "./button"
 import { Checkbox } from "./checkbox"
 import { cn } from "./cn"
@@ -114,6 +120,9 @@ export type DayLogAdapter = {
   copyYesterday?: () => Promise<void>
   /** Set which supplements were taken on this day (upserts the day's record; carries forward). */
   setSupplements: (next: DaySupplementsVM) => Promise<void>
+  /** Branded/packaged-food lookup (P2.1/P2.2). Optional — a shell without it keeps the catalog-only
+   *  add-flow verbatim, which is how the desktop stays unchanged until its IPC half lands. */
+  branded?: BrandedAdapter
 }
 
 const pad = (n: number) => String(n).padStart(2, "0")
@@ -280,6 +289,15 @@ function AddFoodRow({
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<IngredientSearchItem[]>([])
   const [searching, setSearching] = useState(false)
+  // Branded lookup is an EXPLICIT action, never search-as-you-type: /api/branded/* is budgeted at 60
+  // lookups/hour per IP precisely because it fronts a third-party quota, and a debounced keystroke
+  // search would burn that in one sentence. So the catalog answers as you type; branded answers when
+  // you ask. `brandedFor` records which query the current branded results belong to, so they clear
+  // themselves the moment the query moves on rather than sitting under a stale term.
+  const [branded, setBranded] = useState<BrandedFoodVM[]>([])
+  const [brandedFor, setBrandedFor] = useState<string | null>(null)
+  const [brandedBusy, setBrandedBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -287,6 +305,9 @@ function AddFoodRow({
     else {
       setQuery("")
       setResults([])
+      setBranded([])
+      setBrandedFor(null)
+      setScanning(false)
     }
   }, [open])
 
@@ -318,7 +339,37 @@ function AddFoodRow({
   ) => {
     await log.addEntry({ ingredientId, grams, unit: unit ?? null })
     setQuery("")
+    setBranded([])
+    setBrandedFor(null)
+    setScanning(false)
     inputRef.current?.focus()
+  }
+
+  /** Promote-on-select: the branded record joins the communal catalog, then it is logged like any
+   *  other catalog food. After this the entry has no branded-ness left to it — it is an ingredient. */
+  const pickBranded = async (food: BrandedFoodVM) => {
+    if (!log.branded || brandedBusy) return
+    setBrandedBusy(true)
+    try {
+      const ingredientId = await log.branded.promote(food)
+      await pick(ingredientId, food.servingGrams ?? 100, food.servingUnit)
+    } finally {
+      setBrandedBusy(false)
+    }
+  }
+
+  const searchBranded = async () => {
+    const q = query.trim()
+    if (!log.branded || !q || brandedBusy) return
+    setBrandedBusy(true)
+    setBrandedFor(q)
+    try {
+      setBranded(await log.branded.search(q))
+    } catch {
+      setBranded([])
+    } finally {
+      setBrandedBusy(false)
+    }
   }
 
   if (!open) {
@@ -335,19 +386,44 @@ function AddFoodRow({
   }
 
   const showRecents = !query.trim()
+  const brandedShown = brandedFor === query.trim() ? branded : []
   return (
     <div className="relative py-1">
-      <input
-        ref={inputRef}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search foods…"
-        aria-label="Search foods to log"
-        className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false)
-        }}
-      />
+      <div className="flex items-center gap-2">
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search foods…"
+          aria-label="Search foods to log"
+          className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false)
+          }}
+        />
+        {log.branded ? (
+          <button
+            type="button"
+            aria-label="Enter a barcode"
+            aria-pressed={scanning}
+            onClick={() => setScanning((s) => !s)}
+            className={buttonClasses({ variant: "outline", size: "icon-sm" })}
+          >
+            <BarcodeIcon className="size-4" />
+          </button>
+        ) : null}
+      </div>
+
+      {log.branded && scanning ? (
+        <div className="mt-1">
+          <BarcodeEntry
+            branded={log.branded}
+            onResolved={(food) => void pickBranded(food)}
+            onCancel={() => setScanning(false)}
+          />
+        </div>
+      ) : null}
+
       <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
         {showRecents ? (
           recents.length === 0 ? (
@@ -393,6 +469,36 @@ function AddFoodRow({
             </li>
           ))
         )}
+
+        {/* Branded foods sit UNDER the catalog, behind an explicit ask — the communal catalog is the
+            curated answer, third-party records are the fallback when it doesn't carry the product. */}
+        {log.branded && !showRecents && !searching ? (
+          brandedFor === query.trim() ? (
+            brandedShown.length === 0 && !brandedBusy ? (
+              <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+                No branded matches.
+              </li>
+            ) : (
+              <BrandedResults
+                foods={brandedShown}
+                onPick={(f) => void pickBranded(f)}
+                busy={brandedBusy}
+                searching={brandedBusy}
+              />
+            )
+          ) : (
+            <li className="mt-1 border-border border-t pt-1">
+              <button
+                type="button"
+                disabled={brandedBusy}
+                onClick={() => void searchBranded()}
+                className="w-full rounded-sm px-2 py-1.5 text-left text-primary text-sm hover:bg-accent disabled:opacity-60"
+              >
+                Search branded &amp; packaged foods for “{query.trim()}”
+              </button>
+            </li>
+          )
+        ) : null}
       </ul>
     </div>
   )

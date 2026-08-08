@@ -334,6 +334,13 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
         Privacy
       </LinkComponent>
       <span aria-hidden>·</span>
+      <LinkComponent
+        href="/sources"
+        className="transition-colors hover:text-foreground"
+      >
+        Data sources
+      </LinkComponent>
+      <span aria-hidden>·</span>
       <span>© 2026 Vegify</span>
     </footer>
   )

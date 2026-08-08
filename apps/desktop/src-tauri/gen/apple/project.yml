@@ -56,6 +56,14 @@ targets:
         # xcodegen regenerates Info.plist from these properties on builds — a key present only in
         # the generated plist gets silently wiped, so the export-compliance answer must live HERE.
         ITSAppUsesNonExemptEncryption: false
+        # P2.3 barcode scanning. The purpose string must live HERE for the same reason as the line
+        # above: xcodegen rewrites vegify_iOS/Info.plist from these properties, so a usage
+        # description added only to the generated plist disappears on the next build — and an app
+        # that touches the camera without one is an immediate App Review rejection AND a hard crash
+        # on first use. Declared AHEAD of the scanner itself: the key is inert until something
+        # actually requests the camera, and landing it separately keeps the native-scanner change
+        # (which has no PR-time CI — build-ios is deploy-only) as small as it can be.
+        NSCameraUsageDescription: Vegify uses the camera to scan a product barcode so its nutrition can be looked up. Photos are not saved or uploaded.
     entitlements:
       path: vegify_iOS/vegify_iOS.entitlements
     scheme:

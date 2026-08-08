@@ -53,6 +53,12 @@ export function LegalPage({
           <span aria-hidden className="mx-2">
             ·
           </span>
+          <a href="/sources" className="hover:underline">
+            Data sources
+          </a>
+          <span aria-hidden className="mx-2">
+            ·
+          </span>
           <span>© 2026 Vegify</span>
         </footer>
       </main>

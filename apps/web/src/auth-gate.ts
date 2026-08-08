@@ -16,7 +16,12 @@ export const BARE_PATHS = new Set([
 // blog carries its own header/footer (like the landing at "/", which is special-cased on `user` in
 // __root). Without this, a signed-in visitor gets double chrome: the AppShell sidebar + search bar
 // wrapped around the blog's header — two logos on screen (caught on the live page, 2026-07-01).
-export const BARE_PREFIXES: readonly string[] = ["/blog", "/terms", "/privacy"]
+export const BARE_PREFIXES: readonly string[] = [
+  "/blog",
+  "/terms",
+  "/privacy",
+  "/sources"
+]
 export const isBarePath = (pathname: string): boolean =>
   BARE_PATHS.has(pathname) ||
   BARE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
@@ -28,6 +33,9 @@ export const PUBLIC_PATHS = new Set([
   "/",
   "/terms",
   "/privacy",
+  // The data-sources / attribution page is a licence obligation (ODbL) — it must be readable
+  // without an account, by anyone, including a crawler checking the credit is really there.
+  "/sources",
   "/download",
   ...BARE_PATHS
 ])

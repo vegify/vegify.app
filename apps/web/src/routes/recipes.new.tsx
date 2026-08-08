@@ -3,6 +3,8 @@ import { createFileRoute, useRouter } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import { RecipeForm, type RecipeFormInput } from "@vegify/ui/recipe-form"
 
+import { webBrandedAdapter } from "../branded"
+
 const searchFn = createServerFn({ method: "GET" })
   .validator((query: string) => query)
   .handler(async ({ data }) => {
@@ -27,6 +29,7 @@ function NewRecipe() {
   return (
     <RecipeForm
       onSearch={(q) => searchFn({ data: q })}
+      branded={webBrandedAdapter}
       onSave={async (input) => {
         const id = await saveFn({ data: input })
         await queryClient.invalidateQueries({ queryKey: ["recipes"] }) // the list gains the new recipe
