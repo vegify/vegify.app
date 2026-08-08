@@ -44,6 +44,13 @@ const CLOUDFRONT_ORIGIN_PL = "pl-3b927c52"
 const APP_PORT = 8080
 const LITESTREAM = "v0.3.13"
 
+// USDA FoodData Central API key (P2.1 branded-foods lookup, gate D1) — Secrets Manager, us-west-1.
+// This stack deploys to us-east-1, but the key was provisioned directly in us-west-1, so it's a fixed
+// cross-region ARN rather than a region-derived one. Fetched at boot (never baked into user-data, so
+// rotating the secret doesn't force an instance replacement) into VEGIFY_FDC_API_KEY.
+const FDC_API_KEY_SECRET_ARN =
+  "arn:aws:secretsmanager:us-west-1:735853783919:secret:/vegify/api/prod/fdc-api-key-aOG3iQ"
+
 interface ServerStackProps extends StackProps {
   vpc: ec2.Vpc
   /** Public site origin (https://<primary domain>) — the base of links in transactional email. The
@@ -202,6 +209,14 @@ export class ServerStack extends Stack {
         ]
       })
     )
+    // USDA FoodData Central API key (P2.1 branded-foods lookup) — scoped to the one secret;
+    // user-data fetches it at boot into VEGIFY_FDC_API_KEY (below).
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [FDC_API_KEY_SECRET_ARN]
+      })
+    )
 
     const sg = new ec2.SecurityGroup(this, "Sg", {
       vpc,
@@ -271,6 +286,12 @@ export class ServerStack extends Stack {
       "  litestream restore -config /etc/litestream.yml /data/vegify.db || \\",
       `    aws s3 cp s3://${seedDb.s3BucketName}/${seedDb.s3ObjectKey} /data/vegify.db`,
       "fi",
+      // USDA FDC API key: fetched from Secrets Manager (cross-region — the secret lives in
+      // us-west-1, this stack deploys to us-east-1) rather than baked into user-data, so rotating it
+      // never forces an instance replacement. A fetch failure (throttled STS, revoked grant, deleted
+      // secret) degrades to an empty value, which vegify_config::server::fdc_api_key() treats the
+      // same as unset — DEMO_KEY, never a boot failure.
+      `FDC_API_KEY=$(aws secretsmanager get-secret-value --secret-id ${FDC_API_KEY_SECRET_ARN} --region us-west-1 --query SecretString --output text 2>/dev/null || echo "")`,
       // systemd: litestream supervises the server (-exec) so every write is captured to S3.
       // The server's stdout/stderr go to a file (not journald) so the CloudWatch agent below can ship
       // them; `journalctl -u vegify` still shows the unit's lifecycle, and SSM session is on for debug.
@@ -295,6 +316,9 @@ export class ServerStack extends Stack {
       `Environment=VEGIFY_DATA_BUCKET=${data.bucketName}`,
       // Media bucket for presigned upload URLs (photos/avatars); served at <api>/media/*.
       `Environment=VEGIFY_MEDIA_BUCKET=${media.bucketName}`,
+      // USDA FDC API key, fetched above; empty falls back to DEMO_KEY (throttled sooner, never a
+      // wrong deployment's key — see vegify_config::server::fdc_api_key()).
+      'Environment="VEGIFY_FDC_API_KEY=$FDC_API_KEY"',
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
