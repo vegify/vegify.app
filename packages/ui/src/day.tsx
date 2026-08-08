@@ -1,5 +1,11 @@
 import { type ComponentType, useEffect, useRef, useState } from "react"
-import { BarcodeIcon, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react"
+import {
+  BarcodeIcon,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Trash2
+} from "lucide-react"
 
 import type { AppShellLinkProps } from "./app-shell"
 import {

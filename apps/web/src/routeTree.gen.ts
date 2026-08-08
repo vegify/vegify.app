@@ -19,6 +19,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as UsernameIndexRouteImport } from './routes/$username.index'
@@ -85,6 +86,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesRoute = SourcesRouteImport.update({
+  id: '/sources',
+  path: '/sources',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -186,6 +192,7 @@ export interface FileRoutesByFullPath {
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sources': typeof SourcesRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sources': typeof SourcesRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
@@ -245,6 +253,7 @@ export interface FileRoutesById {
   '/reset': typeof ResetRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sources': typeof SourcesRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/$username/$recipeSlug': typeof UsernameRecipeSlugRoute
@@ -276,6 +285,7 @@ export interface FileRouteTypes {
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/sources'
     | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/sources'
     | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
@@ -334,6 +345,7 @@ export interface FileRouteTypes {
     | '/reset'
     | '/settings'
     | '/signup'
+    | '/sources'
     | '/terms'
     | '/verify'
     | '/$username/$recipeSlug'
@@ -364,6 +376,7 @@ export interface RootRouteChildren {
   ResetRoute: typeof ResetRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  SourcesRoute: typeof SourcesRoute
   TermsRoute: typeof TermsRoute
   VerifyRoute: typeof VerifyRoute
   UsernameRecipeSlugRoute: typeof UsernameRecipeSlugRoute
@@ -453,6 +466,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources': {
+      id: '/sources'
+      path: '/sources'
+      fullPath: '/sources'
+      preLoaderRoute: typeof SourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -588,6 +608,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetRoute: ResetRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  SourcesRoute: SourcesRoute,
   TermsRoute: TermsRoute,
   VerifyRoute: VerifyRoute,
   UsernameRecipeSlugRoute: UsernameRecipeSlugRoute,

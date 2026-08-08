@@ -160,7 +160,9 @@ export function attributionLines(foods: BrandedFoodVM[]): string[] {
 type BarcodeDetectorLike = {
   detect: (source: ImageBitmapSource) => Promise<{ rawValue: string }[]>
 }
-type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => BarcodeDetectorLike
+type BarcodeDetectorCtor = new (opts?: {
+  formats?: string[]
+}) => BarcodeDetectorLike
 
 const BARCODE_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
 
@@ -252,7 +254,9 @@ export function DietFlagNotice({
       seen.add(f.term)
       shown.push(f)
     }
-    const categories = [...new Set(shown.map((f) => CATEGORY_LABEL[f.category]))]
+    const categories = [
+      ...new Set(shown.map((f) => CATEGORY_LABEL[f.category]))
+    ]
     return (
       <p
         className={cn(

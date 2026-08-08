@@ -13,10 +13,10 @@ import {
 
 import {
   BarcodeEntry,
-  brandedAsSearchItem,
   type BrandedAdapter,
   type BrandedFoodVM,
-  BrandedResults
+  BrandedResults,
+  brandedAsSearchItem
 } from "./branded"
 import { Input } from "./input"
 import {

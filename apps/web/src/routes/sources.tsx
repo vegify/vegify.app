@@ -124,9 +124,9 @@ function SourcesPage() {
 
       <h2>Corrections</h2>
       <p>
-        Food data is imperfect and label data changes. If a food is wrong,
-        email <a href="mailto:hello@vegify.app">hello@vegify.app</a> — and for
-        Open Food Facts products, corrections made{" "}
+        Food data is imperfect and label data changes. If a food is wrong, email{" "}
+        <a href="mailto:hello@vegify.app">hello@vegify.app</a> — and for Open
+        Food Facts products, corrections made{" "}
         <a
           href="https://world.openfoodfacts.org"
           rel="noreferrer noopener"
