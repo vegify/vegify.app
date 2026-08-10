@@ -21,9 +21,9 @@
     "db:seed": "pnpm --filter @vegify/db seed"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.6",
+    "@biomejs/biome": "^2.5.7",
     "@tailwindcss/cli": "^4.3.3",
-    "knip": "^6.31.0",
+    "knip": "^6.32.0",
     "turbo": "^2.10.8"
   }
 }
