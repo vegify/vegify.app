@@ -191,13 +191,11 @@ fn to_branded(food: SearchFood) -> BrandedFood {
         serving_grams,
         serving_unit: None,
         // Recomputed on every store read; set here so a freshly fetched food is already complete for
-        // the response that returns it before the cache write lands. Product name AND statement: a
-        // label that says "Milk Chocolate" in the name but omits an ingredient list still deserves
-        // the flag.
-        diet_flags: vegify_core::animal_derived_flags(&format!(
-            "{name} {}",
-            ingredients_text.as_deref().unwrap_or_default()
-        )),
+        // the response that returns it before the cache write lands. `branded_diet_flags` is the ONE
+        // scan definition shared with that read path (vegify_core::branded) — product name AND
+        // statement, word-aware — so a cold lookup and a warm cache hit can never disagree about the
+        // same food.
+        diet_flags: vegify_core::branded_diet_flags(&name, ingredients_text.as_deref()),
         name,
         ingredients_text,
         calories_per_100g,

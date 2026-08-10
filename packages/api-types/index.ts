@@ -66,8 +66,10 @@ export type BrandedFood = {
 	/**  The promoted catalog ingredient's id, once someone has used this food. None ⇒ cached only. */
 	ingredientId: string | null,
 	/**
-	 *  Advisory animal-derived terms found in `ingredients_text`, matched as WORDS with plant
-	 *  qualifiers suppressed. **Never a vegan certification** — see `crate::diet`.
+	 *  Advisory animal-derived terms found in the product NAME and `ingredients_text`, matched as
+	 *  WORDS with plant qualifiers suppressed (see [`branded_diet_flags`]). **Never a vegan
+	 *  certification** — an empty list means "nothing matched", not "this is vegan"; see
+	 *  `crate::diet`.
 	 */
 	dietFlags: DietFlag[],
 	/**  The attribution line the client must render (see [`BrandedSource::attribution`]). */

@@ -542,6 +542,78 @@ impl VegifyClient {
         )
     }
 
+    // ---- branded foods (P2.1/P2.2, gate D1 option 2) ----
+    //
+    // These are ONLINE-ONLY proxies, and that is the architecture rather than a shortcut. The
+    // branded cache lives on the server (`branded_foods`) because the server is the only party
+    // holding the USDA FoodData Central API key, and the whole point of D1's option 2 is that a
+    // client never talks to FDC or Open Food Facts directly. What a client DOES get locally is the
+    // outcome: a promoted food is an ordinary public catalog ingredient that arrives on the next
+    // content pull, and from then on it reads, logs, and searches offline like any other.
+    //
+    // Deserialized straight into `vegify_core::BrandedFood` (this SDK already depends on the core
+    // crate) — including the advisory `dietFlags`, which the SERVER computes with the word-aware
+    // matcher. No client re-derives them; there is one matcher, in one place, so a phone and a
+    // laptop can never disagree about whether a label mentions dairy.
+
+    fn branded_url(&self, path: &str) -> String {
+        format!("{}/api/branded/{path}", self.base)
+    }
+
+    /// GET /api/branded/search?q= → ranked branded foods (cache-first server-side; topped up from
+    /// USDA only when the cache under-fills). Public — no bearer, like the rest of the catalog.
+    pub fn branded_search(&self, query: &str) -> Result<Vec<vegify_core::BrandedFood>, Error> {
+        tracing::debug!(query, "GET /api/branded/search");
+        read_json(
+            self.agent
+                .get(self.branded_url("search"))
+                .query("q", query)
+                .call()
+                .map_err(net)?,
+        )
+    }
+
+    /// GET /api/branded/barcode?gtin= → the product carrying that GTIN, or `None`. A barcode nothing
+    /// resolves is a 200 with a null body BY DESIGN, so it stays "type it in yourself", never an
+    /// error the caller has to interpret.
+    pub fn branded_barcode(&self, gtin: &str) -> Result<Option<vegify_core::BrandedFood>, Error> {
+        tracing::debug!(gtin, "GET /api/branded/barcode");
+        read_json(
+            self.agent
+                .get(self.branded_url("barcode"))
+                .query("gtin", gtin)
+                .call()
+                .map_err(net)?,
+        )
+    }
+
+    /// POST /api/branded/promote → the catalog ingredient id for a looked-up branded food, creating
+    /// the row on first use. Bearer required (promotion is the only branded call that writes the
+    /// SHARED catalog) and idempotent, so a retry after a dropped response cannot double-create.
+    pub fn branded_promote(
+        &self,
+        token: &str,
+        source: vegify_core::BrandedSource,
+        external_id: &str,
+    ) -> Result<String, Error> {
+        #[derive(Deserialize)]
+        struct Promoted {
+            id: String,
+        }
+        tracing::debug!(external_id, "POST /api/branded/promote");
+        let promoted: Promoted = read_json(
+            Self::bearer(self.agent.post(self.branded_url("promote")), token)
+                // `source` serializes through its own serde impl rather than a hand-written string,
+                // so this payload cannot drift from the `PromoteBrandedBody` the server deserializes.
+                .send_json(serde_json::json!({
+                    "source": source,
+                    "externalId": external_id,
+                }))
+                .map_err(net)?,
+        )?;
+        Ok(promoted.id)
+    }
+
     // ---- messages (1:1 DMs; auth required, viewer-relative shapes) ----
 
     fn messages_url(&self, path: &str) -> String {

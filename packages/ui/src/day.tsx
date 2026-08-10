@@ -303,6 +303,12 @@ function AddFoodRow({
   const [branded, setBranded] = useState<BrandedFoodVM[]>([])
   const [brandedFor, setBrandedFor] = useState<string | null>(null)
   const [brandedBusy, setBrandedBusy] = useState(false)
+  // A failed lookup is NOT an empty result. Branded lookups are the one part of this screen that
+  // must reach the network (the branded cache and the third-party key are server-side), so on the
+  // desktop/iOS shells an offline user hits this constantly — and answering "no branded matches"
+  // when the truth is "we couldn't ask" is the same class of dishonesty the diet flags refuse to
+  // commit. Say which one happened.
+  const [brandedError, setBrandedError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -313,6 +319,7 @@ function AddFoodRow({
       setResults([])
       setBranded([])
       setBrandedFor(null)
+      setBrandedError(null)
       setScanning(false)
     }
   }, [open])
@@ -347,6 +354,7 @@ function AddFoodRow({
     setQuery("")
     setBranded([])
     setBrandedFor(null)
+    setBrandedError(null)
     setScanning(false)
     inputRef.current?.focus()
   }
@@ -356,9 +364,17 @@ function AddFoodRow({
   const pickBranded = async (food: BrandedFoodVM) => {
     if (!log.branded || brandedBusy) return
     setBrandedBusy(true)
+    setBrandedError(null)
     try {
       const ingredientId = await log.branded.promote(food)
       await pick(ingredientId, food.servingGrams ?? 100, food.servingUnit)
+    } catch {
+      // Promotion writes the SHARED catalog, so it is always a server round trip and always the step
+      // most likely to fail offline. Left uncaught it was an unhandled rejection: the row simply
+      // didn't get added and nothing said why.
+      setBrandedError(
+        "Couldn't add that food. Check your connection and try again."
+      )
     } finally {
       setBrandedBusy(false)
     }
@@ -369,10 +385,12 @@ function AddFoodRow({
     if (!log.branded || !q || brandedBusy) return
     setBrandedBusy(true)
     setBrandedFor(q)
+    setBrandedError(null)
     try {
       setBranded(await log.branded.search(q))
     } catch {
       setBranded([])
+      setBrandedError("Branded lookup is unavailable right now.")
     } finally {
       setBrandedBusy(false)
     }
@@ -480,7 +498,11 @@ function AddFoodRow({
             curated answer, third-party records are the fallback when it doesn't carry the product. */}
         {log.branded && !showRecents && !searching ? (
           brandedFor === query.trim() ? (
-            brandedShown.length === 0 && !brandedBusy ? (
+            brandedError ? (
+              <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+                {brandedError}
+              </li>
+            ) : brandedShown.length === 0 && !brandedBusy ? (
               <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
                 No branded matches.
               </li>

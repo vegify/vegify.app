@@ -278,6 +278,59 @@ export const vegifyData = {
   },
 
   /** @throws {DataError} */
+  brandedSearch(query: string): Promise<BrandedFood[]> {
+    return invoke("branded_search", { query });
+  },
+
+  /** @throws {DataError} */
+  brandedBarcode(gtin: string): Promise<{
+	/**  Which third party this came from. */
+	source: BrandedSource,
+	/**
+	 *  That source's own id for the food — an FDC `fdcId`, or the OFF barcode. With `source`, the
+	 *  store's primary key and the promotion request's whole payload.
+	 */
+	externalId: string,
+	/**  Barcode (GTIN/UPC/EAN) when the source carries one — the key P2.2's scan path looks up by. */
+	gtin: string | null,
+	/**  Product name as the source states it. */
+	name: string,
+	/**  Brand owner / brand name, when stated. */
+	brand: string | null,
+	/**  Declared serving size in grams, when stated. */
+	servingGrams: number | null,
+	/**  The serving's unit name as stated (e.g. "cup", "bar"); None ⇒ grams. */
+	servingUnit: string | null,
+	/**
+	 *  The label's ingredient statement, verbatim. The input to [`animal_derived_flags`] — and the
+	 *  reason word-aware matching is not optional (see `crate::diet`).
+	 */
+	ingredientsText: string | null,
+	/**  Calories per 100 g, when stated. */
+	caloriesPer100g: number | null,
+	/**  Per-100g nutrient readings, already mapped into the catalog's nutrient vocabulary. */
+	nutrients: IngredientNutrientInput[],
+	/**  The promoted catalog ingredient's id, once someone has used this food. None ⇒ cached only. */
+	ingredientId: string | null,
+	/**
+	 *  Advisory animal-derived terms found in the product NAME and `ingredients_text`, matched as
+	 *  WORDS with plant qualifiers suppressed (see [`branded_diet_flags`]). **Never a vegan
+	 *  certification** — an empty list means "nothing matched", not "this is vegan"; see
+	 *  `crate::diet`.
+	 */
+	dietFlags: DietFlag[],
+	/**  The attribution line the client must render (see [`BrandedSource::attribution`]). */
+	attribution: string,
+} | null> {
+    return invoke("branded_barcode", { gtin });
+  },
+
+  /** @throws {DataError} */
+  brandedPromote(source: BrandedSource, externalId: string): Promise<string> {
+    return invoke("branded_promote", { source, external_id: externalId });
+  },
+
+  /** @throws {DataError} */
   syncNow(): Promise<null> {
     return invoke("sync_now");
   },
@@ -428,6 +481,62 @@ export type AuthUser = {
 };
 
 /**
+ *  One branded food: the third-party record as fetched, plus the cache/promotion bookkeeping. This is
+ *  BOTH the row shape of the separable store and the wire shape the lookup endpoints return, on
+ *  purpose — there is no server-side transformation worth a second type, and one type means the
+ *  promotion contract (`source` + `externalId`) is the same identifier the client just received.
+ */
+export type BrandedFood = {
+	/**  Which third party this came from. */
+	source: BrandedSource,
+	/**
+	 *  That source's own id for the food — an FDC `fdcId`, or the OFF barcode. With `source`, the
+	 *  store's primary key and the promotion request's whole payload.
+	 */
+	externalId: string,
+	/**  Barcode (GTIN/UPC/EAN) when the source carries one — the key P2.2's scan path looks up by. */
+	gtin: string | null,
+	/**  Product name as the source states it. */
+	name: string,
+	/**  Brand owner / brand name, when stated. */
+	brand: string | null,
+	/**  Declared serving size in grams, when stated. */
+	servingGrams: number | null,
+	/**  The serving's unit name as stated (e.g. "cup", "bar"); None ⇒ grams. */
+	servingUnit: string | null,
+	/**
+	 *  The label's ingredient statement, verbatim. The input to [`animal_derived_flags`] — and the
+	 *  reason word-aware matching is not optional (see `crate::diet`).
+	 */
+	ingredientsText: string | null,
+	/**  Calories per 100 g, when stated. */
+	caloriesPer100g: number | null,
+	/**  Per-100g nutrient readings, already mapped into the catalog's nutrient vocabulary. */
+	nutrients: IngredientNutrientInput[],
+	/**  The promoted catalog ingredient's id, once someone has used this food. None ⇒ cached only. */
+	ingredientId: string | null,
+	/**
+	 *  Advisory animal-derived terms found in the product NAME and `ingredients_text`, matched as
+	 *  WORDS with plant qualifiers suppressed (see [`branded_diet_flags`]). **Never a vegan
+	 *  certification** — an empty list means "nothing matched", not "this is vegan"; see
+	 *  `crate::diet`.
+	 */
+	dietFlags: DietFlag[],
+	/**  The attribution line the client must render (see [`BrandedSource::attribution`]). */
+	attribution: string,
+};
+
+/**
+ *  Which third party a cached branded row came from. Half of the store's primary key, and the thing
+ *  that decides both the provenance stamp and the licensing lane a promoted row lands in.
+ */
+export type BrandedSource = 
+/**  USDA FoodData Central, Branded Foods dataset. Public domain (CC0) — no downstream constraint. */
+"usda-branded" | 
+/**  Open Food Facts. **ODbL, share-alike** — rows stay identifiable and attributed forever. */
+"off";
+
+/**
  *  Unified catalog search result: ranked recipe + standalone-ingredient hits, partitioned by kind (a
  *  recipe IS an ingredient row — `recipes.as_ingredient_id` — so classification is a membership check
  *  against `recipes`, not a separate index). Powers the chrome/global search on both shells,
@@ -519,6 +628,38 @@ export type DaySupplementsRecord = {
 	vitD: boolean,
 	/**  Took an algae-oil (EPA+DHA) supplement that day. */
 	algaeOil: boolean,
+};
+
+/**
+ *  What kind of animal product a flagged term names — the grouping the UI renders and the reason a
+ *  flag is worth surfacing separately (someone avoiding dairy is not necessarily avoiding honey).
+ */
+export type DietCategory = 
+/**  Milk-derived (milk, butter, cheese, cream, whey, casein, lactose, ghee). */
+"dairy" | 
+/**  Hen/other egg components (egg, albumen, ovalbumin). */
+"egg" | 
+/**  Land-animal flesh or its rendered/extracted products (gelatin, lard, tallow, collagen, rennet). */
+"meat" | 
+/**  Aquatic animals (fish, anchovy, shellfish). */
+"fish" | 
+/**  Insect-derived (honey, beeswax, shellac, carmine/cochineal). */
+"insect";
+
+/**
+ *  One animal-derived term found in an ingredient statement, with the exact text that matched so the
+ *  UI can show the user WHERE the flag came from rather than asserting a verdict at them.
+ */
+export type DietFlag = {
+	/**  The canonical term that matched (lowercase, e.g. "milk"). */
+	term: string,
+	/**
+	 *  The matched span exactly as it appears in the source statement (e.g. "Milk"), so the client can
+	 *  quote the label instead of paraphrasing it.
+	 */
+	matched: string,
+	/**  Which animal-product family the term belongs to. */
+	category: DietCategory,
 };
 
 /**

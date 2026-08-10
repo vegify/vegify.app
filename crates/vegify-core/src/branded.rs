@@ -151,11 +151,34 @@ pub struct BrandedFood {
     pub nutrients: Vec<IngredientNutrientInput>,
     /// The promoted catalog ingredient's id, once someone has used this food. None ⇒ cached only.
     pub ingredient_id: Option<String>,
-    /// Advisory animal-derived terms found in `ingredients_text`, matched as WORDS with plant
-    /// qualifiers suppressed. **Never a vegan certification** — see `crate::diet`.
+    /// Advisory animal-derived terms found in the product NAME and `ingredients_text`, matched as
+    /// WORDS with plant qualifiers suppressed (see [`branded_diet_flags`]). **Never a vegan
+    /// certification** — an empty list means "nothing matched", not "this is vegan"; see
+    /// `crate::diet`.
     pub diet_flags: Vec<DietFlag>,
     /// The attribution line the client must render (see [`BrandedSource::attribution`]).
     pub attribution: String,
+}
+
+/// THE text a branded food's advisory flags are read from: the product NAME plus the label's
+/// ingredient statement, scanned as one word-aware pass (see [`crate::diet`] — tokens, never
+/// substrings, with plant qualifiers and vegan collocations suppressed).
+///
+/// One function because it has to be one answer. The fetch clients (`services/api/server/src/fdc.rs`,
+/// `off.rs`) stamp flags onto a freshly fetched food, and [`BrandedFood::with_derived`] recomputes
+/// them on every cache read; if those two scanned different text the SAME food would warn on the cold
+/// lookup and go quiet on the warm one — the worst possible behaviour for a trust signal, and
+/// precisely the kind of inconsistency that makes people stop believing the flag panel.
+///
+/// The product name is in scope deliberately: a bar whose name is "MILK CHOCOLATE" and which
+/// publishes no ingredient statement still deserves the dairy flag. Word-awareness is what makes
+/// including the name safe — "OAT MILK", "COCONUT MILK" and "MILK THISTLE POWDER" all suppress, while
+/// "MILK CHOCOLATE" does not.
+pub fn branded_diet_flags(name: &str, ingredients_text: Option<&str>) -> Vec<DietFlag> {
+    match ingredients_text {
+        Some(text) => animal_derived_flags(&format!("{name} {text}")),
+        None => animal_derived_flags(name),
+    }
 }
 
 impl BrandedFood {
@@ -163,11 +186,7 @@ impl BrandedFood {
     /// every read so a change to the term tables or the attribution text takes effect for already
     /// cached rows without a store migration — another reason the cache is safe to keep thin.
     fn with_derived(mut self) -> Self {
-        self.diet_flags = self
-            .ingredients_text
-            .as_deref()
-            .map(animal_derived_flags)
-            .unwrap_or_default();
+        self.diet_flags = branded_diet_flags(&self.name, self.ingredients_text.as_deref());
         self.attribution = self.source.attribution().to_string();
         self
     }
@@ -512,6 +531,150 @@ mod tests {
             .unwrap();
         let terms: Vec<_> = got.diet_flags.iter().map(|d| d.term.as_str()).collect();
         assert_eq!(terms, ["milk"], "cocoa butter must not flag; milk must");
+    }
+
+    /// **The product NAME is scanned too.** FDC/OFF rows routinely publish a name and no ingredient
+    /// statement; a bar called "MILK CHOCOLATE" with no statement must still warn. Regression guard:
+    /// the read path once scanned `ingredients_text` alone while the fetch clients scanned name +
+    /// statement, so this exact food warned on the cold lookup and went silent on every warm one.
+    #[test]
+    fn the_product_name_is_scanned_when_the_label_publishes_no_statement() {
+        let c = conn();
+        let mut f = food("name-only", "MILK CHOCOLATE", Some("Acme"));
+        f.ingredients_text = None;
+        cache_branded_food(&c, &f).unwrap();
+        let got = cached_branded_food(&c, BrandedSource::UsdaBranded, "name-only")
+            .unwrap()
+            .unwrap();
+        let terms: Vec<_> = got.diet_flags.iter().map(|d| d.term.as_str()).collect();
+        assert_eq!(terms, ["milk"], "a name-only dairy label must still warn");
+        assert_eq!(
+            got.diet_flags[0].matched, "MILK",
+            "quotes the label's casing"
+        );
+    }
+
+    /// The cold-fetch stamp and the warm cache read are the SAME scan, by construction — both call
+    /// `branded_diet_flags`. Pinned as a test because the two live in different crates (the fetch
+    /// clients are in the server), which is exactly how they drifted apart the first time.
+    #[test]
+    fn cold_fetch_flags_and_warm_cache_flags_agree() {
+        let c = conn();
+        for (name, statement) in [
+            ("MILK CHOCOLATE", None),
+            (
+                "OAT MILK CHAI",
+                Some("OAT MILK POWDER, MILK THISTLE POWDER"),
+            ),
+            ("Cheddar Style Shreds", Some("Coconut oil, potato starch")),
+            ("Greek Yogurt", Some("Cultured pasteurized milk, honey")),
+        ] {
+            let statement: Option<String> = statement.map(Into::into);
+            // What a fetch client stamps onto the freshly fetched food…
+            let cold = branded_diet_flags(name, statement.as_deref());
+            // …and what the store derives when the same row comes back out of the cache.
+            let mut f = food("agree", name, None);
+            f.name = name.into();
+            f.ingredients_text = statement.clone();
+            cache_branded_food(&c, &f).unwrap();
+            let warm = cached_branded_food(&c, BrandedSource::UsdaBranded, "agree")
+                .unwrap()
+                .unwrap()
+                .diet_flags;
+            let terms =
+                |v: &[DietFlag]| -> Vec<String> { v.iter().map(|d| d.term.clone()).collect() };
+            assert_eq!(
+                terms(&cold),
+                terms(&warm),
+                "cold vs warm disagreed on {name}"
+            );
+        }
+    }
+
+    /// **Word-aware, not substring — proven through the whole branded path** (cache write → ranked
+    /// search read → derived flags), which is where it actually has to hold. The plant-milk rows are
+    /// the competitor bug this layer exists to not repeat; the dairy rows are the other half of the
+    /// contract, because a matcher that never flags is just as useless as one that always does.
+    #[test]
+    fn branded_search_results_carry_word_aware_flags() {
+        let c = conn();
+        let rows: &[(&str, &str, Option<&str>, &[&str])] = &[
+            // (external_id, product name, ingredient statement, expected flag terms)
+            (
+                "w1",
+                "CHOCOLATE OAT MILK",
+                Some("OAT BASE (WATER, OATS), COCOA BUTTER, SEA SALT"),
+                &[],
+            ),
+            (
+                "w2",
+                "OAT MILK CHAI SUPERFOOD LATTE BLEND",
+                Some("OAT MILK POWDER, MILK THISTLE POWDER, GINGER ROOT"),
+                &[],
+            ),
+            (
+                "w3",
+                "BUTTERNUT SQUASH SOUP",
+                Some("Butternut squash, water, sea salt"),
+                &[],
+            ),
+            (
+                "w4",
+                "PLANT BASED CHEESE SHREDS",
+                Some("Coconut oil, potato starch, plant based cheese cultures"),
+                &[],
+            ),
+            (
+                "w5",
+                "MILK CHOCOLATE ALMONDS",
+                Some("SUGAR, WHOLE MILK POWDER, ALMONDS, COCOA BUTTER"),
+                &["milk"],
+            ),
+            (
+                "w6",
+                "SHARP CHEDDAR CHEESE",
+                Some("PASTEURIZED MILK, SALT, CHEESE CULTURES, RENNET"),
+                &["cheese", "milk", "rennet"],
+            ),
+        ];
+        for (id, name, statement, _) in rows {
+            let mut f = food(id, name, Some("Acme"));
+            f.ingredients_text = statement.map(Into::into);
+            cache_branded_food(&c, &f).unwrap();
+        }
+        for (id, name, _, expected) in rows {
+            // Read it back the way a client actually does: through the ranked search the endpoint uses.
+            let hit = search_cached_branded(&c, name, 10)
+                .unwrap()
+                .into_iter()
+                .find(|f| f.external_id == *id)
+                .expect("the row must come back from a search for its own name");
+            let mut terms: Vec<&str> = hit.diet_flags.iter().map(|d| d.term.as_str()).collect();
+            terms.sort_unstable();
+            let mut want: Vec<&str> = expected.to_vec();
+            want.sort_unstable();
+            assert_eq!(terms, want, "wrong flags for {name}");
+        }
+    }
+
+    /// An empty flag list is NOT a vegan claim, and the type makes that unfakeable: there is no
+    /// "vegan" variant, no boolean, nothing to invert. The only thing a caller can learn is which
+    /// terms were FOUND. Pinned so a future convenience field can't quietly turn the panel into a
+    /// certification.
+    #[test]
+    fn flags_are_one_directional_there_is_no_vegan_verdict() {
+        let c = conn();
+        let mut f = food("one-way", "Coconut Milk", Some("Acme"));
+        f.ingredients_text = Some("Coconut extract, water, guar gum".into());
+        cache_branded_food(&c, &f).unwrap();
+        let got = cached_branded_food(&c, BrandedSource::UsdaBranded, "one-way")
+            .unwrap()
+            .unwrap();
+        assert!(got.diet_flags.is_empty(), "coconut milk is not dairy");
+        // The advisory carries no verdict of its own — the caller only ever sees found terms, and the
+        // UI is required to say "nothing matched", never "vegan" (packages/ui/src/branded.tsx).
+        let json = serde_json::to_string(&got).unwrap();
+        assert!(!json.contains("\"vegan\""), "no vegan verdict on the wire");
     }
 
     #[test]
