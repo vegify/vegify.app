@@ -45,6 +45,7 @@ import {
   LoginView,
   SignupView
 } from "@vegify/ui/auth-form"
+import type { BrandedAdapter } from "@vegify/ui/branded"
 import { PAGE_SIZE, parseSort, type Sort } from "@vegify/ui/catalog"
 import {
   addDays,
@@ -140,6 +141,29 @@ const searchForForm = async (q: string) => {
       unit: x.unit
     }))
   }))
+}
+
+// --- branded foods (P2.1/P2.2, gate D1 option 2) — the desktop/iOS half of the port the shared
+// screens already accept. The IPC commands are online-only proxies to /api/branded/* (the branded
+// cache and the FoodData Central key are server-side by design — this shell never calls USDA or Open
+// Food Facts itself), so the adapter is a thin pass-through: the wire shape IS the view model, and
+// the advisory diet flags are the server's word-aware match, never re-derived here.
+//
+// `scanNative` is deliberately absent. Without it, BarcodeEntry falls back to the manual digits field
+// (and, where the platform ships the Barcode Detection API, a single-photo scan). Filling this port
+// is P2.3's native half, which waits for a deploy-verified session — the generated iOS project has no
+// PR-time CI, so a blind native edit ships unverified.
+const brandedAdapter: BrandedAdapter = {
+  search: (q) => vegifyData.brandedSearch(q),
+  barcode: (gtin) => vegifyData.brandedBarcode(gtin),
+  promote: async (food) => {
+    const id = await vegifyData.brandedPromote(food.source, food.externalId)
+    // The command already pulled, so the promoted ingredient is in the local mirror by now — but the
+    // cached QUERIES still hold the pre-pull catalog. Invalidate so the composer's search, the
+    // catalog lists, and the diary all see the new row rather than a stale absence.
+    await queryClient.invalidateQueries()
+    return id
+  }
 }
 
 // --- auto-sync: a debounced, single-flight push+pull so local writes propagate to the server (and
@@ -726,6 +750,7 @@ const recipeNewRoute = createRoute({
       <div className="mx-auto max-w-3xl p-6 lg:p-8">
         <RecipeForm
           onSearch={searchForForm}
+          branded={brandedAdapter}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
             await queryClient.invalidateQueries({ queryKey: ["recipes"] }) // the list gains the new recipe
@@ -1093,6 +1118,7 @@ const recipeEditRoute = createRoute({
         <RecipeForm
           defaults={defaults}
           onSearch={searchForForm}
+          branded={brandedAdapter}
           onSave={async (input) => {
             await saveRecipeFromForm(input)
             await queryClient.invalidateQueries({ queryKey: ["recipes"] })
@@ -1496,6 +1522,7 @@ function DiaryInner() {
   }
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["diary"] })
   const log: DayLogAdapter = {
+    branded: brandedAdapter,
     addEntry: async ({ ingredientId, grams, unit }) => {
       await vegifyData.saveLogEntry({
         id: null,

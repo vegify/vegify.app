@@ -676,6 +676,21 @@ pub trait VegifyData {
     /// Upsert the supplements taken on a day (the day's plan). Writes locally + enqueues for sync; the
     /// day's effective supplements come back in `log_day` (carry-forward). Authed-only — private per-day.
     fn save_day_supplements(&self, input: DaySupplementsRecord) -> Result<(), DataError>;
+    /// Branded/packaged-food search — an ONLINE-ONLY proxy to `/api/branded/search`. The branded
+    /// cache and the third-party API key are server-side by design (gate D1, option 2), so this shell
+    /// asks the server rather than USDA. Public: no session needed, exactly like the catalog.
+    fn branded_search(&self, query: String) -> Result<Vec<BrandedFood>, DataError>;
+    /// Resolve a scanned/typed barcode — an online-only proxy to `/api/branded/barcode`. `None` means
+    /// no source knows that GTIN, which is a normal outcome ("type it in yourself"), not an error.
+    fn branded_barcode(&self, gtin: String) -> Result<Option<BrandedFood>, DataError>;
+    /// **Promote-on-first-use**: join a looked-up branded food into the communal catalog and return
+    /// its ingredient id. Authed. Pulls before returning, so the promoted ingredient is in the LOCAL
+    /// cache by the time the caller writes a diary entry or a recipe row against that id.
+    fn branded_promote(
+        &self,
+        source: BrandedSource,
+        external_id: String,
+    ) -> Result<String, DataError>;
     /// One content-API sync pass: push the outbox, then pull/reconcile. The bootstrap-on-sign-in, the
     /// debounced auto-sync, and the manual Sync button all call this.
     fn sync_now(&self) -> Result<(), DataError>;
@@ -928,6 +943,44 @@ impl VegifyData for Db {
         // always carries the date's latest state and re-pushes idempotently.
         self.enqueue("saveDaySupplements", to_json(&input)?)?;
         Ok(())
+    }
+
+    // ---- branded foods (P2.1/P2.2, gate D1 option 2) ----
+    //
+    // ONLINE-ONLY, and deliberately so. Everything else on this shell reads the local mirror first;
+    // branded lookups cannot, because the branded cache and the FoodData Central API key both live on
+    // the server — a client that talked to USDA directly would have to ship the key. So a lookup is a
+    // proxy call, and offline it fails the way any other network read fails; the shared UI treats an
+    // empty branded group as "no branded matches", and the catalog underneath it still answers from
+    // the local cache as it always did.
+    //
+    // The flags on these rows are the SERVER's word-aware match (vegify_core::branded_diet_flags),
+    // carried on the wire. The desktop never re-derives them — one matcher, one answer, so a phone and
+    // a laptop can't disagree about whether a label mentions dairy.
+
+    fn branded_search(&self, query: String) -> Result<Vec<BrandedFood>, DataError> {
+        Ok(client().branded_search(&query)?)
+    }
+
+    fn branded_barcode(&self, gtin: String) -> Result<Option<BrandedFood>, DataError> {
+        Ok(client().branded_barcode(&gtin)?)
+    }
+
+    /// Promote, then PULL before returning. The pull is the whole reason this isn't a one-liner: the
+    /// promoted row is created on the SERVER, and the local schema puts a real foreign key on
+    /// `log_entries.ingredient_id` / `ingredient_in_recipe.ingredient_id`. Hand the id back before the
+    /// mirror has that ingredient and the very next write — the log entry the user just asked for —
+    /// fails on a FK violation. So the id this returns is always an id the local cache can already
+    /// resolve.
+    fn branded_promote(
+        &self,
+        source: BrandedSource,
+        external_id: String,
+    ) -> Result<String, DataError> {
+        let token = self.require_token()?;
+        let id = client().branded_promote(&token, source, &external_id)?;
+        self.pull()?;
+        Ok(id)
     }
 
     /// One content-API sync pass: push local writes, THEN pull/reconcile — push-first so the pull's
@@ -1207,6 +1260,47 @@ mod tests {
         assert_eq!(edit.items[0].calories_per_100g, Some(364.0));
     }
 
+    // WHY `branded_promote` pulls before it hands back an id (P2.1/P2.2). Promotion creates the
+    // catalog row on the SERVER; this shell logs against the LOCAL mirror, which both validates the
+    // ingredient itself and carries a real foreign key on `log_entries.ingredient_id`. So an id the
+    // mirror hasn't pulled yet is not a soft miss that heals on the next sync — the write is refused
+    // outright and the user's tap silently produces nothing. This pins that failure mode, so the pull
+    // inside `branded_promote` can't later be "simplified" away as a redundant round trip.
+    #[test]
+    fn logging_an_ingredient_the_mirror_has_not_pulled_is_refused() {
+        let db_path = std::env::temp_dir().join("vegify-branded-fk.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        let uid = sign_in_seed(&db);
+
+        let before = VegifyData::log_day(&db, "2026-08-10".into())
+            .expect("day reads")
+            .entries
+            .len();
+        VegifyData::save_log_entry(
+            &db,
+            SaveLogEntryInput {
+                id: None,
+                // Shaped exactly like a promoted id the server just minted and this device has not
+                // pulled — the state the UI would be in if promote returned before pulling.
+                ingredient_id: "01JZZZZZZZZZZZZZZZZZZZZZZZ".into(),
+                date: "2026-08-10".into(),
+                slot: None,
+                grams: 240.0,
+                unit: None,
+                logged_at: None,
+            },
+        )
+        .expect_err("an unpulled ingredient id must not be loggable");
+
+        let after = VegifyData::log_day(&db, "2026-08-10".into())
+            .expect("day reads")
+            .entries
+            .len();
+        assert_eq!(after, before, "nothing was written for user {uid}");
+    }
+
     // Ingredient browser + edit: a saved ingredient is listed (leaf only, not recipe
     // as-ingredients) and its edit defaults (per-100g + own nutrients) round-trip.
     #[test]
@@ -1307,6 +1401,88 @@ mod tests {
             Some(uid.as_str()),
             "recipe is stamped with the signed-in user"
         );
+    }
+
+    // The branded IPC proxies against a REAL server (P2.1/P2.2). #[ignore]'d like the sign-in test —
+    // it needs the network, an FDC key, and a throwaway-DB server — but it is the only thing that
+    // exercises the actual wire the desktop uses: ureq's query encoding for a multi-word search, the
+    // `{source, externalId}` promote body, and (the part that matters) that the id `branded_promote`
+    // hands back is one the LOCAL mirror can already resolve, because it pulled first.
+    // The account comes from the environment rather than a literal — the throwaway server is stood up
+    // per run, so its credentials are part of that setup, not of this file.
+    //   DATABASE_PATH=/tmp/throwaway.db PORT=47411 VEGIFY_FDC_API_KEY=… ./target/debug/vegify-server &
+    //   VEGIFY_AUTH_URL=http://127.0.0.1:47411 VEGIFY_TEST_EMAIL=… VEGIFY_TEST_PASSWORD=… \
+    //     cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib branded_lookup -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn branded_lookup_promote_and_log_against_a_server() {
+        let (Ok(email), Ok(password)) = (
+            std::env::var("VEGIFY_TEST_EMAIL"),
+            std::env::var("VEGIFY_TEST_PASSWORD"),
+        ) else {
+            eprintln!("set VEGIFY_TEST_EMAIL + VEGIFY_TEST_PASSWORD (see the comment above)");
+            return;
+        };
+        let db_path = std::env::temp_dir().join("vegify-branded-ipc.db");
+        let _ = fs::remove_file(&db_path);
+        fs::copy(crate::db_path(), &db_path).expect("seed");
+        let db = Db::open(db_path.to_str().unwrap()).expect("open");
+        let _ = VegifyData::sign_out(&db);
+        let user = VegifyData::sign_in(&db, SignInInput { email, password })
+            .expect("sign in against the throwaway server");
+
+        // A MULTI-WORD query: the encoding case a hand-built URL gets wrong.
+        let hits =
+            VegifyData::branded_search(&db, "milk chocolate".into()).expect("branded search");
+        assert!(!hits.is_empty(), "the search returned nothing");
+        let dairy = hits
+            .iter()
+            .find(|f| f.diet_flags.iter().any(|d| d.term == "milk"))
+            .expect("a milk-chocolate result must carry the dairy flag");
+        eprintln!(
+            "{} hits; picked {:?} flags={:?}",
+            hits.len(),
+            dairy.name,
+            dairy.diet_flags.iter().map(|d| &d.term).collect::<Vec<_>>()
+        );
+
+        // Promote, then immediately log against the returned id. This is the whole contract: if
+        // `branded_promote` returned before pulling, this write would be refused (see
+        // `logging_an_ingredient_the_mirror_has_not_pulled_is_refused`).
+        let ingredient_id =
+            VegifyData::branded_promote(&db, dairy.source, dairy.external_id.clone())
+                .expect("promote");
+        let entry = VegifyData::save_log_entry(
+            &db,
+            SaveLogEntryInput {
+                id: None,
+                ingredient_id: ingredient_id.clone(),
+                date: "2026-08-10".into(),
+                slot: None,
+                grams: dairy.serving_grams.unwrap_or(100.0),
+                unit: None,
+                logged_at: None,
+            },
+        )
+        .expect("log the promoted food — the mirror must already have it");
+        let day = VegifyData::log_day(&db, "2026-08-10".into()).expect("day");
+        assert!(
+            day.entries.iter().any(|e| e.id == entry),
+            "the promoted branded food is in {}'s diary",
+            user.name
+        );
+
+        // Idempotent: promoting the same food twice is the same catalog row.
+        let again = VegifyData::branded_promote(&db, dairy.source, dairy.external_id.clone())
+            .expect("promote again");
+        assert_eq!(again, ingredient_id, "promote-on-FIRST-use");
+
+        // A barcode nothing resolves is a None, not an error.
+        if let Some(gtin) = dairy.gtin.clone() {
+            let by_code = VegifyData::branded_barcode(&db, gtin).expect("barcode lookup");
+            assert!(by_code.is_some(), "the GTIN we just saw must resolve");
+        }
+        VegifyData::sign_out(&db).expect("sign out");
     }
 
     // Full sign-in path against a running web shell (real network + OS keychain). #[ignore]'d so the

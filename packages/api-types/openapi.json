@@ -120,7 +120,7 @@
             "description": " Calories per 100 g, when stated."
           },
           "dietFlags": {
-            "description": " Advisory animal-derived terms found in `ingredients_text`, matched as WORDS with plant\n qualifiers suppressed. **Never a vegan certification** — see `crate::diet`.",
+            "description": " Advisory animal-derived terms found in the product NAME and `ingredients_text`, matched as\n WORDS with plant qualifiers suppressed (see [`branded_diet_flags`]). **Never a vegan\n certification** — an empty list means \"nothing matched\", not \"this is vegan\"; see\n `crate::diet`.",
             "items": {
               "$ref": "#/components/schemas/DietFlag"
             },

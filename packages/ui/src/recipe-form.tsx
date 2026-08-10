@@ -216,6 +216,11 @@ export function RecipeForm({
   const [brandedResults, setBrandedResults] = useState<BrandedFoodVM[]>([])
   const [brandedFor, setBrandedFor] = useState<string | null>(null)
   const [brandedBusy, setBrandedBusy] = useState(false)
+  // A failed lookup is NOT an empty result — same rule as the Day screen. Branded lookups always
+  // reach the network (the branded cache and the third-party key live server-side), so on the
+  // desktop/iOS shells an offline composer would otherwise be told "no branded matches" when the
+  // truth is that nobody was asked.
+  const [brandedError, setBrandedError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
@@ -291,6 +296,7 @@ export function RecipeForm({
     setResults([])
     setBrandedResults([])
     setBrandedFor(null)
+    setBrandedError(null)
     setScanning(false)
     setPicking(false)
   }
@@ -300,9 +306,16 @@ export function RecipeForm({
   async function addBranded(food: BrandedFoodVM) {
     if (!branded || brandedBusy) return
     setBrandedBusy(true)
+    setBrandedError(null)
     try {
       const ingredientId = await branded.promote(food)
       addIngredient(brandedAsSearchItem(food, ingredientId))
+    } catch {
+      // Promotion writes the SHARED catalog, so it is a server round trip on every shell. Left
+      // uncaught it was an unhandled rejection — the row just never appeared, with no explanation.
+      setBrandedError(
+        "Couldn't add that food. Check your connection and try again."
+      )
     } finally {
       setBrandedBusy(false)
     }
@@ -313,10 +326,12 @@ export function RecipeForm({
     if (!branded || !q || brandedBusy) return
     setBrandedBusy(true)
     setBrandedFor(q)
+    setBrandedError(null)
     try {
       setBrandedResults(await branded.search(q))
     } catch {
       setBrandedResults([])
+      setBrandedError("Branded lookup is unavailable right now.")
     } finally {
       setBrandedBusy(false)
     }
@@ -566,7 +581,11 @@ export function RecipeForm({
                 {/* Branded records are the fallback beneath the curated catalog, behind an explicit ask. */}
                 {branded && !searching && query.trim() ? (
                   brandedFor === query.trim() ? (
-                    brandedResults.length === 0 && !brandedBusy ? (
+                    brandedError ? (
+                      <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+                        {brandedError}
+                      </li>
+                    ) : brandedResults.length === 0 && !brandedBusy ? (
                       <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
                         No branded matches.
                       </li>

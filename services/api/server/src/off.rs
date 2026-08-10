@@ -162,10 +162,9 @@ fn to_branded(barcode: &str, product: Product) -> Option<BrandedFood> {
         }),
         serving_grams: as_f64(product.serving_quantity.as_ref()).filter(|v| *v > 0.0),
         serving_unit: None,
-        diet_flags: vegify_core::animal_derived_flags(&format!(
-            "{name} {}",
-            ingredients_text.as_deref().unwrap_or_default()
-        )),
+        // The ONE scan definition, shared with the store's read path (see fdc.rs's note): product name
+        // AND statement, word-aware, so cold and warm reads of the same product always agree.
+        diet_flags: vegify_core::branded_diet_flags(&name, ingredients_text.as_deref()),
         name,
         ingredients_text,
         calories_per_100g,

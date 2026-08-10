@@ -9,14 +9,18 @@
 //    a line because a list happened to be mixed would drop the Open Food Facts attribution, which is a
 //    licence condition, not a nicety.
 
+import { createElement } from "react"
 import {
   attributionLines,
+  type BrandedDietFlagVM,
   type BrandedFoodVM,
   brandedAsSearchItem,
   brandedCatalogName,
+  DietFlagNotice,
   isPlausibleBarcode,
   normalizeBarcode
 } from "@vegify/ui/branded"
+import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 const USDA_ATTRIBUTION =
@@ -110,6 +114,61 @@ describe("attributionLines", () => {
 
   it("is empty for an empty result set", () => {
     expect(attributionLines([])).toEqual([])
+  })
+})
+
+// The one-directional-flag invariant, rendered. The Rust matcher never returns "vegan"
+// (crates/vegify-core/src/diet.rs) — this pins the OTHER half of that promise: that no client turns
+// "we matched nothing" into a certification. It is a wording test on purpose, because the wording IS
+// the claim; a green check or the word "vegan" appearing here would be the product lying.
+const renderNotice = (
+  flags: BrandedDietFlagVM[],
+  hasIngredientsText: boolean
+) =>
+  renderToStaticMarkup(
+    createElement(DietFlagNotice, { flags, hasIngredientsText })
+  )
+
+describe("DietFlagNotice", () => {
+  it("quotes the label's own spelling of every term it found", () => {
+    const html = renderNotice(
+      [
+        { term: "milk", matched: "MILK", category: "dairy" },
+        { term: "rennet", matched: "Rennet", category: "meat" }
+      ],
+      true
+    )
+    expect(html).toContain("Contains:")
+    expect(html).toContain("milk, rennet")
+    expect(html).toContain("dairy, meat")
+  })
+
+  it("renders an empty result as an explicit NON-answer, never a vegan claim", () => {
+    const html = renderNotice([], true)
+    expect(html).toContain("No animal-derived ingredients matched this label")
+    expect(html).toContain("not a vegan certification")
+    expect(html.toLowerCase()).not.toContain(">vegan<")
+  })
+
+  it("distinguishes 'checked, found nothing' from 'there was nothing to check'", () => {
+    const checked = renderNotice([], true)
+    const unchecked = renderNotice([], false)
+    expect(unchecked).toContain("published no ingredient list")
+    expect(unchecked).not.toBe(checked)
+    // Both end on the same instruction: the packaging is the authority, not us.
+    expect(checked).toContain("Check the packaging.")
+    expect(unchecked).toContain("Check the packaging.")
+  })
+
+  it("never claims a food is vegan, in any branch", () => {
+    for (const html of [
+      renderNotice([], true),
+      renderNotice([], false),
+      renderNotice([{ term: "milk", matched: "Milk", category: "dairy" }], true)
+    ]) {
+      expect(html).not.toMatch(/\bis vegan\b/i)
+      expect(html).not.toMatch(/vegan-friendly|certified vegan|100% vegan/i)
+    }
   })
 })
 
