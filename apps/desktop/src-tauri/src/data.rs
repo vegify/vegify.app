@@ -1408,25 +1408,28 @@ mod tests {
     // exercises the actual wire the desktop uses: ureq's query encoding for a multi-word search, the
     // `{source, externalId}` promote body, and (the part that matters) that the id `branded_promote`
     // hands back is one the LOCAL mirror can already resolve, because it pulled first.
+    // The account comes from the environment rather than a literal — the throwaway server is stood up
+    // per run, so its credentials are part of that setup, not of this file.
     //   DATABASE_PATH=/tmp/throwaway.db PORT=47411 VEGIFY_FDC_API_KEY=… ./target/debug/vegify-server &
-    //   VEGIFY_AUTH_URL=http://127.0.0.1:47411 \
+    //   VEGIFY_AUTH_URL=http://127.0.0.1:47411 VEGIFY_TEST_EMAIL=… VEGIFY_TEST_PASSWORD=… \
     //     cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib branded_lookup -- --ignored --nocapture
     #[test]
     #[ignore]
     fn branded_lookup_promote_and_log_against_a_server() {
+        let (Ok(email), Ok(password)) = (
+            std::env::var("VEGIFY_TEST_EMAIL"),
+            std::env::var("VEGIFY_TEST_PASSWORD"),
+        ) else {
+            eprintln!("set VEGIFY_TEST_EMAIL + VEGIFY_TEST_PASSWORD (see the comment above)");
+            return;
+        };
         let db_path = std::env::temp_dir().join("vegify-branded-ipc.db");
         let _ = fs::remove_file(&db_path);
         fs::copy(crate::db_path(), &db_path).expect("seed");
         let db = Db::open(db_path.to_str().unwrap()).expect("open");
         let _ = VegifyData::sign_out(&db);
-        let user = VegifyData::sign_in(
-            &db,
-            SignInInput {
-                email: "branded-test@example.com".into(),
-                password: "correct-horse-battery-1".into(),
-            },
-        )
-        .expect("sign in against the throwaway server");
+        let user = VegifyData::sign_in(&db, SignInInput { email, password })
+            .expect("sign in against the throwaway server");
 
         // A MULTI-WORD query: the encoding case a hand-built URL gets wrong.
         let hits =
