@@ -2,3 +2,18 @@ packages:
   - "apps/*"
   - "packages/*"
   - "infra"
+
+# pnpm settings live HERE, not in the root package.json "pnpm" field — pnpm 10.30 stopped reading
+# that field entirely (it warned on every install and silently ignored both keys below).
+# The build allowlist: pnpm 10 runs NO dependency install scripts unless they are named here.
+onlyBuiltDependencies:
+  - esbuild
+  - lightningcss
+  - "@tailwindcss/oxide"
+  - sharp
+
+# @esbuild-kit/core-utils (deprecated, reached via drizzle-kit) pins an esbuild range that predates
+# the dev-server CORS advisory; hold it at the patched line. This override is why the lockfile
+# resolves esbuild 0.25.x under that package — losing it regresses on the next full lock regen.
+overrides:
+  "@esbuild-kit/core-utils>esbuild": "^0.25.0"
