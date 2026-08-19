@@ -655,6 +655,17 @@
             ],
             "description": " Canonical URL segment `/ingredients/<slug>`. None only pre-backfill."
           },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": " Provenance stamp: \"USDA FoodData Central\", \"USDA FoodData Central (Branded)\", \"Open Food\n Facts (ODbL)\", or None for user-created ingredients. Surfaced on the detail page so the\n viewer knows where the data came from. NULL = user-authored content (no external source)."
+          },
           "visibility": {
             "$ref": "#/components/schemas/Visibility",
             "description": " Current visibility."
@@ -674,6 +685,7 @@
           "canEdit",
           "deleted",
           "creator",
+          "source",
           "nutrients"
         ],
         "title": "IngredientEditData",

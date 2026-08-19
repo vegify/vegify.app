@@ -157,6 +157,12 @@ export const vegifyData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**
+	 *  Provenance stamp: "USDA FoodData Central", "USDA FoodData Central (Branded)", "Open Food
+	 *  Facts (ODbL)", or None for user-created ingredients. Surfaced on the detail page so the
+	 *  viewer knows where the data came from. NULL = user-authored content (no external source).
+	 */
+	source: string | null,
 	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 } | null> {
@@ -201,6 +207,12 @@ export const vegifyData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**
+	 *  Provenance stamp: "USDA FoodData Central", "USDA FoodData Central (Branded)", "Open Food
+	 *  Facts (ODbL)", or None for user-created ingredients. Surfaced on the detail page so the
+	 *  viewer knows where the data came from. NULL = user-authored content (no external source).
+	 */
+	source: string | null,
 	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 } | null> {
@@ -748,6 +760,12 @@ export type IngredientEditData = {
 	deleted: boolean,
 	/**  Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL. */
 	creator: string | null,
+	/**
+	 *  Provenance stamp: "USDA FoodData Central", "USDA FoodData Central (Branded)", "Open Food
+	 *  Facts (ODbL)", or None for user-created ingredients. Surfaced on the detail page so the
+	 *  viewer knows where the data came from. NULL = user-authored content (no external source).
+	 */
+	source: string | null,
 	/**  Per-100 g nutrient rows as stored (the form scales to per-serving). */
 	nutrients: Reading[],
 };

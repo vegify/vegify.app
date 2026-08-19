@@ -76,6 +76,12 @@ const ANIMAL_TERMS: &[(&[&str], DietCategory)] = &[
     (&["caseinate"], DietCategory::Dairy),
     (&["lactose"], DietCategory::Dairy),
     (&["ghee"], DietCategory::Dairy),
+    (&["skyr"], DietCategory::Dairy),
+    (&["kefir"], DietCategory::Dairy),
+    (&["quark"], DietCategory::Dairy),
+    (&["mascarpone"], DietCategory::Dairy),
+    (&["ricotta"], DietCategory::Dairy),
+    (&["paneer"], DietCategory::Dairy),
     // egg
     (&["egg"], DietCategory::Egg),
     (&["eggs"], DietCategory::Egg),
@@ -151,6 +157,7 @@ const PLANT_QUALIFIERS: &[&str] = &[
     "imitation",
     "alternative",
     "substitute",
+    "water",
 ];
 
 /// Two-word qualifier phrases (the preceding PAIR of tokens), for the plant markers that are written
@@ -375,6 +382,50 @@ mod tests {
         let flags = animal_derived_flags("SUGAR, WHEY, SALT");
         assert_eq!(flags[0].matched, "WHEY");
         assert_eq!(flags[0].term, "whey");
+    }
+
+    #[test]
+    fn fermented_dairy_products_flag() {
+        for (statement, expected) in [
+            ("SKYR, SUGAR, STRAWBERRIES", "skyr"),
+            ("Whole milk kefir, sugar", "kefir"),
+            ("Mascarpone cheese, sugar, eggs", "mascarpone"),
+            ("Ricotta cheese, salt", "ricotta"),
+            ("Quark, honey, oats", "quark"),
+            ("Paneer, spices, oil", "paneer"),
+        ] {
+            let found = terms(statement);
+            assert!(
+                found.contains(&expected.to_string()),
+                "{statement} must flag {expected}, got: {found:?}"
+            );
+        }
+        for statement in [
+            "SKYR, SUGAR, STRAWBERRIES",
+            "Kefir, fruit",
+            "Mascarpone cheese",
+            "Ricotta, salt",
+            "Quark, honey",
+            "Paneer, oil",
+        ] {
+            assert_eq!(
+                animal_derived_flags(statement)[0].category,
+                DietCategory::Dairy,
+                "{statement} must be Dairy"
+            );
+        }
+    }
+
+    #[test]
+    fn water_kefir_is_not_dairy() {
+        assert!(
+            terms("Water kefir, organic sugar, ginger").is_empty(),
+            "water kefir must not flag"
+        );
+        assert!(
+            !terms("Whole milk kefir").is_empty(),
+            "milk kefir must flag"
+        );
     }
 
     #[test]
