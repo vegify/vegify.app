@@ -355,6 +355,10 @@ pub struct IngredientEditData {
     pub deleted: bool,
     /// Owner handle (None = the communal catalog) — the detail page's breadcrumb + canonical URL.
     pub creator: Option<String>,
+    /// Provenance stamp: "USDA FoodData Central", "USDA FoodData Central (Branded)", "Open Food
+    /// Facts (ODbL)", or None for user-created ingredients. Surfaced on the detail page so the
+    /// viewer knows where the data came from. NULL = user-authored content (no external source).
+    pub source: Option<String>,
     /// Per-100 g nutrient rows as stored (the form scales to per-serving).
     pub nutrients: Vec<Reading>,
 }
@@ -1769,7 +1773,8 @@ fn load_ingredient_edit(
     let meta = conn
         .query_row(
             "SELECT i.name, i.description, i.price, i.calories_per_100g, sa.grams, ba.grams,
-                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL, u.username, sa.unit
+                    i.visibility, i.user_id, i.slug, i.deleted_at IS NOT NULL, u.username, sa.unit,
+                    i.source
              FROM ingredients i
              LEFT JOIN users u ON u.id = i.user_id
              LEFT JOIN amounts sa ON sa.id = i.serving_size_id
@@ -1790,6 +1795,7 @@ fn load_ingredient_edit(
                     row.get::<_, bool>(9)?,
                     row.get::<_, Option<String>>(10)?,
                     row.get::<_, Option<String>>(11)?,
+                    row.get::<_, Option<String>>(12)?,
                 ))
             },
         )
@@ -1807,6 +1813,7 @@ fn load_ingredient_edit(
         deleted,
         creator,
         serving_unit,
+        source,
     )) = meta
     else {
         return Ok(None);
@@ -1844,6 +1851,7 @@ fn load_ingredient_edit(
             can_edit: false,
             deleted,
             creator,
+            source,
             nutrients,
         },
         owner,

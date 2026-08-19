@@ -1,5 +1,5 @@
 import { type ComponentType, useEffect, useMemo, useRef, useState } from "react"
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import { MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react"
 
 import type { AppShellLinkProps } from "./app-shell"
 import {
@@ -265,6 +265,8 @@ export type IngredientDetailVM = {
   deleted?: boolean
   /** Owner handle (absent = the communal catalog) — the breadcrumb links to the profile. */
   creator?: string | null
+  /** Provenance stamp from the backend (e.g. "USDA FoodData Central"). Absent/null = user-created. */
+  source?: string | null
   nutrition: NutritionFactsData
 }
 
@@ -1487,6 +1489,35 @@ function ShortcutSheet({
   )
 }
 
+function provenanceLabel(source: string): string {
+  if (source.startsWith("USDA")) return "USDA"
+  if (source.startsWith("Open Food Facts")) return "Open Food Facts"
+  return source
+}
+
+function ProvenanceLine({
+  source,
+  LinkComponent
+}: {
+  source: string
+  LinkComponent: NavLink
+}) {
+  return (
+    <p className="mt-4 flex items-center gap-1.5 text-muted-foreground text-xs">
+      <ShieldCheck className="size-3.5 shrink-0 text-green-600 dark:text-green-400" />
+      <span>
+        Data from{" "}
+        <LinkComponent
+          href="/sources"
+          className="font-medium underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+        >
+          {provenanceLabel(source)}
+        </LinkComponent>
+      </span>
+    </p>
+  )
+}
+
 export function IngredientDetailView({
   ingredient,
   LinkComponent,
@@ -1617,6 +1648,12 @@ export function IngredientDetailView({
             ariaLabel="description"
             className="mt-3 text-muted-foreground"
           />
+          {ingredient.source ? (
+            <ProvenanceLine
+              source={ingredient.source}
+              LinkComponent={LinkComponent}
+            />
+          ) : null}
         </div>
       </div>
 

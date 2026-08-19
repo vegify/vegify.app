@@ -327,6 +327,7 @@ function ingredientEditToVM(data: IngredientEditData): IngredientDetailVM {
     canEdit: data.canEdit,
     deleted: data.deleted,
     creator: data.creator,
+    source: data.source,
     nutrition
   }
 }

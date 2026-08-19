@@ -66,6 +66,7 @@ export const getIngredient = createServerFn({ method: "GET" })
       canEdit: ing.canEdit,
       deleted: ing.deleted,
       creator: ing.creator,
+      source: ing.source,
       nutrition
     }
     return {
