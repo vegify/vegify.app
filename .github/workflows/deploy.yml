@@ -225,12 +225,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: aarch64-musl
+          save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: taiki-e/install-action@82cd3e7658a6f96c86c0234aeeda1748937cb0a1 # v2.85.13
         with:
@@ -241,7 +242,7 @@ jobs:
       - name: Test the server + shared core
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: "true"
+          SCCACHE_GHA_ENABLED: ${{ github.event_name == 'push' }}
           CARGO_INCREMENTAL: "0"
         run: cargo test -p vegify-server -p vegify-core
       - name: Cross-build the aarch64-musl binary + stage the seed
@@ -289,13 +290,17 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Regenerate generated types + fail on drift (the up-to-date-types gate)
+        env:
+          SCCACHE_GHA_ENABLED: ${{ github.event_name == 'push' }}
         run: |
           VEGIFY_REGEN_BINDINGS=1 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib bindings_ts_is_current
           cargo run -p vegify-typegen
@@ -323,7 +328,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       - name: Typecheck + unit tests
@@ -378,13 +383,14 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: "."
+          save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
@@ -491,11 +497,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
         with:
           targets: aarch64-apple-ios
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
       # The build compiles tauri::generate_context!, which needs apps/desktop/dist to exist — any
@@ -670,13 +678,14 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: "."
+          save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
@@ -790,7 +799,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       # cdk synth is whole-app, so every stack's asset must exist even though we deploy only the
       # server here: restore the server binary + the web bundle the upstream jobs already built.
@@ -850,7 +859,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
-          cache: pnpm
+          cache: ${{ github.event_name == 'push' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
