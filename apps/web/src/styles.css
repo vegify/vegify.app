@@ -3,10 +3,6 @@
 @import "@vegify/tokens/theme.css";
 @source "../../../packages/ui/src";
 
-* {
-  box-sizing: border-box;
-}
-
 html,
 body,
 #app {
