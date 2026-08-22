@@ -22,7 +22,7 @@ export function NutritionFactsFab({
       <DialogTrigger
         aria-label="Nutrition facts"
         className={cn(
-          "fixed right-4 bottom-20 z-30 flex size-14 items-center justify-center rounded-full bg-orange text-white shadow-lg transition hover:brightness-95 lg:hidden",
+          "fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] z-30 flex size-14 items-center justify-center rounded-full bg-orange text-white shadow-lg transition hover:brightness-95 lg:hidden",
           className
         )}
       >

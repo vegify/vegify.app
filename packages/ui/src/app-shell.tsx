@@ -255,7 +255,7 @@ export function AppShell({
       </div>
 
       {/* ===== Mobile bottom tab bar ===== */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-center justify-around bg-green-dark text-white lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 box-content flex h-16 items-center justify-around bg-green-dark pb-[env(safe-area-inset-bottom,0px)] text-white lg:hidden">
         {mobileItems.map((item) => (
           <TabItem
             key={item.key}
