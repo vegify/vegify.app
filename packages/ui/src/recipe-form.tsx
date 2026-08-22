@@ -646,7 +646,7 @@ export function RecipeForm({
         aria-label="Save"
         disabled={saving || !name.trim()}
         onClick={handleSave}
-        className="fixed right-4 bottom-20 z-30 flex size-14 items-center justify-center rounded-full bg-orange text-white shadow-lg transition hover:brightness-95 disabled:opacity-50 lg:bottom-8"
+        className="fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] z-30 flex size-14 items-center justify-center rounded-full bg-orange text-white shadow-lg transition hover:brightness-95 disabled:opacity-50 lg:bottom-8"
       >
         <SaveIcon className="size-6" />
       </button>
