@@ -65,6 +65,9 @@ tauri-plugin-tracing = "0.3"
 # the simulator/device console until upstream compiles for iOS.
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 tracing-subscriber = "0.3"
+# P2.3 native barcode scanner — AVFoundation camera scan on iOS, wired into the existing branded-food
+# lookup flow. Mobile-only: desktop/web use manual entry + photo scan.
+tauri-plugin-barcode-scanner = "2"
 
 [package.metadata.cargo-machete]
 ignored = ["vegify-client-rs"]  # lib name is vegify_client; machete cannot match

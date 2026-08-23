@@ -29,6 +29,7 @@ import {
   useRouterState
 } from "@tanstack/react-router"
 import { listen } from "@tauri-apps/api/event"
+import { Format, scan } from "@tauri-apps/plugin-barcode-scanner"
 import {
   getCurrent as getCurrentDeepLinks,
   onOpenUrl
@@ -148,11 +149,22 @@ const searchForForm = async (q: string) => {
 // cache and the FoodData Central key are server-side by design — this shell never calls USDA or Open
 // Food Facts itself), so the adapter is a thin pass-through: the wire shape IS the view model, and
 // the advisory diet flags are the server's word-aware match, never re-derived here.
-//
-// `scanNative` is deliberately absent. Without it, BarcodeEntry falls back to the manual digits field
-// (and, where the platform ships the Barcode Detection API, a single-photo scan). Filling this port
-// is P2.3's native half, which waits for a deploy-verified session — the generated iOS project has no
-// PR-time CI, so a blind native edit ships unverified.
+
+// P2.3 native barcode scanner — the plugin is registered behind #[cfg(mobile)] in lib.rs, so scan()
+// only resolves on iOS/Android. Gate on UA so the "Scan with camera" button doesn't render on macOS.
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
+async function scanBarcode(): Promise<string | null> {
+  try {
+    const result = await scan({
+      formats: [Format.EAN13, Format.EAN8, Format.UPC_E]
+    })
+    return result.content || null
+  } catch {
+    return null
+  }
+}
+
 const brandedAdapter: BrandedAdapter = {
   search: (q) => vegifyData.brandedSearch(q),
   barcode: (gtin) => vegifyData.brandedBarcode(gtin),
@@ -163,7 +175,8 @@ const brandedAdapter: BrandedAdapter = {
     // catalog lists, and the diary all see the new row rather than a stale absence.
     await queryClient.invalidateQueries()
     return id
-  }
+  },
+  ...(isMobile ? { scanNative: scanBarcode } : {})
 }
 
 // --- auto-sync: a debounced, single-flight push+pull so local writes propagate to the server (and
