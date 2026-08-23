@@ -90,6 +90,11 @@ pub fn run() {
         )
     };
 
+    // P2.3 barcode scanner: AVFoundation camera on iOS. Mobile-only — desktop/web use manual entry
+    // + photo scan. The JS side gates the "Scan with camera" button on mobile UA.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
     builder
         // OS deep links: vegify:// (scheme from tauri.conf.json → CFBundleURLTypes at bundle time) and
         // vegify.app universal links (applinks entitlement + AASA). The frontend consumes opened URLs
