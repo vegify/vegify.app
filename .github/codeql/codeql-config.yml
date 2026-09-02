@@ -1,0 +1,8 @@
+# Merged into code scanning default setup through the repository property
+# `github-codeql-config-file` (set on vegify/vegify.app). Test code is not analyzed:
+# the hard-coded-credential family of queries fires on every known-answer fixture,
+# and those alerts were only ever dismissed as "used in tests".
+name: "vegify default setup additions"
+paths-ignore:
+  - "**/tests.rs"
+  - "**/tests/**"
