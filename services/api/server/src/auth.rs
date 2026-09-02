@@ -6,8 +6,7 @@
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
 use base64::Engine;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
@@ -33,8 +32,8 @@ fn normalize_email(email: &str) -> String {
 
 /// N cryptographically-secure random bytes straight from the OS CSPRNG (`getrandom` — the same
 /// source `rand`'s `OsRng` wraps, used directly so auth carries no `rand`/`rand_core` version
-/// coupling with argon2's pinned `rand_core`). A failure here means the OS entropy source is
-/// unavailable, which is unrecoverable for auth — panic rather than mint a weak token/salt.
+/// coupling). A failure here means the OS entropy source is unavailable, which is unrecoverable
+/// for auth — panic rather than mint a weak token.
 fn random_bytes<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes).expect("OS CSPRNG unavailable");
@@ -51,12 +50,11 @@ fn hasher() -> Argon2<'static> {
 }
 
 pub fn hash_password(password: &str) -> Result<String, AppError> {
-    // 16-byte random salt (argon2's default), b64-encoded into the PHC salt — equivalent to what
-    // `SaltString::generate` did, but sourced from getrandom so it doesn't need argon2's rand_core.
-    let salt = SaltString::encode_b64(&random_bytes::<16>())
-        .map_err(|e| AppError::Internal(format!("salt: {e}")))?;
+    // argon2 0.6's `hash_password` mints the 16-byte salt itself, straight from getrandom — the
+    // same OS CSPRNG `random_bytes` uses and with no `rand_core` in the path, so the hand-rolled
+    // `SaltString::encode_b64` salt this used to pass as a second argument is now redundant.
     hasher()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|h| h.to_string())
         .map_err(|e| AppError::Internal(format!("hash: {e}")))
 }
@@ -549,6 +547,28 @@ mod reset_tests {
         )
         .unwrap();
         conn
+    }
+
+    // Generated under argon2 0.5.3 by this module's own `hash_password` (m=19456, t=2, p=1, 32-byte
+    // output), before the 0.6 bump. It stands in for the PHC strings already sitting in the live
+    // `users.password_hash` column: they must keep verifying across the crate upgrade.
+    const LEGACY_PHC: &str = "$argon2id$v=19$m=19456,t=2,p=1$8DHMW9L3hxkVUb7y0uiKrA$JS6iH/E02TYuZB5vKiI8g0FiFmdn+n0cvB12woAMXts";
+    const LEGACY_PASSWORD: &str = "correct-horse-battery-staple";
+
+    #[test]
+    fn verifies_hashes_written_by_the_previous_argon2() {
+        // A stored 0.5-era hash still accepts its plaintext and still rejects anything else.
+        assert!(verify_password(LEGACY_PHC, LEGACY_PASSWORD));
+        assert!(!verify_password(LEGACY_PHC, "wrong-password"));
+
+        // A hash minted by the current crate round-trips, and carries its own random salt.
+        let fresh = hash_password(LEGACY_PASSWORD).unwrap();
+        assert_ne!(fresh, LEGACY_PHC, "every hash gets a fresh salt");
+        assert!(verify_password(&fresh, LEGACY_PASSWORD));
+        assert!(!verify_password(&fresh, "wrong-password"));
+
+        // Garbage in the column is a failed verification, never a panic.
+        assert!(!verify_password("not-a-phc-string", LEGACY_PASSWORD));
     }
 
     #[test]
