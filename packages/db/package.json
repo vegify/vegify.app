@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "@vegify/config": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hash-wasm": "^4.12.0",
