@@ -232,7 +232,15 @@ export class ServerStack extends Stack {
     userData.addCommands(
       "set -eux",
       `export AWS_DEFAULT_REGION=${this.region}`,
-      "dnf install -y tar gzip",
+      // Swap BEFORE anything touches dnf. t4g.nano has 512 MiB, and AL2023's zram (~256 MiB) is not
+      // enough for `dnf install` to load the AL2023 repo metadata (79 MB compressed as of
+      // 2023.12.20260914): the 2026-09-15 outage was dnf OOM-killed right here, three deploys in a
+      // row, and `set -e` took the volume attach, litestream, and the server down with it. A 1 GiB
+      // swapfile on the 8 GiB root gp3 is the cheap fix (dd, not fallocate — the root is xfs).
+      // Best-effort: a swap failure logs and continues, it must never be the reason a boot dies.
+      "if ! grep -qw '^/swapfile' /proc/swaps; then",
+      "  dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw,nofail 0 0' >> /etc/fstab || echo 'WARN: swapfile setup failed, continuing without it'",
+      "fi",
       // Self-attach the dedicated data volume (found by tag) to THIS instance — robust across instance
       // replacement (force-detach from any prior holder, then attach). No CFN VolumeAttachment.
       "TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' || true)",
@@ -264,9 +272,18 @@ export class ServerStack extends Stack {
       `  aws s3 cp s3://${replica.bucketName}/migration/vegify.db /data/vegify.db`,
       `  aws s3 rm s3://${replica.bucketName}/migration/vegify.db`,
       "fi",
-      // Litestream (static linux-arm64 release — matches the t4g/Graviton box).
+      // Litestream (static linux-arm64 release — matches the t4g/Graviton box). Extracted with the
+      // python3 that cloud-init itself runs on, NOT tar: nothing before the server starts may depend
+      // on dnf (tar/gzip are not guaranteed on the AMI, and dnf is what OOM-killed the 2026-09-15 boots).
       `curl -fsSL -o /tmp/ls.tgz https://github.com/benbjohnson/litestream/releases/download/${LITESTREAM}/litestream-${LITESTREAM}-linux-arm64.tar.gz`,
-      "tar -C /usr/local/bin -xzf /tmp/ls.tgz litestream",
+      "python3 - <<'PYEOF'",
+      "import os, tarfile",
+      "with tarfile.open('/tmp/ls.tgz') as t:",
+      "    m = next(x for x in t.getmembers() if x.isfile() and os.path.basename(x.name) == 'litestream')",
+      "    m.name = 'litestream'",
+      "    t.extract(m, '/usr/local/bin')",
+      "PYEOF",
+      "chmod +x /usr/local/bin/litestream",
       // Server binary (instance profile reads the asset bucket).
       `aws s3 cp s3://${serverBin.s3BucketName}/${serverBin.s3ObjectKey} /usr/local/bin/vegify-server`,
       "chmod +x /usr/local/bin/vegify-server",
@@ -344,8 +361,11 @@ export class ServerStack extends Stack {
       // On-box CloudWatch agent: tail the server log → the /vegify/server group, and publish mem +
       // disk (EC2 emits neither) tagged with THIS instance id so the dashboard + alarms find them.
       // Tolerant (|| true): an agent/repo hiccup must never block the server or fail the deploy gate —
-      // missing telemetry is recoverable, a down backend is not.
-      "dnf install -y amazon-cloudwatch-agent || true",
+      // missing telemetry is recoverable, a down backend is not. This is the ONLY dnf call in the boot,
+      // deliberately after the server is live: one transaction (tar + gzip are for logrotate's
+      // `compress`), with swap in place, and AWS's direct RPM download as the agent fallback that
+      // needs no repo metadata at all.
+      "dnf install -y tar gzip amazon-cloudwatch-agent || { curl -fsSL -o /tmp/cwa.rpm https://amazoncloudwatch-agent.s3.amazonaws.com/amazon_linux/arm64/latest/amazon-cloudwatch-agent.rpm && rpm -U /tmp/cwa.rpm; } || true",
       "mkdir -p /opt/aws/amazon-cloudwatch-agent/etc",
       "cat >/opt/aws/amazon-cloudwatch-agent/etc/vegify.json <<CWEOF",
       "{",
