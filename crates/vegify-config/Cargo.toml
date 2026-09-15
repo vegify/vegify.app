@@ -12,7 +12,7 @@ desktop = ["dep:dirs"]
 
 [dependencies]
 # Resolve the per-user OS app-data dir for the desktop's on-device DB in shipped builds.
-dirs = { version = "6", optional = true }
+dirs = { version = "7", optional = true }
 
 [lints]
 workspace = true
