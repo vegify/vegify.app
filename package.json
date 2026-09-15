@@ -10,9 +10,9 @@
     "db:seed": "pnpm --filter @vegify/db seed"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
+    "@biomejs/biome": "^2.5.13",
     "@tailwindcss/cli": "^4.3.3",
-    "knip": "^6.34.0",
+    "knip": "^6.35.1",
     "turbo": "^2.10.12"
   }
 }
