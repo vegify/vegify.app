@@ -838,6 +838,24 @@ jobs:
             sleep 10
           done
           echo "::error::server /health did not return 200 within ~10 min"; exit 1
+      # A failed /health poll means the box was replaced but never served, and the only place that
+      # failure shows is the instance console: user-data runs under cloud-init, and nothing reaches
+      # the /vegify/server log group until the server is up. 2026-09-15: three deploys died here and
+      # the cause (dnf OOM-killed on a new AL2023 AMI) was visible only in the console output.
+      - name: Dump the instance console output (health gate failed)
+        if: ${{ failure() }}
+        run: |
+          out="$GITHUB_WORKSPACE/cdk-out.json"
+          [ -f "$out" ] || { echo "no cdk-out.json (the deploy step itself failed) — nothing to dump"; exit 0; }
+          id=$(jq -r '.VegifyServer.InstanceId' "$out")
+          echo "::group::Console output of $id (last 200 lines)"
+          # assign-then-print: a pipe would hide the CLI's own failure
+          if text=$(aws ec2 get-console-output --instance-id "$id" --latest --output text 2>&1); then
+            printf '%s\n' "$text" | tail -n 200
+          else
+            echo "console output unavailable: $text"
+          fi
+          echo "::endgroup::"
 
   # ── Publish the clients in parallel, now that the server they depend on is live ──────────────────
   publish-web:

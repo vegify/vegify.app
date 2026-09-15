@@ -74,6 +74,19 @@ export class CiStack extends Stack {
       })
     )
 
+    // deploy.yml's deploy-server job dumps the instance's console output when the /health poll
+    // fails. 2026-09-15: three deploys died at that poll and the cause (user-data OOM-killed on a new
+    // AL2023 AMI) was visible ONLY in the console — nothing in the run could show it, and the
+    // /vegify/server log group gets nothing until the server is up. Read-only, instances in the
+    // deploy region only.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadInstanceConsoleOnFailedHealthGate",
+        actions: ["ec2:GetConsoleOutput"],
+        resources: [`arn:aws:ec2:${this.region}:${this.account}:instance/*`]
+      })
+    )
+
     new CfnOutput(this, "DeployRoleArn", { value: role.roleArn })
 
     // Release-signing role: assumed by release.yml's publish-desktop job (OIDC) to read the Apple
