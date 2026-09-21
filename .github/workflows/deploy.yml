@@ -233,7 +233,7 @@ jobs:
           key: aarch64-musl
           save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2.87.15
         with:
           tool: cross
       # sccache wraps the native cargo test below. The `cross build` step is NOT wrapped: cross compiles
@@ -394,7 +394,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
@@ -509,7 +509,7 @@ jobs:
       # The build compiles tauri::generate_context!, which needs apps/desktop/dist to exist — any
       # web build provides it (same ordering just check uses).
       - run: pnpm --filter desktop build
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
@@ -689,7 +689,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vegify/tokens build
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
@@ -812,7 +812,7 @@ jobs:
           name: web-bundle
           # Rooted at apps/web (the upload's LCA) → restores apps/web/.aws-lambda/ + apps/web/dist/client/.
           path: apps/web
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           # Constructed, not stored: the role name is fixed by ci-stack.ts, so the only GitHub-side
           # fact is the account id (a repository VARIABLE — role ARNs aren't secrets).
@@ -887,7 +887,7 @@ jobs:
         with:
           name: web-bundle
           path: apps/web
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-github-deploy
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -934,7 +934,7 @@ jobs:
         with:
           name: ios-ipa
           path: ${{ runner.temp }}
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
@@ -984,7 +984,7 @@ jobs:
         with:
           name: mas-pkg
           path: ${{ runner.temp }}
-      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/vegify-release-signing
           aws-region: us-west-1
