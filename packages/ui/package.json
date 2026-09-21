@@ -50,8 +50,8 @@
     "@base-ui/react": "^1.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.45.0",
-    "marked": "^18.0.12",
+    "lucide-react": "^1.47.0",
+    "marked": "^18.0.13",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0"
   },
