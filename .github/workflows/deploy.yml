@@ -233,7 +233,7 @@ jobs:
           key: aarch64-musl
           save-if: ${{ github.event_name == 'push' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2.87.15
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: cross
       # sccache wraps the native cargo test below. The `cross build` step is NOT wrapped: cross compiles
