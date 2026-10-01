@@ -31,6 +31,16 @@ const TO_UG: Record<string, number> = { g: 1e6, mg: 1e3, µg: 1, mcg: 1, ug: 1 }
 const toUg = (amt: number, unit: string) =>
   amt * (TO_UG[unit.toLowerCase()] ?? NaN)
 
+// IU measures activity, not mass, so the conversion is per nutrient. Only vitamin D's is exact
+// (1 IU = 0.025 µg, D2 and D3 alike). Vitamin A's depends on the source — 0.3 µg RAE per IU as
+// retinol, 0.05 as plant carotenoids — so an IU reading of it stays without a %DV rather than
+// guessing a factor that could be 6× off.
+const IU_TO_UG: Record<string, number> = { "vitamin d": 0.025 }
+const toUgFor = (key: string, amt: number, unit: string) => {
+  const iu = IU_TO_UG[key]
+  return unit.toLowerCase() === "iu" && iu != null ? amt * iu : toUg(amt, unit)
+}
+
 // FDA Daily Values (adults / children ≥4y). null = no established DV.
 const DV: Record<string, { dv: number; unit: string } | null> = {
   "total fat": { dv: 78, unit: "g" },
@@ -54,6 +64,7 @@ const DV: Record<string, { dv: number; unit: string } | null> = {
   selenium: { dv: 55, unit: "µg" },
   sodium: { dv: 2300, unit: "mg" },
   sulfur: null,
+  zinc: { dv: 11, unit: "mg" },
   "vitamin a": { dv: 900, unit: "µg" },
   "vitamin b6": { dv: 1.7, unit: "mg" },
   "vitamin b12": { dv: 2.4, unit: "µg" },
@@ -119,7 +130,8 @@ const MICRO_LEFT = [
   "potassium",
   "selenium",
   "sodium",
-  "sulfur"
+  "sulfur",
+  "zinc"
 ]
 const MICRO_RIGHT = [
   "vitamin a",
@@ -178,7 +190,7 @@ export function servingValues(
     const dv = DV[key]
     let pct: number | null = null
     if (dv) {
-      const base = toUg(amount, r.unit)
+      const base = toUgFor(key, amount, r.unit)
       const dvBase = toUg(dv.dv, dv.unit)
       if (Number.isFinite(base) && dvBase)
         pct = Math.round((base / dvBase) * 100)

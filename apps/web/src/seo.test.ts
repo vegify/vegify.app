@@ -74,6 +74,21 @@ describe("nutritionSentence", () => {
     )
   })
 
+  it("counts zinc and converts vitamin D from IU, but never guesses vitamin A's IU", () => {
+    // Zinc 3.1/11 mg = 28% DV; vitamin D 400 IU × 0.025 = 10/20 µg = 50% DV; vitamin A in IU
+    // has no single conversion (retinol vs. carotenoids), so it gets no %DV at all.
+    expect(
+      nutritionSentence({
+        caloriesPerServing: null,
+        readings: [
+          { name: "Zinc", amountPer100g: 3.1, unit: "mg" },
+          { name: "Vitamin D", amountPer100g: 400, unit: "IU" },
+          { name: "Vitamin A", amountPer100g: 5000, unit: "IU" }
+        ]
+      })
+    ).toBe("Per 100 g: richest in vitamin D (50% DV) and zinc (28% DV).")
+  })
+
   it("says nothing when there is nothing to say", () => {
     expect(nutritionSentence({ caloriesPerServing: null, readings: [] })).toBe(
       null
