@@ -17,9 +17,10 @@ export const Route = createFileRoute("/ingredients/$ingredientId/")({
     const hit = await resolveIngredientFn({ data: seg })
     if (hit) {
       redirectToCanonical(hit, { slug: seg }) // owned → user-scoped; renamed → current slug
-      await context.queryClient.ensureQueryData(
+      const ing = await context.queryClient.ensureQueryData(
         ingredientQuery(hit.ingredientId)
       )
+      if (!ing) throw notFound() // private to someone else → a real 404, not a 200 "not found" page
       return { ingredientId: hit.ingredientId }
     }
     // Not a slug → a legacy id. Load it; 301 to its canonical home when it has one.

@@ -105,11 +105,16 @@ const HANDLE_RE = /^\/[a-z0-9][a-z0-9-]*$/
 // profile; the leading segment must be a handle, not a static section (so /recipes/<id> is excluded
 // here — it's covered by inPublicSection, which also gates the /new and /edit write leaves).
 const PROFILE_RECIPE_RE = /^\/[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/
+// A user-owned ingredient's canonical URL: /<handle>/ingredients/<slug> (routes/$username.ingredients.$slug).
+// Public read, like the recipe — the backend still hides a private one from everyone but its owner.
+const PROFILE_INGREDIENT_RE =
+  /^\/[a-z0-9][a-z0-9-]*\/ingredients\/[a-z0-9][a-z0-9-]*$/
 // Reachable logged-out iff: an explicit public page, OR inside a public catalog section (read-only), OR a
-// "/<username>" profile, OR a "/<username>/<recipe-slug>" recipe — where the handle isn't a static route.
+// "/<username>" profile, OR a "/<username>/<recipe-slug>" recipe, OR a "/<username>/ingredients/<slug>"
+// ingredient — where the handle isn't a static route.
 export const isPublicPath = (pathname: string): boolean =>
   PUBLIC_PATHS.has(pathname) ||
   inPublicSection(pathname) ||
   (HANDLE_RE.test(pathname) && !STATIC_TOP_LEVEL.has(pathname)) ||
-  (PROFILE_RECIPE_RE.test(pathname) &&
+  ((PROFILE_RECIPE_RE.test(pathname) || PROFILE_INGREDIENT_RE.test(pathname)) &&
     !STATIC_TOP_LEVEL.has(`/${pathname.split("/")[1]}`))

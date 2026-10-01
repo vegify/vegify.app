@@ -52,6 +52,23 @@ describe("isPublicPath", () => {
     ).toBe(false)
   })
 
+  it('treats "/<username>/ingredients/<slug>" as a public, shareable ingredient', () => {
+    for (const p of [
+      "/simone/ingredients/coco-aminos",
+      "/dev-user/ingredients/walnuts",
+      "/x9/ingredients/vitamin-d3"
+    ]) {
+      expect(isPublicPath(p), `${p} should be a public ingredient`).toBe(true)
+    }
+    // …but never under a static section, and never a deeper leaf.
+    for (const p of [
+      "/settings/ingredients/foo",
+      "/simone/ingredients/coco-aminos/edit"
+    ]) {
+      expect(isPublicPath(p), `${p} should be gated`).toBe(false)
+    }
+  })
+
   it("serves the public catalog sections and their detail pages logged-out", () => {
     for (const p of [
       "/recipes",
