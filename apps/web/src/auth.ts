@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start"
 
-import { ApiError, api, SESSION_COOKIE } from "./api"
+import { ApiError, api, SESSION_COOKIE, sessionToken } from "./api"
 
 // Web auth surface: an opaque session token (minted by the standing Axum backend) in an httpOnly
 // cookie. The handlers proxy to vegify-server's /api/auth/* — the web holds no users/sessions store
@@ -38,6 +38,10 @@ async function setSessionCookie(token: string) {
 /** Server-side: the current user via the backend's whoami (Bearer = the session cookie), or null. */
 export const fetchUser = createServerFn({ method: "GET" }).handler(
   async (): Promise<AuthUser | null> => {
+    // No session cookie: a logged-out visitor, and the backend could only answer 401. Every SSR page
+    // asks this first, so skipping the round trip saves a third of a logged-out page's API calls —
+    // calls that all count against the backend's per-IP budget from the Lambda's shared egress IPs.
+    if (!(await sessionToken())) return null
     try {
       return await api<AuthUser>("/api/auth/session")
     } catch (e) {

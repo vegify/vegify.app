@@ -17,7 +17,7 @@ export { apiUrl }
 /** The current request's opaque session token (from the httpOnly cookie), or null. Server-only — the
  *  dynamic import keeps @tanstack/react-start/server out of the client module graph (api.ts is reachable
  *  from the client via auth.ts), matching how the route handlers gate their server-only imports. */
-async function sessionToken(): Promise<string | null> {
+export async function sessionToken(): Promise<string | null> {
   const { getCookie } = await import("@tanstack/react-start/server")
   return getCookie(SESSION_COOKIE) ?? null
 }
