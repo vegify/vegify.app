@@ -156,13 +156,13 @@ const fmt = (n: number) => {
   return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace(/\.0$/, "")
 }
 
-export function NutritionFacts({
-  data,
-  className
-}: {
+export type ServingValue = { amount: number; unit: string; pct: number | null }
+
+/** Per-serving amount and %DV for a row key ("total fat", "iron") or a raw reading name, exactly as
+ *  the panel computes them; null when the food has no such reading. */
+export function servingValues(
   data: NutritionFactsData
-  className?: string
-}) {
+): (key: string) => ServingValue | null {
   const scale = data.serving?.grams ? data.serving.grams / 100 : 1
   const lookup = new Map<string, NutritionReading>()
   for (const r of data.readings) {
@@ -171,23 +171,55 @@ export function NutritionFacts({
       if (aliases.includes(norm(r.name))) lookup.set(canon, r)
     }
   }
-
-  const valueFor = (key: string) => {
+  return (key) => {
     const r = lookup.get(key)
-    const perServing = r ? r.amountPer100g * scale : 0
-    const unit = r?.unit ?? DV[key]?.unit ?? "g"
+    if (!r) return null
+    const amount = r.amountPer100g * scale
     const dv = DV[key]
     let pct: number | null = null
-    if (dv && r) {
-      const base = toUg(perServing, r.unit)
+    if (dv) {
+      const base = toUg(amount, r.unit)
       const dvBase = toUg(dv.dv, dv.unit)
       if (Number.isFinite(base) && dvBase)
         pct = Math.round((base / dvBase) * 100)
-    } else if (dv && !r) {
-      pct = 0
     }
-    return { amount: perServing, unit, pct }
+    return { amount, unit: r.unit, pct }
   }
+}
+
+/** The vitamins and minerals a food is richest in, by %DV per serving, highest first — the panel's
+ *  own numbers, so a summary elsewhere (a page's meta description) can't disagree with it. Sodium
+ *  and chloride are left out: a high %DV there is a warning, not a selling point. */
+export function topMicronutrients(
+  data: NutritionFactsData,
+  { limit = 3, minPct = 10 }: { limit?: number; minPct?: number } = {}
+): { label: string; pct: number }[] {
+  const servingValue = servingValues(data)
+  return [...MICRO_LEFT, ...MICRO_RIGHT]
+    .filter((k) => k !== "sodium" && k !== "chloride")
+    .flatMap((k) => {
+      const pct = servingValue(k)?.pct
+      return pct != null && pct >= minPct ? [{ label: micLabel(k), pct }] : []
+    })
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, limit)
+}
+
+export function NutritionFacts({
+  data,
+  className
+}: {
+  data: NutritionFactsData
+  className?: string
+}) {
+  const servingValue = servingValues(data)
+  // A row the food has no reading for still renders: 0, in the row's DV unit, at 0% when it has a DV.
+  const valueFor = (key: string): ServingValue =>
+    servingValue(key) ?? {
+      amount: 0,
+      unit: DV[key]?.unit ?? "g",
+      pct: DV[key] ? 0 : null
+    }
 
   const cal = data.caloriesPerServing ?? 0
   const serving = data.serving

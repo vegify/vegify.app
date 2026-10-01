@@ -1,8 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { LegalPage } from "../legal"
+import { pageHead, siteOrigin } from "../seo"
 
-export const Route = createFileRoute("/privacy")({ component: PrivacyPage })
+export const Route = createFileRoute("/privacy")({
+  head: async () =>
+    pageHead({
+      origin: await siteOrigin(),
+      path: "/privacy",
+      title: "Privacy Policy",
+      description:
+        "What Vegify collects and why: the minimum needed to run the app. We don't sell your data."
+    }),
+  component: PrivacyPage
+})
 
 function PrivacyPage() {
   return (

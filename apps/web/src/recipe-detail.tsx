@@ -5,7 +5,10 @@ import {
 } from "@tanstack/react-query"
 import { useRouteContext, useRouter } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
-import type { NutritionFactsData } from "@vegify/ui/nutrition-facts"
+import {
+  type NutritionFactsData,
+  servingValues
+} from "@vegify/ui/nutrition-facts"
 import type { IngredientSearchItem } from "@vegify/ui/recipe-form"
 import {
   composeRecipeInput,
@@ -22,6 +25,16 @@ import { useEditHistory } from "@vegify/ui/use-edit-history"
 
 import { apiUrl } from "./api"
 import { LinkAdapter } from "./link"
+import {
+  composeDescription,
+  counted,
+  directionSteps,
+  nutritionSentence,
+  pageHead,
+  plausibleNutrition,
+  round1,
+  sentence
+} from "./seo"
 import { uploadImage } from "./upload"
 
 // The recipe detail — SHARED by the canonical `/<username>/<slug>` route (renders) and the legacy
@@ -178,6 +191,78 @@ export const recipeQuery = (id: string) =>
     queryKey: ["recipe", id],
     queryFn: () => getRecipe({ data: id })
   })
+
+/** The recipe page's head: its name, a description built from its own Nutrition Facts, and Recipe
+ *  JSON-LD (ingredients, directions, yield, per-serving nutrition) for search and answer engines. */
+export function recipeHead(payload: RecipeDetailPayload, origin: string) {
+  const { vm, canonical } = payload
+  const path = canonical
+    ? `/${canonical.username}/${canonical.slug}`
+    : `/recipes/${vm.id}`
+  const n = vm.nutrition
+  const value = servingValues(n)
+  // Amounts that round to 0 are left out: with incomplete ingredient data (a flour saved without its
+  // fat) a 0 usually means "not recorded", and structured data shouldn't assert it.
+  const amount = (key: string) => {
+    const v = value(key)
+    const shown = v ? round1(v.amount) : "0"
+    return v && shown !== "0" ? `${shown} ${v.unit}` : undefined
+  }
+  const steps = directionSteps(vm.directions)
+  return pageHead({
+    origin,
+    path,
+    title: vm.name,
+    description: composeDescription([
+      vm.subtitle && sentence(vm.subtitle),
+      nutritionSentence(n),
+      `A recipe${vm.creator ? ` by @${vm.creator}` : ""} with ${counted(vm.items.length, "ingredient")}.`
+    ]),
+    image: vm.photoUrl,
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "Recipe",
+      name: vm.name,
+      url: `${origin}${path}`,
+      description: vm.subtitle ?? undefined,
+      image: vm.photoUrl ? [vm.photoUrl] : undefined,
+      author: vm.creator
+        ? {
+            "@type": "Person",
+            name: vm.creator,
+            url: `${origin}/${vm.creator}`
+          }
+        : undefined,
+      recipeIngredient: vm.items.map((item) => item.label),
+      recipeInstructions:
+        steps.length > 1
+          ? steps.map((text) => ({ "@type": "HowToStep", text }))
+          : steps[0],
+      recipeYield: n.servingsPerBatch
+        ? `${round1(n.servingsPerBatch)} servings`
+        : undefined,
+      nutrition: plausibleNutrition(n)
+        ? {
+            "@type": "NutritionInformation",
+            servingSize: n.serving?.grams
+              ? `${round1(n.serving.grams)} g`
+              : "100 g",
+            calories:
+              n.caloriesPerServing != null
+                ? `${Math.round(n.caloriesPerServing)} calories`
+                : undefined,
+            proteinContent: amount("total protein"),
+            fatContent: amount("total fat"),
+            saturatedFatContent: amount("saturated"),
+            carbohydrateContent: amount("total carbohydrates"),
+            fiberContent: amount("total fiber"),
+            sodiumContent: amount("sodium"),
+            cholesterolContent: amount("cholesterol")
+          }
+        : undefined
+    }
+  })
+}
 
 /** The detail page, keyed by recipe id (the slug route resolves the id before rendering this). */
 export function RecipeDetailPage({ recipeId }: { recipeId: string }) {

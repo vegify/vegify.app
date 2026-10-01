@@ -22,6 +22,12 @@ import { useEditHistory } from "@vegify/ui/use-edit-history"
 
 import type { IngredientEditData, IngredientSlugHit } from "./content"
 import { LinkAdapter } from "./link"
+import {
+  composeDescription,
+  nutritionSentence,
+  pageHead,
+  sentence
+} from "./seo"
 
 // The detail payload: the read VM plus, for an owner, the editable state the inline editor patches.
 type IngredientDetailPayload = {
@@ -29,6 +35,7 @@ type IngredientDetailPayload = {
   edit: IngredientEditData | null
   canonical: string | null // the current slug
   creator: string | null // owner handle; canonical URL is /<creator>/ingredients/<slug> when set
+  indexable: boolean // public and not deleted — unlisted/deleted ones are reachable but not listed
 }
 
 export const getIngredient = createServerFn({ method: "GET" })
@@ -73,7 +80,8 @@ export const getIngredient = createServerFn({ method: "GET" })
       vm,
       edit: ing.canEdit ? ing : null,
       canonical: ing.slug,
-      creator: ing.creator
+      creator: ing.creator,
+      indexable: ing.visibility === "public" && !ing.deleted
     }
   })
 
@@ -117,6 +125,34 @@ export const ingredientQuery = (id: string) =>
     queryKey: ["ingredient", id],
     queryFn: () => getIngredient({ data: id })
   })
+
+/** The ingredient page's head for both canonical routes: its name, a description from its own
+ *  Nutrition Facts and provenance, and noindex when it is unlisted or deleted. */
+export function ingredientHead(
+  payload: IngredientDetailPayload,
+  origin: string
+) {
+  const { vm, canonical, creator } = payload
+  const path =
+    creator && canonical
+      ? `/${creator}/ingredients/${canonical}`
+      : `/ingredients/${canonical ?? vm.id}`
+  return pageHead({
+    origin,
+    path,
+    title: `${vm.name}: nutrition facts`,
+    description: composeDescription([
+      vm.description && sentence(vm.description),
+      nutritionSentence(vm.nutrition),
+      vm.source
+        ? `Data: ${vm.source}.`
+        : creator
+          ? `Added by @${creator}.`
+          : null
+    ]),
+    noindex: !payload.indexable
+  })
+}
 
 /** The canonical redirect for a resolved slug hit: owned rows live under their creator, the catalog
  * at the global path. Throws when the requested location isn't the canonical one. */

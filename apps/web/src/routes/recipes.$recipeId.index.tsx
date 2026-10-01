@@ -1,6 +1,7 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router"
 
-import { RecipeDetailPage, recipeQuery } from "../recipe-detail"
+import { RecipeDetailPage, recipeHead, recipeQuery } from "../recipe-detail"
+import { siteOrigin } from "../seo"
 
 // Legacy id URL. The canonical recipe URL is /<username>/<slug> (docs/usernames.md); this 301s there
 // when the recipe has an owner handle + slug, and only renders in place as a fallback (ownerless or
@@ -21,6 +22,12 @@ export const Route = createFileRoute("/recipes/$recipeId/")({
         statusCode: 301 // permanent — the id URL is a legacy alias of the canonical
       })
     }
+  },
+  head: async ({ params, match }) => {
+    const payload = match.context.queryClient.getQueryData(
+      recipeQuery(params.recipeId).queryKey
+    )
+    return payload ? recipeHead(payload, await siteOrigin()) : {}
   },
   component: RecipePage
 })

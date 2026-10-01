@@ -10,9 +10,12 @@ export const SORT_OPTIONS: readonly { value: Sort; label: string }[] = [
   { value: "name_desc", label: "Z → A" }
 ]
 
+/** The sort a list opens with — the web keeps it out of the URL, so the bare list path is canonical. */
+export const DEFAULT_SORT: Sort = "newest"
+
 /** Coerce an unknown URL/search value to a valid Sort, defaulting to newest. */
 export const parseSort = (v: unknown): Sort =>
-  SORT_OPTIONS.some((o) => o.value === v) ? (v as Sort) : "newest"
+  SORT_OPTIONS.some((o) => o.value === v) ? (v as Sort) : DEFAULT_SORT
 
 /** Catalog page size for infinite scroll — one fetch per scroll into view. */
 export const PAGE_SIZE = 24

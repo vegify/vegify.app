@@ -1,8 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { LegalPage } from "../legal"
+import { pageHead, siteOrigin } from "../seo"
 
-export const Route = createFileRoute("/terms")({ component: TermsPage })
+export const Route = createFileRoute("/terms")({
+  head: async () =>
+    pageHead({
+      origin: await siteOrigin(),
+      path: "/terms",
+      title: "Terms of Service",
+      description:
+        "The terms for using Vegify, a community for sharing plant-based recipes and the micronutrition behind them."
+    }),
+  component: TermsPage
+})
 
 function TermsPage() {
   return (

@@ -4,6 +4,7 @@ import { createServerFn } from "@tanstack/react-start"
 import { BlogPostView } from "@vegify/ui/blog"
 
 import { LinkAdapter } from "../link"
+import { pageHead, siteOrigin } from "../seo"
 
 // A single public blog post, fetched from the DB-backed blog API. The loader loads the post (404 on a
 // miss) and returns its summary for the per-post head() meta; the full block body is read from the
@@ -34,29 +35,22 @@ export const Route = createFileRoute("/blog/$slug")({
       datePublished: post.datePublished
     }
   },
-  head: ({ loaderData }) => {
-    if (!loaderData) return {}
-    const url = `https://vegify.app/blog/${loaderData.slug}`
-    return {
-      meta: [
-        { title: `${loaderData.title} | Vegify` },
-        { name: "description", content: loaderData.description },
-        { property: "og:type", content: "article" },
-        { property: "og:site_name", content: "Vegify" },
-        { property: "og:title", content: loaderData.title },
-        { property: "og:description", content: loaderData.description },
-        { property: "og:url", content: url },
-        {
-          property: "article:published_time",
-          content: loaderData.datePublished
-        },
-        { name: "twitter:card", content: "summary" },
-        { name: "twitter:title", content: loaderData.title },
-        { name: "twitter:description", content: loaderData.description }
-      ],
-      links: [{ rel: "canonical", href: url }]
-    }
-  },
+  head: async ({ loaderData }) =>
+    loaderData
+      ? pageHead({
+          origin: await siteOrigin(),
+          path: `/blog/${loaderData.slug}`,
+          title: loaderData.title,
+          description: loaderData.description,
+          type: "article",
+          meta: [
+            {
+              property: "article:published_time",
+              content: loaderData.datePublished
+            }
+          ]
+        })
+      : {},
   component: BlogPostPage
 })
 
