@@ -3,7 +3,7 @@ import {
   useQueryClient,
   useSuspenseQuery
 } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, notFound } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import {
   ProfileView,
@@ -72,8 +72,14 @@ const blockUserFn = createServerFn({ method: "POST" })
   })
 
 export const Route = createFileRoute("/$username/")({
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(profileQuery(params.username)),
+  loader: async ({ context, params }) => {
+    const profile = await context.queryClient.ensureQueryData(
+      profileQuery(params.username)
+    )
+    // An unclaimed handle is a real 404 (notFoundComponent below keeps the friendly view).
+    if (!profile) throw notFound()
+    return profile
+  },
   head: async ({ loaderData: profile, params }) => {
     const origin = await siteOrigin()
     const path = `/${params.username}`
@@ -116,7 +122,8 @@ export const Route = createFileRoute("/$username/")({
       }
     })
   },
-  component: ProfilePage
+  component: ProfilePage,
+  notFoundComponent: ProfileNotFound
 })
 
 function ProfilePage() {
@@ -147,6 +154,18 @@ function ProfilePage() {
             }
           : undefined
       }
+    />
+  )
+}
+
+// The same "no one goes by that handle" view the profile screen shows, now served with a 404.
+function ProfileNotFound() {
+  const { username } = Route.useParams()
+  return (
+    <ProfileView
+      username={username}
+      profile={null}
+      LinkComponent={LinkAdapter}
     />
   )
 }
