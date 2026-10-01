@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { LegalPage } from "../legal"
+import { pageHead, siteOrigin } from "../seo"
 
 // The data-sources / attribution page (P2.2). This is a LICENCE OBLIGATION, not a courtesy page:
 // Open Food Facts data is ODbL, whose terms — restated in OFF's own terms of use — require anyone
@@ -12,7 +13,17 @@ import { LegalPage } from "../legal"
 // USDA FoodData Central is public domain (CC0) and imposes no such condition — it is credited here
 // anyway, because provenance is the product (P2.5's trust layer builds on exactly this).
 
-export const Route = createFileRoute("/sources")({ component: SourcesPage })
+export const Route = createFileRoute("/sources")({
+  head: async () =>
+    pageHead({
+      origin: await siteOrigin(),
+      path: "/sources",
+      title: "Data sources & licenses",
+      description:
+        "Where Vegify's nutrition data comes from (USDA FoodData Central, Open Food Facts, and the dietary reference intakes) and the licenses it is used under."
+    }),
+  component: SourcesPage
+})
 
 function SourcesPage() {
   return (

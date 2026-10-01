@@ -1,7 +1,8 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 
-import { RecipeDetailPage, recipeQuery } from "../recipe-detail"
+import { RecipeDetailPage, recipeHead, recipeQuery } from "../recipe-detail"
+import { siteOrigin } from "../seo"
 
 // The canonical public recipe URL: /<username>/<recipe-slug> (docs/usernames.md — "the real SEO/GEO
 // engine"). Resolve the slug → recipe id (via slug_history when it's an old slug → 301 to canonical),
@@ -29,6 +30,14 @@ export const Route = createFileRoute("/$username/$recipeSlug")({
     }
     await context.queryClient.ensureQueryData(recipeQuery(hit.recipeId))
     return { recipeId: hit.recipeId }
+  },
+  head: async ({ loaderData, match }) => {
+    const payload =
+      loaderData &&
+      match.context.queryClient.getQueryData(
+        recipeQuery(loaderData.recipeId).queryKey
+      )
+    return payload ? recipeHead(payload, await siteOrigin()) : {}
   },
   component: RecipeSlugPage
 })

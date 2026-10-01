@@ -4,6 +4,7 @@ import { createServerFn } from "@tanstack/react-start"
 import { buttonClasses } from "@vegify/ui/button"
 
 import { LinkAdapter } from "../link"
+import { pageHead, siteOrigin } from "../seo"
 
 // The public GitHub repo (same value the deploy config resolves); the releases API is unauthenticated
 // for public repos. The macOS build is the universal .dmg tauri-action attaches to each release.
@@ -50,6 +51,14 @@ const latestQuery = queryOptions({
 
 export const Route = createFileRoute("/download")({
   loader: ({ context }) => context.queryClient.ensureQueryData(latestQuery),
+  head: async () =>
+    pageHead({
+      origin: await siteOrigin(),
+      path: "/download",
+      title: "Download Vegify for macOS",
+      description:
+        "Vegify for desktop: the native macOS app, local-first and offline-capable, with realtime sync. A universal build for Apple Silicon and Intel."
+    }),
   component: DownloadPage
 })
 

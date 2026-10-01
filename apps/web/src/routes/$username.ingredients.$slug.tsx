@@ -2,10 +2,12 @@ import { createFileRoute, notFound } from "@tanstack/react-router"
 
 import {
   IngredientDetailPage,
+  ingredientHead,
   ingredientQuery,
   redirectToCanonical,
   resolveIngredientFn
 } from "../ingredient-detail"
+import { siteOrigin } from "../seo"
 
 // The canonical URL for a USER-OWNED ingredient: /<username>/ingredients/<slug> — created or imported
 // by that user, browsable under their profile (docs/usernames.md's model extended to ingredients).
@@ -22,6 +24,14 @@ export const Route = createFileRoute("/$username/ingredients/$slug")({
     )
     if (!ing) throw notFound()
     return { ingredientId: hit.ingredientId }
+  },
+  head: async ({ loaderData, match }) => {
+    const payload =
+      loaderData &&
+      match.context.queryClient.getQueryData(
+        ingredientQuery(loaderData.ingredientId).queryKey
+      )
+    return payload ? ingredientHead(payload, await siteOrigin()) : {}
   },
   component: UserIngredientPage
 })

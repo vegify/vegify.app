@@ -2,10 +2,12 @@ import { createFileRoute, notFound, redirect } from "@tanstack/react-router"
 
 import {
   IngredientDetailPage,
+  ingredientHead,
   ingredientQuery,
   redirectToCanonical,
   resolveIngredientFn
 } from "../ingredient-detail"
+import { siteOrigin } from "../seo"
 
 // The `/ingredients/<segment>` segment is EITHER a slug or a legacy ULID — unlike recipes, both share
 // this URL shape. This is the COMMUNAL CATALOG's canonical home; a slug that resolves to a USER-OWNED
@@ -41,6 +43,14 @@ export const Route = createFileRoute("/ingredients/$ingredientId/")({
       })
     }
     return { ingredientId: seg } // fallback: no slug yet, render by id
+  },
+  head: async ({ loaderData, match }) => {
+    const payload =
+      loaderData &&
+      match.context.queryClient.getQueryData(
+        ingredientQuery(loaderData.ingredientId).queryKey
+      )
+    return payload ? ingredientHead(payload, await siteOrigin()) : {}
   },
   component: IngredientPage
 })

@@ -2,12 +2,18 @@ import {
   infiniteQueryOptions,
   useSuspenseInfiniteQuery
 } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, stripSearchParams } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
-import { PAGE_SIZE, parseSort, type Sort } from "@vegify/ui/catalog"
+import {
+  DEFAULT_SORT,
+  PAGE_SIZE,
+  parseSort,
+  type Sort
+} from "@vegify/ui/catalog"
 import { type IngredientListItem, IngredientListView } from "@vegify/ui/screens"
 
 import { LinkAdapter } from "../link"
+import { pageHead, siteOrigin } from "../seo"
 
 type Cursor = { id: string; name: string }
 
@@ -39,9 +45,19 @@ export const Route = createFileRoute("/ingredients/")({
   validateSearch: (s: { sort?: string }): { sort: Sort } => ({
     sort: parseSort(s.sort)
   }),
+  // The default sort stays out of the URL, so /ingredients itself is the canonical page (see /recipes).
+  search: { middlewares: [stripSearchParams({ sort: DEFAULT_SORT })] },
   loaderDeps: ({ search }) => ({ sort: search.sort }),
   loader: ({ context, deps }) =>
     context.queryClient.ensureInfiniteQueryData(ingredientsQuery(deps.sort)),
+  head: async () =>
+    pageHead({
+      origin: await siteOrigin(),
+      path: "/ingredients",
+      title: "Ingredients",
+      description:
+        "Nutrition facts for plant foods: calories, macros, and the full vitamin and mineral profile, from USDA FoodData Central, Open Food Facts, and Vegify cooks."
+    }),
   component: IngredientsPage
 })
 

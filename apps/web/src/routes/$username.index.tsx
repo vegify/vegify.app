@@ -12,6 +12,13 @@ import {
 } from "@vegify/ui/screens"
 
 import { LinkAdapter } from "../link"
+import {
+  composeDescription,
+  counted,
+  listOf,
+  pageHead,
+  siteOrigin
+} from "../seo"
 
 // Root-level dynamic handle: /<username>. Static routes (/recipes, /settings, …) outrank this, and
 // the backend reserves those segments (handles.rs), so a handle can never shadow a real route. The
@@ -67,6 +74,48 @@ const blockUserFn = createServerFn({ method: "POST" })
 export const Route = createFileRoute("/$username/")({
   loader: ({ context, params }) =>
     context.queryClient.ensureQueryData(profileQuery(params.username)),
+  head: async ({ loaderData: profile, params }) => {
+    const origin = await siteOrigin()
+    const path = `/${params.username}`
+    if (!profile)
+      return pageHead({
+        origin,
+        path,
+        title: "Profile not found",
+        description: "No Vegify account uses this handle.",
+        noindex: true
+      })
+    const who = `${profile.name} (@${profile.username})`
+    const has = [
+      profile.recipes.length && counted(profile.recipes.length, "recipe"),
+      profile.ingredients.length &&
+        counted(profile.ingredients.length, "ingredient")
+    ].filter((s): s is string => !!s)
+    return pageHead({
+      origin,
+      path,
+      title: who,
+      type: "profile",
+      description: composeDescription([
+        has.length
+          ? `${who} on Vegify: ${listOf(has)}, each with its vitamins and minerals worked out.`
+          : `${who} on Vegify.`
+      ]),
+      image: profile.avatarUrl,
+      jsonLd: {
+        "@context": "https://schema.org",
+        "@type": "ProfilePage",
+        url: `${origin}${path}`,
+        mainEntity: {
+          "@type": "Person",
+          name: profile.name,
+          alternateName: `@${profile.username}`,
+          url: `${origin}${path}`,
+          image: profile.avatarUrl ?? undefined
+        }
+      }
+    })
+  },
   component: ProfilePage
 })
 
