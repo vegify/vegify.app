@@ -63,9 +63,14 @@ permissions: {}
 
 # One deploy at a time, queued not cancelled — cascades against a shared account must serialize
 # (this also removes the workflow-vs-workflow race class the old two-workflow layout had).
+# `queue: max` keeps EVERY waiting run (up to 100, first in first out). The default keeps only one
+# pending run and cancels the one before it, so merges landing faster than deploys drain lost their
+# middle runs — and each run path-filters on its own diff, so a cancelled server or desktop change
+# merged without ever shipping. Now every merge deploys, in merge order.
 concurrency:
   group: deploy
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # ── Cut (or resolve) the release BEFORE anything builds ──────────────────────────────────────────
