@@ -16,7 +16,11 @@ export const Route = createFileRoute("/$username/ingredients/$slug")({
     const hit = await resolveIngredientFn({ data: params.slug })
     if (!hit) throw notFound()
     redirectToCanonical(hit, { username: params.username, slug: params.slug })
-    await context.queryClient.ensureQueryData(ingredientQuery(hit.ingredientId))
+    // A private ingredient resolves by slug but reads as null for anyone but its owner → a real 404.
+    const ing = await context.queryClient.ensureQueryData(
+      ingredientQuery(hit.ingredientId)
+    )
+    if (!ing) throw notFound()
     return { ingredientId: hit.ingredientId }
   },
   component: UserIngredientPage
