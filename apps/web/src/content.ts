@@ -73,14 +73,16 @@ export const mediaUrl = (key?: string | null): string | null =>
   key ? `${apiUrl()}/${key}` : null
 
 // Keyset page query for the catalog reads: the sort, a cursor (the last card's id; plus its name for
-// the name sorts), and a page limit. Empty when nothing is set, so an un-paginated call still fetches
-// the full (server-capped) list. Param names mirror the server's `Page` (camelCase) 1:1.
+// the name sorts), a page limit, and an optional initial letter. Empty when nothing is set, so an
+// un-paginated call still fetches the full (server-capped) list. Param names mirror the server's
+// `Page` (camelCase) 1:1.
 export type SortOrder = "newest" | "oldest" | "name_asc" | "name_desc"
 export type PageQuery = {
   sort?: SortOrder
   cursor?: string
   cursorName?: string
   limit?: number
+  initial?: string // one letter (case-insensitive), or "0" for names that start with anything else
 }
 const pageParams = (page: PageQuery = {}) => {
   const p = new URLSearchParams()
@@ -88,6 +90,7 @@ const pageParams = (page: PageQuery = {}) => {
   if (page.cursor) p.set("cursor", page.cursor)
   if (page.cursorName) p.set("cursorName", page.cursorName)
   if (page.limit != null) p.set("limit", String(page.limit))
+  if (page.initial) p.set("initial", page.initial)
   const s = p.toString()
   return s ? `?${s}` : ""
 }

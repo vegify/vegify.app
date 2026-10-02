@@ -947,6 +947,11 @@ export type Page = {
 	cursorName?: string | null,
 	/**  Page size; None = unbounded. */
 	limit?: number | null,
+	/**
+	 *  Only names starting with this letter, case-insensitive; "0" = names that don't start with a
+	 *  letter. None = every name. Backs the web's crawlable A–Z index of the catalog.
+	 */
+	initial?: string | null,
 };
 
 /**  The other party, as the conversation list + thread header shows them. */

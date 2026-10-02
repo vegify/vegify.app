@@ -811,6 +811,7 @@ fn list_recipes_honors_each_sort() {
             cursor: Some(p1[1].id.clone()),
             cursor_name: Some(p1[1].name.clone()),
             limit: Some(2),
+            initial: None,
         },
     )
     .expect("az page 2");

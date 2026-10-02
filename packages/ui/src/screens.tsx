@@ -809,7 +809,9 @@ export function IngredientListView({
   onSortChange,
   onLoadMore,
   hasMore,
-  isLoadingMore
+  isLoadingMore,
+  initial,
+  initialHref
 }: {
   ingredients: IngredientListItem[]
   /** Whether the viewer can add ingredients (signed in). Omitted/false hides the "New ingredient" action. */
@@ -822,6 +824,10 @@ export function IngredientListView({
   onLoadMore?: () => void
   hasMore?: boolean
   isLoadingMore?: boolean
+  /** The letter this list is the index of ("a"–"z", or "0" for anything else); omitted = everything. */
+  initial?: string
+  /** Where each letter of the A–Z bar links (no argument = the full list). Omitted hides the bar. */
+  initialHref?: (initial?: string) => string
 }) {
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -830,7 +836,10 @@ export function IngredientListView({
           <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
             Ingredients
           </h1>
-          <p className="text-gray-500">{ingredients.length} ingredients</p>
+          <p className="text-gray-500">
+            {ingredients.length} ingredients
+            {initial ? ` starting with ${initialLabel(initial)}` : null}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {onSortChange ? (
@@ -846,8 +855,19 @@ export function IngredientListView({
           ) : null}
         </div>
       </div>
+      {initialHref ? (
+        <InitialBar
+          current={initial}
+          href={initialHref}
+          LinkComponent={LinkComponent}
+        />
+      ) : null}
       {ingredients.length === 0 ? (
-        <p className="text-muted-foreground">No ingredients yet — add one.</p>
+        <p className="text-muted-foreground">
+          {initial
+            ? `No ingredients start with ${initialLabel(initial)}.`
+            : "No ingredients yet — add one."}
+        </p>
       ) : (
         <div className="flex flex-col gap-4">
           {ingredients.map((i) => (
@@ -881,6 +901,45 @@ export function IngredientListView({
         </div>
       )}
     </div>
+  )
+}
+
+const INITIALS = [..."abcdefghijklmnopqrstuvwxyz", "0"]
+const initialLabel = (initial: string) =>
+  initial === "0" ? "#" : initial.toUpperCase()
+
+/** All, A–Z, and # — every ingredient is one letter away, which also gives crawlers a path to the
+ *  whole catalog (the infinite list only ever renders its first page to them). */
+function InitialBar({
+  current,
+  href,
+  LinkComponent
+}: {
+  current?: string
+  href: (initial?: string) => string
+  LinkComponent: NavLink
+}) {
+  const item = (key: string, label: string, to: string, active: boolean) => (
+    <LinkComponent
+      key={key}
+      href={to}
+      exact
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "min-w-8 rounded-md px-2 py-1 text-center font-medium text-sm transition",
+        active
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+    >
+      {label}
+    </LinkComponent>
+  )
+  return (
+    <nav aria-label="Browse by letter" className="mb-6 flex flex-wrap gap-1">
+      {item("all", "All", href(), !current)}
+      {INITIALS.map((l) => item(l, initialLabel(l), href(l), l === current))}
+    </nav>
   )
 }
 
