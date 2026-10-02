@@ -2,8 +2,8 @@ name: deploy
 
 # Production ships on push to main (stormdeck model, adopted 2026-07-04 — replaces the
 # release-please → auto-merge train; see docs/deploys.md). Nothing lands on main but human merges:
-# releases are SIDE-EFFECTS, not causes — the `release` job tags vX.Y.Z (patch by default) and cuts
-# the GitHub Release IN-JOB as a DRAFT, with GITHUB_TOKEN (whose pushes deliberately trigger
+# releases are SIDE-EFFECTS, not causes — the `release` job tags vX.Y.Z (the bump read from the
+# merge subject, see below) and cuts the GitHub Release IN-JOB as a DRAFT, with GITHUB_TOKEN (whose pushes deliberately trigger
 # nothing). ARTIFACTS ARE BUILT AT BUILD TIME: build-desktop runs tauri-action (signed universal
 # .dmg → attached to the draft), build-ios archives + exports the App Store .ipa, and build-mas
 # builds the sandboxed Mac App Store .pkg (both staged as workflow artifacts — TestFlight has no
@@ -16,10 +16,16 @@ name: deploy
 #       all builds green ──▶ deploy-server (path-gated) ──(/health 200)──▶
 #       publish-web (path-gated) ∥ publish-desktop (flip draft) ∥ publish-ios (→ TestFlight) ∥ publish-mas (→ TestFlight macOS)
 #
-# Human levers: `[skip release]` in the merge subject (= the squash-merged PR title) ships
-# server/web without cutting a version (and thus without a desktop artifact); `just release
-# minor|major` dispatches a bigger bump from main HEAD; `just redeploy vX.Y.Z` re-runs an existing
-# tag (the recovery path). Docs-only merges never get here (workflow-level paths filter).
+# THE BUMP FOLLOWS THE MERGE SUBJECT (= the squash-merged PR title) by its Conventional Commits
+# prefix — .scripts/bump-level.sh: `feat:` → minor; a `!` after the type or scope (`feat!:`,
+# `fix(api)!:`) → major; every other type (fix, perf, build, ci, chore …) and any subject with no
+# such prefix → patch, so an unlabelled merge never over-bumps. Only the subject counts (no
+# `BREAKING CHANGE:` footers — squash bodies quote dependabot's upstream changelogs).
+# Human levers: `[skip release]` in the merge subject ships server/web without cutting a version
+# (and thus without a desktop artifact); `just release minor|major` dispatches an explicit bump
+# from main HEAD that overrides the subject (the milestone lever; v1.0.0 was cut this way after a
+# [skip release] merge); `just redeploy vX.Y.Z` re-runs an existing tag (the recovery path).
+# Docs-only merges never get here (workflow-level paths filter).
 #
 # REDEPLOY CAVEAT: a redeploy builds the TAG's tree under MAIN's workflow. Redeploying a tag cut
 # before the sdk-scoped signing settings were committed (v1.0.0–v1.0.3) therefore fails at the
@@ -52,9 +58,8 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump for a fresh release from HEAD (patch|minor|major)"
+        description: "Explicit bump for a fresh release from HEAD (patch|minor|major); empty = read it from HEAD's merge subject, as a push does"
         required: false
-        default: patch
       tag:
         description: "OR: existing tag to (re)deploy, e.g. v0.18.2 — overrides bump"
         required: false
@@ -136,16 +141,23 @@ jobs:
             exit 0
           fi
 
-          # The normal path: cut the next version (patch per shipping merge; dispatch may bump higher),
-          # tag with GITHUB_TOKEN (triggers nothing), and create the Release with generated notes
-          # (grouped by PR label via .github/release.yml; PR titles are the changelog). Fresh versions
-          # are only ever cut from main — a dispatch pointed at another ref must not tag it.
+          # The normal path: cut the next version — the bump is the merge subject's conventional-commit
+          # type (.scripts/bump-level.sh: feat → minor, `!` → major, anything else → patch) unless a
+          # dispatch names one — tag with GITHUB_TOKEN (triggers nothing), and create the Release with
+          # generated notes (grouped by PR label via .github/release.yml; PR titles are the changelog).
+          # Fresh versions are only ever cut from main — a dispatch pointed at another ref must not tag it.
           if [ "$GITHUB_REF_NAME" != "main" ]; then
             echo "::error::refusing to cut a release from '$GITHUB_REF_NAME' — fresh versions come from main (redeploys use the tag input)"
             exit 1
           fi
-          next=$(.scripts/next-version.sh "${{ github.event.inputs.bump || 'patch' }}")
-          echo "cutting $next"
+          level="${{ github.event.inputs.bump }}"
+          if [ -n "$level" ]; then
+            echo "$level bump (dispatch input) — overrides the merge subject"
+          else
+            level=$(.scripts/bump-level.sh "$subject")
+          fi
+          next=$(.scripts/next-version.sh "$level")
+          echo "cutting $next ($level from: $subject)"
           # Annotated tags need a committer identity, which runners don't have (exit 128 without it).
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
