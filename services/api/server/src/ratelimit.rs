@@ -9,11 +9,14 @@
 //! request BODY (the login email), which middleware can't see before deserialization.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
+use axum::http::HeaderMap;
+use subtle::ConstantTimeEq;
 
 /// A named budget: at most `max` hits per fixed `window`. `name` namespaces the key so the same
 /// string ("1.2.3.4", an email) can carry independent budgets for different endpoints.
@@ -82,8 +85,9 @@ pub const BRANDED_LOOKUP_IP: Limit = Limit {
 /// A GENERAL per-IP budget across EVERY endpoint (applied as middleware) — defense-in-depth beyond
 /// the auth-specific limits above. It bounds any single source's load on the nano and slows naive
 /// scrapers of the public read endpoints (content pull, search, profiles), while staying generous
-/// enough that legit native-app traffic and the SSR Lambda's IP-aggregated reads never brush it
-/// (600/min = 10 req/s sustained per IP). Distributed scraping is an edge-WAF concern, not this.
+/// enough that legit native-app traffic never brushes it (600/min = 10 req/s sustained per IP). SSR
+/// reads count against each VISITOR's address (see `client_ip`), not the Lambda's shared egress
+/// IPs. Distributed scraping is an edge-WAF concern, not this.
 pub const GENERAL_IP: Limit = Limit {
     name: "general-ip",
     max: 600,
@@ -184,27 +188,81 @@ fn retry_after(window_start: Instant, window: Duration, now: Instant) -> u64 {
         .max(1)
 }
 
-/// The client address for rate-limit keys: the RIGHTMOST `X-Forwarded-For` entry. The instance's
-/// port only admits CloudFront (the prefix-list is the access control), so the last hop is always
-/// CloudFront and the rightmost entry is the address CloudFront itself accepted the connection
-/// from — a viewer, the SSR Lambda, or an attacker, but never a client-spoofable value (anything a
-/// client sends in its own XFF sits further LEFT). Local dev has no CloudFront and no XFF → one
-/// shared "local" bucket, which the generous limits tolerate.
+/// The visitor's address as the web SSR forwards it (from CloudFront-Viewer-Address).
+pub const VIEWER_IP_HEADER: &str = "x-vegify-viewer-ip";
+/// The origin-verify secret the SSR sends alongside, proving the forwarded address is its own.
+pub const SSR_PROOF_HEADER: &str = "x-vegify-ssr-proof";
+
+/// What a request must present to have its forwarded viewer address trusted: the origin-verify
+/// secret the SSR Lambda also holds. Empty (unconfigured) trusts nothing.
+#[derive(Clone, Default)]
+pub struct SsrProof(Option<Arc<str>>);
+
+impl SsrProof {
+    pub fn new(secret: Option<String>) -> Self {
+        Self(secret.map(Arc::from))
+    }
+
+    /// Whether a secret is configured (the server logs this at boot; never the value).
+    pub fn is_configured(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+/// The client address for rate-limit keys. Every SSR call reaches us from the web Lambda's few
+/// egress IPs, so keying those by connection address would put every logged-out visitor in one
+/// budget — one fast crawler then 429s the site for everyone (it did, 2026-10-01). So a request
+/// carrying the SSR proof is keyed by the visitor address it forwards; anything else falls back to
+/// the RIGHTMOST `X-Forwarded-For` entry. The instance's port only admits CloudFront (the
+/// prefix-list is the access control), so the last hop is always CloudFront and the rightmost entry
+/// is the address CloudFront itself accepted the connection from — never a client-spoofable value
+/// (anything a client sends in its own XFF sits further LEFT). Local dev has no CloudFront and no
+/// XFF → one shared "local" bucket, which the generous limits tolerate.
+pub fn client_ip(headers: &HeaderMap, proof: &SsrProof) -> String {
+    if let Some(ip) = forwarded_viewer_ip(headers, proof) {
+        return ip;
+    }
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "local".to_string())
+}
+
+/// The forwarded viewer address, only when the request proves it came from the SSR (constant-time
+/// comparison) and the address parses as an IP.
+fn forwarded_viewer_ip(headers: &HeaderMap, proof: &SsrProof) -> Option<String> {
+    let secret = proof.0.as_deref()?;
+    let sent = headers.get(SSR_PROOF_HEADER)?.as_bytes();
+    if !bool::from(sent.ct_eq(secret.as_bytes())) {
+        return None;
+    }
+    let ip: IpAddr = headers
+        .get(VIEWER_IP_HEADER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(ip.to_string())
+}
+
 pub struct ClientIp(pub String);
 
-impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+impl<S> FromRequestParts<S> for ClientIp
+where
+    S: Send + Sync,
+    SsrProof: FromRef<S>,
+{
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let ip = parts
-            .headers
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.rsplit(',').next())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "local".to_string());
-        Ok(ClientIp(ip))
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        Ok(ClientIp(client_ip(
+            &parts.headers,
+            &SsrProof::from_ref(state),
+        )))
     }
 }
 
@@ -218,6 +276,71 @@ mod tests {
         max: 3,
         window: Duration::from_secs(60),
     };
+
+    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(*k, v.parse().unwrap());
+        }
+        h
+    }
+
+    const XFF: (&str, &str) = ("x-forwarded-for", "6.6.6.6, 203.0.113.9");
+
+    #[test]
+    fn keys_by_the_address_cloudfront_saw_without_ssr_proof() {
+        let proof = SsrProof::new(Some("s3cret".into()));
+        assert_eq!(client_ip(&headers(&[XFF]), &proof), "203.0.113.9");
+        // A forwarded viewer address alone (no proof, or a wrong one) is ignored.
+        let spoof = headers(&[XFF, (VIEWER_IP_HEADER, "198.51.100.7")]);
+        assert_eq!(client_ip(&spoof, &proof), "203.0.113.9");
+        let wrong = headers(&[
+            XFF,
+            (VIEWER_IP_HEADER, "198.51.100.7"),
+            (SSR_PROOF_HEADER, "guess"),
+        ]);
+        assert_eq!(client_ip(&wrong, &proof), "203.0.113.9");
+    }
+
+    #[test]
+    fn keys_ssr_traffic_by_the_forwarded_visitor_when_the_proof_matches() {
+        let proof = SsrProof::new(Some("s3cret".into()));
+        let v4 = headers(&[
+            XFF,
+            (VIEWER_IP_HEADER, "198.51.100.7"),
+            (SSR_PROOF_HEADER, "s3cret"),
+        ]);
+        assert_eq!(client_ip(&v4, &proof), "198.51.100.7");
+        let v6 = headers(&[
+            XFF,
+            (VIEWER_IP_HEADER, "2001:db8::1"),
+            (SSR_PROOF_HEADER, "s3cret"),
+        ]);
+        assert_eq!(client_ip(&v6, &proof), "2001:db8::1");
+    }
+
+    #[test]
+    fn never_trusts_a_forwarded_value_that_is_not_an_ip() {
+        let proof = SsrProof::new(Some("s3cret".into()));
+        let junk = headers(&[
+            XFF,
+            (VIEWER_IP_HEADER, "not-an-ip"),
+            (SSR_PROOF_HEADER, "s3cret"),
+        ]);
+        assert_eq!(client_ip(&junk, &proof), "203.0.113.9");
+    }
+
+    #[test]
+    fn trusts_nothing_when_no_secret_is_configured() {
+        let unset = SsrProof::new(None);
+        let h = headers(&[
+            XFF,
+            (VIEWER_IP_HEADER, "198.51.100.7"),
+            (SSR_PROOF_HEADER, ""),
+        ]);
+        assert_eq!(client_ip(&h, &unset), "203.0.113.9");
+        assert_eq!(client_ip(&HeaderMap::new(), &unset), "local");
+    }
 
     #[test]
     fn allows_up_to_max_then_rejects_with_retry_after() {

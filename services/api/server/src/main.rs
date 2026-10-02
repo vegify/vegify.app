@@ -30,7 +30,7 @@ mod ratelimit;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{FromRef, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -45,7 +45,7 @@ use tracing::Level;
 
 use crate::auth::{bearer_token, User};
 use crate::error::AppError;
-use crate::ratelimit::{ClientIp, RateLimiter};
+use crate::ratelimit::{ClientIp, RateLimiter, SsrProof};
 
 type Pool = r2d2::Pool<SqliteConnectionManager>;
 
@@ -58,6 +58,14 @@ struct AppState {
     change_tx: tokio::sync::broadcast::Sender<String>,
     /// In-process budgets for the auth surface (single-instance server → in-memory is authoritative).
     rate: Arc<RateLimiter>,
+    /// The secret that lets the web SSR forward a visitor's address for per-visitor rate limits.
+    ssr_proof: SsrProof,
+}
+
+impl FromRef<AppState> for SsrProof {
+    fn from_ref(state: &AppState) -> Self {
+        state.ssr_proof.clone()
+    }
 }
 
 impl AppState {
@@ -1756,7 +1764,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool,
         change_tx,
         rate: Arc::new(RateLimiter::new()),
+        ssr_proof: SsrProof::new(vegify_config::server::ssr_secret()),
     };
+    // Logged at boot (the value never is): false means SSR traffic is keyed by the Lambda's egress IPs.
+    let state_has_ssr_proof = state.ssr_proof.is_configured();
 
     let app = Router::new()
         .route("/health", get(health))
@@ -1876,7 +1887,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // prefix list — that's the access control, not the bind address). 127.0.0.1 would be loopback-only.
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!(%addr, db = %db_path, "vegify-server listening");
+    tracing::info!(
+        %addr,
+        db = %db_path,
+        ssr_viewer_forwarding = state_has_ssr_proof,
+        "vegify-server listening"
+    );
     axum::serve(listener, app).await?;
     Ok(())
 }
