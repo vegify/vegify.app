@@ -21,8 +21,9 @@ const secretLambdaDir = path.join(
   "../lambda/origin-secret"
 )
 
-/** Parameter Store home of the origin-verify secret (SSM SecureString, generated on first deploy). */
-const ORIGIN_SECRET_PARAM = "/vegify/origin-verify"
+/** Parameter Store home of the origin-verify secret (SSM SecureString, generated on first deploy).
+ *  The server stack reads it too: the API trusts a visitor address the SSR forwards with it. */
+export const ORIGIN_SECRET_PARAM = "/vegify/origin-verify"
 
 /**
  * VegifyClientLogs — a dedicated, scale-to-zero ingestion endpoint for BROWSER (client-side) logs.

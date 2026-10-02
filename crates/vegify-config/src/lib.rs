@@ -88,6 +88,15 @@ pub mod server {
         non_empty("VEGIFY_FDC_API_KEY").unwrap_or_else(|| "DEMO_KEY".to_string())
     }
 
+    /// The origin-verify secret the web SSR also holds (its `ORIGIN_SECRET`), via `VEGIFY_SSR_SECRET`.
+    /// The SSR sends it as proof alongside a visitor's forwarded address, so per-IP rate limits can
+    /// count each visitor instead of the SSR Lambda's shared egress IPs. Unset (local dev, or a first
+    /// deploy before the secret exists) trusts no forwarded address: every request is keyed by the
+    /// address CloudFront saw, which is the safe default.
+    pub fn ssr_secret() -> Option<String> {
+        non_empty("VEGIFY_SSR_SECRET")
+    }
+
     /// Admin email allowlist (comma-separated, VEGIFY_ADMIN_EMAILS) — accounts allowed to INVITE new
     /// users while public signups stay closed (invite-only). Empty = no admins (the default). Emails
     /// are compared lowercased/trimmed, matching how they're stored.

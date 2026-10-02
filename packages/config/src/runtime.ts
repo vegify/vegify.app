@@ -22,6 +22,13 @@ export function publicUrl(): string | undefined {
   return process.env.VEGIFY_PUBLIC_URL || undefined
 }
 
+/** The origin-verify secret the CDK sets on the web Lambda (ORIGIN_SECRET). SSR sends it to the
+ *  backend as proof when forwarding a visitor's address, so the backend rate-limits per visitor
+ *  instead of per Lambda egress IP. Unset (local serving) → no address is forwarded. */
+export function originSecret(): string | undefined {
+  return process.env.ORIGIN_SECRET || undefined
+}
+
 /** libSQL database URL. Dev default: the repo-root SQLite file (the ../../ works from both apps/*
  *  and packages/* cwds). Remote (Turso/sqld): set DATABASE_URL (+ DATABASE_AUTH_TOKEN). */
 export function databaseUrl(): string {
