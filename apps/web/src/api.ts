@@ -7,7 +7,7 @@
 // Server-only: `getCookie` is server-only, so importing this module pins it to the server bundle —
 // never import a VALUE from here into a client component (types are fine; they erase).
 
-import { apiUrl } from "@vegify/config"
+import { apiUrl, originSecret } from "@vegify/config"
 
 export const SESSION_COOKIE = "vegify_session"
 
@@ -20,6 +20,29 @@ export { apiUrl }
 export async function sessionToken(): Promise<string | null> {
   const { getCookie } = await import("@tanstack/react-start/server")
   return getCookie(SESSION_COOKIE) ?? null
+}
+
+/** The visitor's IP from CloudFront-Viewer-Address, which CloudFront sets as "ip:port"; IPv6 is not
+ *  bracketed, so the port is whatever follows the LAST colon ("2001:db8::1:46532" → "2001:db8::1"). */
+export function viewerIp(address: string | undefined | null): string | null {
+  if (!address) return null
+  const colon = address.lastIndexOf(":")
+  const ip = (colon > 0 ? address.slice(0, colon) : address).replace(
+    /^\[|\]$/g,
+    ""
+  )
+  return ip || null
+}
+
+/** Every SSR call reaches the backend from the web Lambda's few egress IPs, so per-IP rate limits
+ *  would count every visitor in one shared budget. Forward the visitor's own address, with the
+ *  origin-verify secret as proof; the backend trusts the address only when the proof matches. */
+async function viewerHeaders(): Promise<Record<string, string>> {
+  const secret = originSecret()
+  if (!secret) return {}
+  const { getRequestHeader } = await import("@tanstack/react-start/server")
+  const ip = viewerIp(getRequestHeader("cloudfront-viewer-address"))
+  return ip ? { "x-vegify-viewer-ip": ip, "x-vegify-ssr-proof": secret } : {}
 }
 
 /** A backend error carrying the HTTP status, so callers can treat 401 (no/expired session) specially. */
@@ -40,6 +63,8 @@ type ApiInit = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean }
  *  JSON `null` body (a forbidden/missing detail row — Axum returns `Option`) resolves to null. */
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
+  for (const [name, value] of Object.entries(await viewerHeaders()))
+    headers.set(name, value)
   if (init.auth !== false) {
     const token = await sessionToken()
     if (token) headers.set("authorization", `Bearer ${token}`)

@@ -23,6 +23,7 @@ import { Asset } from "aws-cdk-lib/aws-s3-assets"
 import * as ssm from "aws-cdk-lib/aws-ssm"
 import type { Construct } from "constructs"
 
+import { ORIGIN_SECRET_PARAM } from "./client-logs-stack.js"
 import {
   cloudFrontMetric,
   createAlarmTopic,
@@ -217,6 +218,17 @@ export class ServerStack extends Stack {
         resources: [FDC_API_KEY_SECRET_ARN]
       })
     )
+    // The origin-verify secret the web SSR also holds — user-data fetches it at boot into
+    // VEGIFY_SSR_SECRET (below) so the API can trust the visitor address the SSR forwards with it.
+    // The managed aws/ssm key needs no KMS grant for a same-account SSM read.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ssm:GetParameter"],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter${ORIGIN_SECRET_PARAM}`
+        ]
+      })
+    )
 
     const sg = new ec2.SecurityGroup(this, "Sg", {
       vpc,
@@ -309,6 +321,11 @@ export class ServerStack extends Stack {
       // secret) degrades to an empty value, which vegify_config::server::fdc_api_key() treats the
       // same as unset — DEMO_KEY, never a boot failure.
       `FDC_API_KEY=$(aws secretsmanager get-secret-value --secret-id ${FDC_API_KEY_SECRET_ARN} --region us-west-1 --query SecretString --output text 2>/dev/null || echo "")`,
+      // The SSR's origin-verify secret, fetched the same way (never baked into user-data). A failed
+      // fetch — or a first deploy, before the client-logs stack has generated it — degrades to empty,
+      // which the server treats as "trust no forwarded address": today's per-connection keying, never
+      // a boot failure. A rotated secret reaches the server on its next replacement.
+      `SSR_SECRET=$(aws ssm get-parameter --name ${ORIGIN_SECRET_PARAM} --with-decryption --region ${this.region} --query Parameter.Value --output text 2>/dev/null || echo "")`,
       // systemd: litestream supervises the server (-exec) so every write is captured to S3.
       // The server's stdout/stderr go to a file (not journald) so the CloudWatch agent below can ship
       // them; `journalctl -u vegify` still shows the unit's lifecycle, and SSM session is on for debug.
@@ -336,6 +353,7 @@ export class ServerStack extends Stack {
       // USDA FDC API key, fetched above; empty falls back to DEMO_KEY (throttled sooner, never a
       // wrong deployment's key — see vegify_config::server::fdc_api_key()).
       'Environment="VEGIFY_FDC_API_KEY=$FDC_API_KEY"',
+      'Environment="VEGIFY_SSR_SECRET=$SSR_SECRET"',
       "ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml -exec /usr/local/bin/vegify-server",
       "Restart=always",
       "RestartSec=2",
