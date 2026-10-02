@@ -89,7 +89,7 @@ Two records the stack deliberately does **not** manage (because the apex TXT usu
 
 ## 7. CI/CD (optional, GitHub Actions)
 
-Merging to main ships: the deploy workflow cuts a patch release in-job (no release PRs, no bots on main) and runs the ordered cascade. `[skip release]` in a PR title ships without a version; `just release minor|major` dispatches a bigger bump. To enable CI deploys, set the following (the deploy role from §3 is assumed via OIDC — no static AWS keys):
+Merging to main ships: the deploy workflow cuts a release in-job (no release PRs, no bots on main) and runs the ordered cascade. The bump follows the merged PR's conventional-commit title (`feat:` → minor, a `!` after the type → major, anything else → patch), so set the repo's squash-merge title to the pull request title (`squash_merge_commit_title=PR_TITLE`; GitHub's default uses a one-commit PR's commit title instead). `[skip release]` in a PR title ships without a version; `just release minor|major` dispatches an explicit bump. To enable CI deploys, set the following (the deploy role from §3 is assumed via OIDC — no static AWS keys):
 
 Repository **variables** (none are sensitive):
 

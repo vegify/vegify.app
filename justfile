@@ -11,7 +11,7 @@ default:
     @just --list
 
 # Everything CI enforces. Run before every push.
-check: lint unused-deps tokens typecheck web-test build rust
+check: scripts-test lint unused-deps tokens typecheck web-test build rust
 
 # JS deps, frozen exactly as CI installs them.
 install:
@@ -25,6 +25,10 @@ unused-deps:
 # One lint/format layer for the whole workspace (biome; config at the root).
 lint:
     pnpm exec biome check .
+
+# Table tests for the release scripts (.scripts/bump-level.sh + next-version.sh).
+scripts-test:
+    .scripts/test.sh
 
 # Design tokens -> packages/tokens/dist/theme.css (gitignored; a prereq for the JS typecheck/build).
 tokens:
@@ -115,10 +119,11 @@ config:
 config-set key value:
     aws ssm put-parameter --region {{deploy_region}} --name /vegify/deploy/{{key}} --type String --overwrite --value "{{value}}"
 
-# ── Releases (stormdeck model: merging to main ships + auto-cuts a PATCH release) ─────────────────
-# Bigger bumps are the human lever: dispatch the deploy workflow with a minor/major bump from main
-# HEAD. Patch releases need no command — every shipping merge cuts one ([skip release] in the PR
-# title suppresses it).
+# ── Releases (stormdeck model: merging to main ships + auto-cuts a release) ───────────────────────
+# The bump follows the merged PR's title (.scripts/bump-level.sh): `feat:` → minor, a `!` after the
+# type → major, everything else → patch; [skip release] in the title suppresses the version. This
+# recipe is the explicit override: dispatch the deploy workflow with a named bump from main HEAD (a
+# milestone — v1.0.0 was cut this way, onto a [skip release] merge).
 release level="minor":
     gh workflow run deploy.yml -f bump={{level}}
     @echo "dispatched — follow with: gh run list --workflow deploy.yml (verify conclusion via gh run view <id>, not gh run watch)"

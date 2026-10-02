@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Single source of version-bump logic (stormdeck pattern): read the latest v* tag, print the next
-# vX.Y.Z. Used by the deploy workflow's release job (patch per shipping merge; minor/major via
-# `just release`). The version is git-tag-derived — no committed version field is authoritative.
+# Single source of version arithmetic (stormdeck pattern): read the latest v* tag, print the next
+# vX.Y.Z for the given level. Used by the deploy workflow's release job, which takes the level from
+# the merge subject (bump-level.sh) or an explicit `just release minor|major` dispatch. The version
+# is git-tag-derived — no committed version field is authoritative. Tested by test.sh.
 set -euo pipefail
 
 level="${1:-patch}"
