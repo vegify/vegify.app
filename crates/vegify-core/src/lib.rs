@@ -2769,7 +2769,26 @@ pub struct Page {
     pub cursor_name: Option<String>,
     /// Page size; None = unbounded.
     pub limit: Option<u32>,
+    /// Only names starting with this letter, case-insensitive; "0" = names that don't start with a
+    /// letter. None = every name. Backs the web's crawlable A–Z index of the catalog.
+    pub initial: Option<String>,
 }
+
+/// The `initial` filter's SQL value: a lowercase ASCII letter, or "0" for anything else. Pairs with
+/// [`INITIAL_CLAUSE`], which buckets each name the same way.
+fn initial_key(initial: Option<&str>) -> Option<String> {
+    let c = initial?.chars().next()?.to_ascii_lowercase();
+    Some(if c.is_ascii_lowercase() {
+        c.to_string()
+    } else {
+        "0".to_string()
+    })
+}
+
+/// `?5` = [`initial_key`]: names whose first character falls in that bucket (or every name).
+const INITIAL_CLAUSE: &str =
+    "(?5 IS NULL OR (CASE WHEN lower(substr(i.name, 1, 1)) BETWEEN 'a' AND 'z' \
+     THEN lower(substr(i.name, 1, 1)) ELSE '0' END) = ?5)";
 
 /// List recipes visible to `viewer`, one keyset page at a time.
 pub fn list_recipes(
@@ -2783,7 +2802,7 @@ pub fn list_recipes(
                 (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
          FROM recipes r JOIN ingredients i ON i.id = r.as_ingredient_id
          LEFT JOIN users u ON u.id = i.user_id
-         WHERE (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
+         WHERE (i.visibility = 'public' OR i.user_id = ?1) AND {keyset} AND {INITIAL_CLAUSE}
          ORDER BY {order}
          LIMIT ?4"
     );
@@ -2794,7 +2813,8 @@ pub fn list_recipes(
                 viewer,
                 page.cursor.as_deref(),
                 page.cursor_name.as_deref(),
-                page.limit.map_or(-1, |n| n as i64)
+                page.limit.map_or(-1, |n| n as i64),
+                initial_key(page.initial.as_deref())
             ],
             |row| {
                 Ok(RecipeCard {
@@ -3771,7 +3791,7 @@ pub fn list_ingredients(
          LEFT JOIN users u ON u.id = i.user_id
          WHERE i.id NOT IN (SELECT as_ingredient_id FROM recipes)
            AND i.deleted_at IS NULL
-           AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset}
+           AND (i.visibility = 'public' OR i.user_id = ?1) AND {keyset} AND {INITIAL_CLAUSE}
          ORDER BY {order}
          LIMIT ?4"
     );
@@ -3782,7 +3802,8 @@ pub fn list_ingredients(
                 viewer,
                 page.cursor.as_deref(),
                 page.cursor_name.as_deref(),
-                page.limit.map_or(-1, |n| n as i64)
+                page.limit.map_or(-1, |n| n as i64),
+                initial_key(page.initial.as_deref())
             ],
             |row| {
                 Ok(IngredientCard {
@@ -4085,6 +4106,34 @@ mod delete_guard_tests {
             Some(user),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn listing_by_initial_buckets_names_case_insensitively() {
+        let c = conn();
+        for name in ["Beans, black", "banana", "Apple", "7-Grain Bread"] {
+            save_leaf(&c, name);
+        }
+        let names = |initial: Option<&str>| -> Vec<String> {
+            let page = Page {
+                sort: Sort::NameAsc,
+                initial: initial.map(String::from),
+                ..Page::default()
+            };
+            list_ingredients(&c, None, &page)
+                .unwrap()
+                .into_iter()
+                .map(|card| card.name)
+                .collect()
+        };
+        assert_eq!(names(Some("b")), ["Beans, black", "banana"]);
+        assert_eq!(
+            names(Some("B")),
+            names(Some("b")),
+            "the initial is case-insensitive"
+        );
+        assert_eq!(names(Some("0")), ["7-Grain Bread"], "\"0\" = not a letter");
+        assert_eq!(names(None).len(), 4, "no initial = every name");
     }
 
     #[test]

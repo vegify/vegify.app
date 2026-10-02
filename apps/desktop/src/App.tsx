@@ -498,8 +498,14 @@ const ingredientEditQuery = (id: string) =>
   })
 
 // --- nav port: a TanStack Router <Link> (over memory history). The SAME adapter web uses. ---
-function LinkComponent({ href, ...props }: AppShellLinkProps) {
-  return <Link to={href} {...props} />
+function LinkComponent({ href, exact, ...props }: AppShellLinkProps) {
+  return (
+    <Link
+      to={href}
+      activeOptions={exact ? { exact: true } : undefined}
+      {...props}
+    />
+  )
 }
 
 // Auth state + actions, provided by App and consumed by the chrome and the /login route. Always present

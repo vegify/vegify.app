@@ -26,6 +26,8 @@ export type AppShellLinkProps = {
   className?: string
   "aria-current"?: "page"
   "aria-label"?: string
+  /** Active only on an exact path + query match (default: the path or anything under it). */
+  exact?: boolean
   children: ReactNode
 }
 
