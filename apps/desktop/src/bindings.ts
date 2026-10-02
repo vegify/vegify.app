@@ -40,6 +40,11 @@ export const vegifyData = {
 	nutrition: AggregatedNutrition,
 	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
 	photoKey: string | null,
+	/**
+	 *  Who can see the recipe. The web keeps anything but `Public` out of search indexes: an
+	 *  unlisted recipe is reachable by link, but a search engine shouldn't list it either.
+	 */
+	visibility: Visibility,
 } | null> {
     return invoke("recipe", { id });
   },
@@ -1146,6 +1151,11 @@ export type RecipeView = {
 	nutrition: AggregatedNutrition,
 	/**  Media key of the hero photo — see [`RecipeCard::photo_key`]. */
 	photoKey: string | null,
+	/**
+	 *  Who can see the recipe. The web keeps anything but `Public` out of search indexes: an
+	 *  unlisted recipe is reachable by link, but a search engine shouldn't list it either.
+	 */
+	visibility: Visibility,
 };
 
 /**  Password-reset request payload. */

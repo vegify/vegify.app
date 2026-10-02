@@ -44,6 +44,7 @@ export type RecipeDetailPayload = {
   vm: RecipeDetailVM
   edit: { state: RecipeEditState; rows: RecipeEditRow[] } | null
   canonical: { username: string; slug: string } | null
+  indexable: boolean // public only — an unlisted or private recipe is reachable but kept out of search
 }
 
 const getRecipe = createServerFn({ method: "GET" })
@@ -136,7 +137,14 @@ const getRecipe = createServerFn({ method: "GET" })
       }
     }
 
-    return { vm, edit, canonical }
+    return {
+      vm,
+      edit,
+      canonical,
+      // Not "=== public": a server without the field yet must not noindex every recipe.
+      indexable:
+        recipe.visibility !== "unlisted" && recipe.visibility !== "private"
+    }
   })
 
 const searchFn = createServerFn({ method: "GET" })
@@ -219,6 +227,7 @@ export function recipeHead(payload: RecipeDetailPayload, origin: string) {
       `A recipe${vm.creator ? ` by @${vm.creator}` : ""} with ${counted(vm.items.length, "ingredient")}.`
     ]),
     image: vm.photoUrl,
+    noindex: !payload.indexable,
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "Recipe",

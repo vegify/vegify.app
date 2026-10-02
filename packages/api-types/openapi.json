@@ -2302,6 +2302,10 @@
               }
             ],
             "description": " Optional subtitle under the title."
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "description": " Who can see the recipe. The web keeps anything but `Public` out of search indexes: an\n unlisted recipe is reachable by link, but a search engine shouldn't list it either."
           }
         },
         "required": [
@@ -2316,7 +2320,8 @@
           "batchGrams",
           "items",
           "nutrition",
-          "photoKey"
+          "photoKey",
+          "visibility"
         ],
         "title": "RecipeView",
         "type": "object"

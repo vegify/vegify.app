@@ -202,6 +202,9 @@ pub struct RecipeView {
     pub nutrition: AggregatedNutrition,
     /// Media key of the hero photo — see [`RecipeCard::photo_key`].
     pub photo_key: Option<String>,
+    /// Who can see the recipe. The web keeps anything but `Public` out of search indexes: an
+    /// unlisted recipe is reachable by link, but a search engine shouldn't list it either.
+    pub visibility: Visibility,
 }
 
 #[derive(Serialize, Type)]
@@ -3838,7 +3841,8 @@ pub fn recipe(
         .query_row(
             "SELECT i.id, i.name, r.subtitle, r.directions, u.username,
                     sa.amount, sa.unit, sa.grams, ba.grams, i.user_id, i.slug,
-                    (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key
+                    (SELECT 'media/' || im.uuid || '.' || im.extension FROM ingredient_img ii JOIN imgs im ON im.id = ii.img_id WHERE ii.ingredient_id = i.id LIMIT 1) AS photo_key,
+                    i.visibility
              FROM recipes r
              JOIN ingredients i ON i.id = r.as_ingredient_id
              LEFT JOIN users u ON u.id = i.user_id
@@ -3860,6 +3864,7 @@ pub fn recipe(
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
                     row.get::<_, Option<String>>(11)?,
+                    row.get::<_, String>(12)?,
                 ))
             },
         )
@@ -3877,6 +3882,7 @@ pub fn recipe(
         owner,
         slug,
         photo_key,
+        visibility,
     )) = meta
     else {
         return Ok(None);
@@ -3933,6 +3939,7 @@ pub fn recipe(
         items,
         nutrition,
         photo_key,
+        visibility: Visibility::from_db(&visibility),
     }))
 }
 
@@ -4123,6 +4130,41 @@ mod delete_guard_tests {
             recipes_left, 1,
             "the recipe must survive the refused card delete"
         );
+    }
+
+    #[test]
+    fn recipe_view_carries_its_visibility_so_the_web_can_keep_unlisted_ones_out_of_search() {
+        let c = conn();
+        let flour = save_leaf(&c, "Flour");
+        let unlisted = do_save_recipe(
+            &c,
+            &SaveRecipeInput {
+                id: None,
+                as_ingredient_id: None,
+                visibility: Some(Visibility::Unlisted),
+                name: "Secret Bread".into(),
+                subtitle: None,
+                directions: None,
+                serving_grams: None,
+                batch_grams: None,
+                items: vec![RecipeItemInput {
+                    ingredient_id: flour.clone(),
+                    grams: 100.0,
+                    unit: None,
+                    amount: None,
+                }],
+                slug: None,
+            },
+            Some("u1"),
+        )
+        .unwrap();
+        // Anyone with the link still reads it — the visibility only tells the web not to index it.
+        let view = recipe(&c, unlisted, None).unwrap().unwrap();
+        assert_eq!(view.visibility, Visibility::Unlisted);
+
+        let public = save_recipe_with(&c, "Open Bread", &flour, "u1");
+        let view = recipe(&c, public, None).unwrap().unwrap();
+        assert_eq!(view.visibility, Visibility::Public);
     }
 }
 
