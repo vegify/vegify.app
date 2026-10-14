@@ -12,7 +12,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@tailwindcss/cli": "^4.3.3",
-    "knip": "^6.39.0",
+    "knip": "^6.41.0",
     "turbo": "^2.11.7"
   }
 }
