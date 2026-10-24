@@ -42,12 +42,14 @@ tower-http = { version = "0.7", features = ["trace", "compression-gzip"] }
 # instance role in prod, env/SSO locally — and the client is built lazily on first send, so the server
 # still boots with no email config and pays nothing until a reset is actually requested.
 aws-config = { version = "1", features = ["behavior-version-latest"] }
-# Both SDK crates keep their default features minus `rustls`, which only compiles in the legacy
-# hyper 0.14 / rustls 0.21 client. BehaviorVersion::latest() with `default-https-client` never
-# selects it, and that rustls line has advisories with no fixed release.
-aws-sdk-sesv2 = { version = "1", default-features = false, features = ["sigv4a", "default-https-client", "rt-tokio"] }
+# Both SDK crates keep their default features minus two. `rustls` only compiles in the legacy
+# hyper 0.14 / rustls 0.21 client: BehaviorVersion::latest() with `default-https-client` never
+# selects it, and that rustls line has advisories with no fixed release. `sigv4a` pulls in
+# crypto-bigint 0.5, which has no release fixed for RUSTSEC-2026-0387; SigV4a only signs calls to
+# S3 Multi-Region Access Points and SES multi-region endpoints, and every call here signs with SigV4.
+aws-sdk-sesv2 = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 # Boot-time catalog ingest: fetch the USDA artifact from the Data bucket (instance-role creds).
-aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["http-1x", "default-https-client", "rt-tokio"] }
 # Gunzip the embedded USDA catalog seed (pure-Rust backend — fine under musl cross).
 flate2 = "1"
 # On-demand branded-food lookups (P2.1/P2.2): FoodData Central + Open Food Facts. Blocking, called
