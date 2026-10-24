@@ -60,7 +60,7 @@ export class ClientLogsStack extends Stack {
 
     // Get-or-create the secret parameter and hand its value to the template (see the handler file).
     const secretFn = new lambda.Function(this, "OriginSecretFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       handler: "index.handler",
       code: lambda.Code.fromAsset(secretLambdaDir),
@@ -100,7 +100,7 @@ export class ClientLogsStack extends Stack {
     // 128 MB / ARM is plenty — the handler just shapes a batch and calls PutLogEvents. The runtime
     // provides the AWS SDK, so the asset is the single index.mjs (no bundling, no Docker).
     const fn = new lambda.Function(this, "IngestFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       handler: "index.handler",
       code: lambda.Code.fromAsset(lambdaDir),
