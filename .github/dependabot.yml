@@ -24,8 +24,8 @@ updates:
         update-types: ["minor", "patch"]
     ignore:
       # @types/node tracks Node LTS (CI runs node-version lts/*), so its major follows the
-      # runtime, not npm's latest. Bump the major by hand when a new even line reaches Active
-      # LTS (next: 26 in Oct 2026); minors/patches keep flowing through the weekly group.
+      # runtime, not npm's latest. A PR moves the major, relocked, once a new even line reaches
+      # Active LTS; minors/patches keep flowing through the weekly group.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
