@@ -84,7 +84,7 @@ export class WebStartStack extends Stack {
     const verifyHeaders = { "x-vegify-origin": props.originSecret }
 
     const fn = new lambda.Function(this, "ServerFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.X86_64,
       handler: "handler.handler",
       // The SSR build is self-contained (ssr.noExternal bundles every dep), so the bundle is just
