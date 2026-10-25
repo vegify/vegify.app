@@ -307,7 +307,7 @@ const cardClass =
  * Facts panel (the right column is where these belong, not the nav sidebar). */
 function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
-    <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-border border-t pt-4 text-muted-foreground text-xs">
+    <footer className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
       <LinkComponent
         href="/blog"
         className="font-medium transition-colors hover:text-foreground"
@@ -351,10 +351,10 @@ function DetailRailFooter({ LinkComponent }: { LinkComponent: NavLink }) {
 export function HomeView({ LinkComponent }: { LinkComponent: NavLink }) {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-3xl flex-col items-center justify-center gap-6 p-8 text-center">
-      <h1 className="font-bold font-serif text-5xl text-primary-dark">
+      <h1 className="font-serif text-5xl font-bold text-primary-dark">
         Vegify
       </h1>
-      <p className="w-full max-w-md text-gray-500 text-lg">
+      <p className="w-full max-w-md text-lg text-gray-500">
         Micronutrition tracking for plant-based cooking
       </p>
       <LinkComponent href="/recipes" className={buttonClasses({ size: "lg" })}>
@@ -427,7 +427,7 @@ function InfiniteSentinel({
   return (
     <div
       ref={ref}
-      className="flex justify-center py-6 text-muted-foreground text-sm"
+      className="flex justify-center py-6 text-sm text-muted-foreground"
     >
       {isLoading ? "Loading…" : null}
     </div>
@@ -460,7 +460,7 @@ export function RecipeListView({
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
             Recipes
           </h1>
           <p className="text-gray-500">{recipes.length} recipes</p>
@@ -488,10 +488,10 @@ export function RecipeListView({
               <div className={cardClass}>
                 <CardTile photoUrl={r.photoUrl} name={r.name} size="size-16" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-semibold font-serif text-2xl">
+                  <h3 className="truncate font-serif text-2xl font-semibold">
                     {r.name}
                   </h3>
-                  <p className="truncate text-muted-foreground text-sm">
+                  <p className="truncate text-sm text-muted-foreground">
                     {r.subtitle ?? "Recipe"}
                   </p>
                 </div>
@@ -642,7 +642,7 @@ export function ProfileView({
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center">
-        <h1 className="mb-2 font-bold font-serif text-4xl text-primary-dark">
+        <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark">
           @{username}
         </h1>
         <p className="text-muted-foreground">No one goes by that handle.</p>
@@ -659,12 +659,12 @@ export function ProfileView({
             className="size-20 shrink-0 rounded-full object-cover"
           />
         ) : (
-          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold font-serif text-3xl text-primary-dark uppercase">
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-3xl font-bold text-primary-dark uppercase">
             {profile.name.trim().charAt(0) || "?"}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-bold font-serif text-4xl text-primary-dark">
+          <h1 className="truncate font-serif text-4xl font-bold text-primary-dark">
             {profile.name}
           </h1>
           <p className="truncate text-lg text-muted-foreground">
@@ -718,10 +718,10 @@ export function ProfileView({
             key={label}
             className="flex items-center justify-between rounded-lg bg-card px-4 py-3 ring-1 ring-foreground/10"
           >
-            <span className="font-medium text-muted-foreground text-sm">
+            <span className="text-sm font-medium text-muted-foreground">
               {label}
             </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 font-semibold text-[0.65rem] text-muted-foreground uppercase tracking-wide">
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold tracking-wide text-muted-foreground uppercase">
               soon
             </span>
           </div>
@@ -729,7 +729,7 @@ export function ProfileView({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 font-semibold font-serif text-2xl text-foreground">
+        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
           Recipes{" "}
           <span className="font-normal text-muted-foreground">
             · {profile.recipes.length}
@@ -748,10 +748,10 @@ export function ProfileView({
                     size="size-16"
                   />
                   <div className="min-w-0">
-                    <h3 className="truncate font-semibold font-serif text-2xl">
+                    <h3 className="truncate font-serif text-2xl font-semibold">
                       {r.name}
                     </h3>
-                    <p className="truncate text-muted-foreground text-sm">
+                    <p className="truncate text-sm text-muted-foreground">
                       {r.subtitle ?? "Recipe"}
                     </p>
                   </div>
@@ -763,7 +763,7 @@ export function ProfileView({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 font-semibold font-serif text-2xl text-foreground">
+        <h2 className="mb-4 font-serif text-2xl font-semibold text-foreground">
           Ingredients{" "}
           <span className="font-normal text-muted-foreground">
             · {profile.ingredients.length}
@@ -782,12 +782,12 @@ export function ProfileView({
                 <div className={cardClass}>
                   <div className="size-12 shrink-0 rounded-lg bg-muted" />
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-semibold font-serif text-xl">
+                    <h3 className="truncate font-serif text-xl font-semibold">
                       {i.name}
                     </h3>
                   </div>
                   {i.caloriesPer100g != null ? (
-                    <span className="shrink-0 text-muted-foreground text-sm">
+                    <span className="shrink-0 text-sm text-muted-foreground">
                       {Math.round(i.caloriesPer100g)} kcal/100g
                     </span>
                   ) : null}
@@ -833,7 +833,7 @@ export function IngredientListView({
     <div className="mx-auto max-w-3xl p-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+          <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
             Ingredients
           </h1>
           <p className="text-gray-500">
@@ -879,11 +879,11 @@ export function IngredientListView({
               <div className={cardClass}>
                 <div className="size-16 shrink-0 rounded-lg bg-muted" />
                 <div className="min-w-0">
-                  <h3 className="truncate font-semibold font-serif text-2xl">
+                  <h3 className="truncate font-serif text-2xl font-semibold">
                     {i.name}
                   </h3>
                   {i.caloriesPer100g != null ? (
-                    <p className="text-muted-foreground text-sm">
+                    <p className="text-sm text-muted-foreground">
                       {Math.round(i.caloriesPer100g)} cal/100g
                     </p>
                   ) : null}
@@ -926,7 +926,7 @@ function InitialBar({
       exact
       aria-current={active ? "page" : undefined}
       className={cn(
-        "min-w-8 rounded-md px-2 py-1 text-center font-medium text-sm transition",
+        "min-w-8 rounded-md px-2 py-1 text-center text-sm font-medium transition",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -956,7 +956,7 @@ function ReportControl({
       type="button"
       onClick={onOpen}
       aria-label={`Report ${subject}`}
-      className="shrink-0 text-muted-foreground text-sm underline-offset-2 transition hover:text-foreground hover:underline"
+      className="shrink-0 text-sm text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline"
     >
       Report
     </button>
@@ -1106,7 +1106,7 @@ export function RecipeDetailView({
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
+          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
             <InlineText
               as="span"
               value={recipe.name}
@@ -1136,7 +1136,7 @@ export function RecipeDetailView({
             </p>
           ) : null}
 
-          <h2 className="mt-8 text-center font-bold font-serif text-xl">
+          <h2 className="mt-8 text-center font-serif text-xl font-bold">
             Ingredients
           </h2>
           <ul className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -1180,7 +1180,7 @@ export function RecipeDetailView({
                       type="button"
                       aria-label={`Remove ${row.name}`}
                       onClick={() => void edit.removeItem(row.ingredientId)}
-                      className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                      className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
@@ -1209,7 +1209,7 @@ export function RecipeDetailView({
                             item.ingredientId &&
                             onRestoreIngredient(item.ingredientId)
                           }
-                          className="rounded px-1.5 py-0.5 font-medium text-primary text-xs opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover:opacity-100"
+                          className="rounded px-1.5 py-0.5 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 hover:underline focus-visible:opacity-100"
                         >
                           Restore
                         </button>
@@ -1241,7 +1241,7 @@ export function RecipeDetailView({
             ) : null}
           </ul>
 
-          <h2 className="mt-8 text-center font-bold font-serif text-xl">
+          <h2 className="mt-8 text-center font-serif text-xl font-bold">
             Directions
           </h2>
           <InlineTextarea
@@ -1254,7 +1254,7 @@ export function RecipeDetailView({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={liveNutrition} />
           <DetailRailFooter LinkComponent={LinkComponent} />
@@ -1355,11 +1355,11 @@ function AddIngredientRow({
       {query ? (
         <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
           {searching ? (
-            <li className="px-2 py-1.5 text-muted-foreground text-sm">
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">
               Searching…
             </li>
           ) : results.length === 0 ? (
-            <li className="px-2 py-1.5 text-muted-foreground text-sm">
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">
               No matches.
             </li>
           ) : (
@@ -1454,13 +1454,13 @@ function UndoRedoItems({
     <>
       <DropdownMenuItem disabled={!canUndo} onClick={() => undo?.()}>
         Undo
-        <span className="ml-auto pl-6 font-mono text-muted-foreground text-xs">
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">
           ⌘Z
         </span>
       </DropdownMenuItem>
       <DropdownMenuItem disabled={!canRedo} onClick={() => redo?.()}>
         Redo
-        <span className="ml-auto pl-6 font-mono text-muted-foreground text-xs">
+        <span className="ml-auto pl-6 font-mono text-xs text-muted-foreground">
           ⌘⇧Z
         </span>
       </DropdownMenuItem>
@@ -1562,7 +1562,7 @@ function ProvenanceLine({
   LinkComponent: NavLink
 }) {
   return (
-    <p className="mt-4 flex items-center gap-1.5 text-muted-foreground text-xs">
+    <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
       <ShieldCheck className="size-3.5 shrink-0 text-green-600 dark:text-green-400" />
       <span>
         Data from{" "}
@@ -1636,7 +1636,7 @@ export function IngredientDetailView({
             {ingredient.deleted ? (
               <span
                 title="Deleted by its creator — recipes that already use it keep working."
-                className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 font-medium text-muted-foreground text-xs"
+                className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
               >
                 Deleted
               </span>
@@ -1685,7 +1685,7 @@ export function IngredientDetailView({
             className="mt-4"
           />
 
-          <h1 className="mt-10 text-center font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
+          <h1 className="mt-10 text-center font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
             <InlineText
               as="span"
               value={ingredient.name}
@@ -1697,7 +1697,7 @@ export function IngredientDetailView({
               inputClassName="text-center"
             />
           </h1>
-          <h2 className="mt-6 text-center font-bold font-serif text-xl">
+          <h2 className="mt-6 text-center font-serif text-xl font-bold">
             Information
           </h2>
           <InlineTextarea
@@ -1716,7 +1716,7 @@ export function IngredientDetailView({
         </div>
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="lg:sticky lg:top-6">
           <NutritionFacts data={ingredient.nutrition} />
           <DetailRailFooter LinkComponent={LinkComponent} />
@@ -1803,8 +1803,8 @@ function ResultRow({
       <div className="flex items-center gap-4 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:ring-orange/70">
         <div className="size-12 shrink-0 rounded-lg bg-muted" />
         <div className="min-w-0">
-          <h3 className="truncate font-semibold font-serif text-xl">{name}</h3>
-          <p className="truncate text-muted-foreground text-sm">{sub}</p>
+          <h3 className="truncate font-serif text-xl font-semibold">{name}</h3>
+          <p className="truncate text-sm text-muted-foreground">{sub}</p>
         </div>
       </div>
     </LinkComponent>
@@ -1825,7 +1825,7 @@ export function SearchResultsView({
   const total = recipes.length + ingredients.length
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
         Search
       </h1>
       <p className="mb-8 text-gray-500">
@@ -1839,7 +1839,7 @@ export function SearchResultsView({
         <div className="space-y-8">
           {recipes.length > 0 && (
             <section>
-              <h2 className="mb-3 font-bold font-serif text-xl">Recipes</h2>
+              <h2 className="mb-3 font-serif text-xl font-bold">Recipes</h2>
               <div className="flex flex-col gap-3">
                 {recipes.map((r) => (
                   <ResultRow
@@ -1855,7 +1855,7 @@ export function SearchResultsView({
           )}
           {ingredients.length > 0 && (
             <section>
-              <h2 className="mb-3 font-bold font-serif text-xl">Ingredients</h2>
+              <h2 className="mb-3 font-serif text-xl font-bold">Ingredients</h2>
               <div className="flex flex-col gap-3">
                 {ingredients.map((i) => (
                   <ResultRow
@@ -1984,7 +1984,7 @@ function NutritionProfileForm({
             <option value="female">Female</option>
             <option value="male">Male</option>
           </select>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             Picks which DRI table to use (nutrient needs differ) — not stored as
             identity.
           </p>
@@ -2019,7 +2019,7 @@ function NutritionProfileForm({
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
           />
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             Enables a body-weight-based protein target. Stored in metric —
             switch units any time.
           </p>
@@ -2063,7 +2063,7 @@ function NutritionProfileForm({
           {saving ? "Saving…" : "Save profile"}
         </button>
         {saved ? (
-          <span className="text-muted-foreground text-sm">Saved.</span>
+          <span className="text-sm text-muted-foreground">Saved.</span>
         ) : null}
       </div>
     </div>
@@ -2087,17 +2087,17 @@ export function SettingsView({
   const [error, setError] = useState<string | null>(null)
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-1 font-bold font-serif text-4xl text-primary-dark">
+      <h1 className="mb-1 font-serif text-4xl font-bold text-primary-dark">
         Settings
       </h1>
       <p className="mb-8 text-gray-500">Preferences for this account</p>
 
       <section>
-        <h2 className="mb-3 font-bold font-serif text-xl">Appearance</h2>
+        <h2 className="mb-3 font-serif text-xl font-bold">Appearance</h2>
         <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <p className="font-semibold">Theme</p>
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
               Match your system, or always use light or dark.
             </p>
           </div>
@@ -2107,10 +2107,10 @@ export function SettingsView({
 
       {onSaveProfile ? (
         <section className="mt-10">
-          <h2 className="mb-1 font-bold font-serif text-xl">
+          <h2 className="mb-1 font-serif text-xl font-bold">
             Nutrition profile
           </h2>
-          <p className="mb-3 text-muted-foreground text-sm">
+          <p className="mb-3 text-sm text-muted-foreground">
             Personalizes your daily targets. Everything is optional — leave a
             field blank to use the generic-adult reference values. Your diary
             and profile are private.
@@ -2124,13 +2124,13 @@ export function SettingsView({
 
       {onDeleteAccount ? (
         <section className="mt-10">
-          <h2 className="mb-3 font-bold font-serif text-destructive text-xl">
+          <h2 className="mb-3 font-serif text-xl font-bold text-destructive">
             Danger zone
           </h2>
           <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-destructive/30 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="min-w-0">
               <p className="font-semibold">Delete account</p>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-sm text-muted-foreground">
                 Permanently delete your account and your recipes. Ingredients
                 others cook with become part of the shared catalog. This can't
                 be undone.
@@ -2169,7 +2169,7 @@ export function SettingsView({
                 className="w-full rounded-lg border border-border bg-transparent p-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               />
               {error ? (
-                <p className="text-destructive text-sm">{error}</p>
+                <p className="text-sm text-destructive">{error}</p>
               ) : null}
               <DialogFooter>
                 <DialogClose

@@ -191,7 +191,7 @@ function DayNav({
         >
           <ChevronLeft className="size-4" />
         </button>
-        <h1 className="min-w-[8rem] text-center font-bold font-serif text-xl">
+        <h1 className="min-w-[8rem] text-center font-serif text-xl font-bold">
           {formatDayLabel(date)}
         </h1>
         <button
@@ -245,7 +245,7 @@ function EntryRow({
   log?: DayLogAdapter
 }) {
   return (
-    <li className="flex items-center gap-3 border-border border-b py-2">
+    <li className="flex items-center gap-3 border-b border-border py-2">
       <LinkComponent
         href={entry.href}
         className="min-w-0 flex-1 truncate font-medium hover:text-primary hover:underline"
@@ -261,11 +261,11 @@ function EntryRow({
           onCommit={(g) => log.setEntryAmount(entry.id, g)}
         />
       ) : (
-        <span className="text-muted-foreground text-sm tabular-nums">
+        <span className="text-sm text-muted-foreground tabular-nums">
           {num(entry.grams)} g
         </span>
       )}
-      <span className="w-16 shrink-0 text-right text-muted-foreground text-sm tabular-nums">
+      <span className="w-16 shrink-0 text-right text-sm text-muted-foreground tabular-nums">
         {entry.calories == null ? "—" : `${Math.round(entry.calories)} cal`}
       </span>
       {log ? (
@@ -451,12 +451,12 @@ function AddFoodRow({
       <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
         {showRecents ? (
           recents.length === 0 ? (
-            <li className="px-2 py-1.5 text-muted-foreground text-sm">
+            <li className="px-2 py-1.5 text-sm text-muted-foreground">
               Type to search foods.
             </li>
           ) : (
             <>
-              <li className="px-2 pt-1 pb-0.5 font-medium text-muted-foreground text-xs">
+              <li className="px-2 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">
                 Recent
               </li>
               {recents.map((r) => (
@@ -473,11 +473,11 @@ function AddFoodRow({
             </>
           )
         ) : searching ? (
-          <li className="px-2 py-1.5 text-muted-foreground text-sm">
+          <li className="px-2 py-1.5 text-sm text-muted-foreground">
             Searching…
           </li>
         ) : results.length === 0 ? (
-          <li className="px-2 py-1.5 text-muted-foreground text-sm">
+          <li className="px-2 py-1.5 text-sm text-muted-foreground">
             No matches.
           </li>
         ) : (
@@ -499,11 +499,11 @@ function AddFoodRow({
         {log.branded && !showRecents && !searching ? (
           brandedFor === query.trim() ? (
             brandedError ? (
-              <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+              <li className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-sm text-muted-foreground">
                 {brandedError}
               </li>
             ) : brandedShown.length === 0 && !brandedBusy ? (
-              <li className="mt-1 border-border border-t px-2 pt-1.5 pb-1 text-muted-foreground text-sm">
+              <li className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-sm text-muted-foreground">
                 No branded matches.
               </li>
             ) : (
@@ -515,12 +515,12 @@ function AddFoodRow({
               />
             )
           ) : (
-            <li className="mt-1 border-border border-t pt-1">
+            <li className="mt-1 border-t border-border pt-1">
               <button
                 type="button"
                 disabled={brandedBusy}
                 onClick={() => void searchBranded()}
-                className="w-full rounded-sm px-2 py-1.5 text-left text-primary text-sm hover:bg-accent disabled:opacity-60"
+                className="w-full rounded-sm px-2 py-1.5 text-left text-sm text-primary hover:bg-accent disabled:opacity-60"
               >
                 Search branded &amp; packaged foods for “{query.trim()}”
               </button>
@@ -573,11 +573,11 @@ function DayTargets({
   const byName = new Map(totals.map((t) => [normName(t.name), t]))
   return (
     <div className={cn("text-foreground", className)}>
-      <div className="mb-3 border-foreground border-b-2 pb-1">
-        <h2 className="font-bold font-serif text-lg tracking-tight">
+      <div className="mb-3 border-b-2 border-foreground pb-1">
+        <h2 className="font-serif text-lg font-bold tracking-tight">
           Your targets
         </h2>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-muted-foreground">
           Vegan-adjusted daily goals for your profile
         </p>
       </div>
@@ -596,14 +596,14 @@ function DayTargets({
                   {tgt.name}
                   {tgt.veganAdjusted ? (
                     <span
-                      className="ml-1 text-primary text-xs"
+                      className="ml-1 text-xs text-primary"
                       title="Raised above the standard DRI for plant bioavailability"
                     >
                       ✦
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {tgt.supplementCovered
                     ? "Supplemented"
                     : `${num(have)} / ${num(tgt.amount)} ${tgt.unit}`}
@@ -625,7 +625,7 @@ function DayTargets({
                 />
               </div>
               {tgt.note ? (
-                <p className="mt-1 line-clamp-2 text-muted-foreground text-xs leading-snug">
+                <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">
                   {tgt.note}
                 </p>
               ) : null}
@@ -633,7 +633,7 @@ function DayTargets({
           )
         })}
       </ul>
-      <p className="mt-4 text-muted-foreground text-xs leading-snug">
+      <p className="mt-4 text-xs leading-snug text-muted-foreground">
         Targets from NIH/IOM Dietary Reference Intakes, adjusted for a
         plant-based diet. Guidance, not medical advice.
       </p>
@@ -666,10 +666,10 @@ function DaySupplementsChecklist({
   ]
   return (
     <section className="mt-8">
-      <h2 className="mb-1 font-bold font-serif text-lg tracking-tight">
+      <h2 className="mb-1 font-serif text-lg font-bold tracking-tight">
         Supplements
       </h2>
-      <p className="mb-3 text-muted-foreground text-xs">
+      <p className="mb-3 text-xs text-muted-foreground">
         Check what you took today — it marks that nutrient as covered.
       </p>
       <div className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
@@ -706,11 +706,11 @@ function InsightsCard({
   if (insights.length === 0) return null
   return (
     <div className={cn("text-foreground", className)}>
-      <div className="mb-3 border-foreground border-b-2 pb-1">
-        <h2 className="font-bold font-serif text-lg tracking-tight">
+      <div className="mb-3 border-b-2 border-foreground pb-1">
+        <h2 className="font-serif text-lg font-bold tracking-tight">
           This week
         </h2>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-muted-foreground">
           Insights from the past 7 days of food logs
         </p>
       </div>
@@ -720,8 +720,8 @@ function InsightsCard({
             key={insight.key}
             className="rounded-lg bg-card p-3 ring-1 ring-foreground/10"
           >
-            <h3 className="font-medium text-sm">{insight.title}</h3>
-            <p className="mt-1 text-muted-foreground text-xs leading-snug">
+            <h3 className="text-sm font-medium">{insight.title}</h3>
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">
               {insight.body}
             </p>
             <p className="mt-1.5 text-[0.65rem] text-muted-foreground/60 italic">
@@ -778,7 +778,7 @@ export function DayView({
         </ul>
 
         {day.entries.length === 0 ? (
-          <p className="rounded-lg border border-border border-dashed px-4 py-8 text-center text-muted-foreground text-sm">
+          <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
             Nothing logged for {formatDayLabel(day.date).toLowerCase()} yet.
             {log ? " Add your first food below." : ""}
           </p>
@@ -809,7 +809,7 @@ export function DayView({
         <InsightsCard insights={day.insights} className="mt-8 lg:hidden" />
       </div>
 
-      <aside className="hidden w-80 shrink-0 border-border border-l p-6 lg:block">
+      <aside className="hidden w-80 shrink-0 border-l border-border p-6 lg:block">
         <div className="space-y-8 lg:sticky lg:top-6">
           {/* Targets are the primary readout (P1.3); the full FDA panel follows as reference. */}
           <DayTargets targets={day.targets} totals={day.totals} />
