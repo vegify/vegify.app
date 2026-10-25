@@ -220,7 +220,7 @@ export function BrandedSourceBadge({
   return (
     <span
       className={cn(
-        "shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-medium text-[0.65rem] text-muted-foreground uppercase tracking-wide",
+        "shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase",
         className
       )}
     >
@@ -260,7 +260,7 @@ export function DietFlagNotice({
     return (
       <p
         className={cn(
-          "flex items-start gap-1.5 text-[0.7rem] text-destructive leading-snug",
+          "flex items-start gap-1.5 text-[0.7rem] leading-snug text-destructive",
           className
         )}
       >
@@ -279,7 +279,7 @@ export function DietFlagNotice({
   return (
     <p
       className={cn(
-        "text-[0.7rem] text-muted-foreground leading-snug",
+        "text-[0.7rem] leading-snug text-muted-foreground",
         className
       )}
     >
@@ -314,7 +314,7 @@ export function BrandedFoodRow({
         </span>
         <BrandedSourceBadge source={food.source} />
         {food.caloriesPer100g != null ? (
-          <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
             {Math.round(food.caloriesPer100g)} cal/100g
           </span>
         ) : null}
@@ -344,11 +344,11 @@ export function BrandedResults({
   if (!searching && foods.length === 0) return null
   return (
     <>
-      <li className="mt-1 border-border border-t px-2 pt-1.5 pb-0.5 font-medium text-muted-foreground text-xs">
+      <li className="mt-1 border-t border-border px-2 pt-1.5 pb-0.5 text-xs font-medium text-muted-foreground">
         Branded &amp; packaged foods
       </li>
       {searching && foods.length === 0 ? (
-        <li className="px-2 py-1.5 text-muted-foreground text-sm">
+        <li className="px-2 py-1.5 text-sm text-muted-foreground">
           Looking up branded foods…
         </li>
       ) : null}
@@ -360,7 +360,7 @@ export function BrandedResults({
       {attributionLines(foods).map((line) => (
         <li
           key={line}
-          className="px-2 pt-1 pb-0.5 text-[0.65rem] text-muted-foreground/70 leading-snug"
+          className="px-2 pt-1 pb-0.5 text-[0.65rem] leading-snug text-muted-foreground/70"
         >
           {line}
         </li>
@@ -493,7 +493,7 @@ export function BarcodeEntry({
         <button
           type="button"
           onClick={() => void scanNative()}
-          className="mt-2 flex items-center gap-1.5 text-primary text-xs hover:underline"
+          className="mt-2 flex items-center gap-1.5 text-xs text-primary hover:underline"
         >
           <CameraIcon className="size-3.5" /> Scan with camera
         </button>
@@ -502,7 +502,7 @@ export function BarcodeEntry({
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="mt-2 flex items-center gap-1.5 text-primary text-xs hover:underline"
+            className="mt-2 flex items-center gap-1.5 text-xs text-primary hover:underline"
           >
             <CameraIcon className="size-3.5" /> Scan from a photo
           </button>
@@ -522,13 +522,13 @@ export function BarcodeEntry({
       ) : null}
 
       {status === "miss" ? (
-        <p className="mt-1.5 text-muted-foreground text-xs leading-snug">
+        <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
           No match for that barcode. Search by name instead, or add it as your
           own ingredient.
         </p>
       ) : null}
       {status === "error" ? (
-        <p className="mt-1.5 text-muted-foreground text-xs leading-snug">
+        <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
           Barcode lookup is unavailable right now. Try searching by name.
         </p>
       ) : null}

@@ -536,7 +536,7 @@ function ScrubButton({
       style={{ cursor: "ew-resize", touchAction: "none" }}
       className={cn(
         className,
-        "-mx-0.5 select-none rounded-sm px-0.5 tabular-nums transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
+        "-mx-0.5 rounded-sm px-0.5 tabular-nums transition select-none hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary",
         scrubbing && "bg-primary/15"
       )}
       onPointerDown={(e) => {
@@ -616,7 +616,7 @@ export function InlinePillSelect<T extends string>({
   return (
     <span
       className={cn(
-        "relative inline-flex items-center rounded-full border border-border px-2.5 py-0.5 font-semibold text-muted-foreground text-xs transition hover:border-primary hover:text-primary-dark dark:hover:text-primary-light",
+        "relative inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:text-primary-dark dark:hover:text-primary-light",
         error && ERROR_FLASH,
         className
       )}

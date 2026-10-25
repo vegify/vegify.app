@@ -75,7 +75,7 @@ function BlockView({ block }: { block: BlogBlock }) {
   }
   return (
     <figure className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-      <figcaption className="mb-3 font-semibold text-foreground text-sm">
+      <figcaption className="mb-3 text-sm font-semibold text-foreground">
         {block.caption}
       </figcaption>
       {block.variant === "range" ? (
@@ -93,7 +93,7 @@ function BlockView({ block }: { block: BlogBlock }) {
         />
       )}
       <p
-        className={`mt-2 text-muted-foreground text-sm ${NOTE_LINKS}`}
+        className={`mt-2 text-sm text-muted-foreground ${NOTE_LINKS}`}
         // biome-ignore lint/security/noDangerouslySetInnerHtml: figure notes are repo-authored markdown; no user input reaches them
         dangerouslySetInnerHTML={{ __html: mdInline(block.note) }}
       />
@@ -121,7 +121,7 @@ function BlogChrome({
           >
             <VegifyLogo className="h-auto w-full" />
           </LinkComponent>
-          <nav className="flex items-center gap-5 font-semibold text-sm text-white/90">
+          <nav className="flex items-center gap-5 text-sm font-semibold text-white/90">
             <LinkComponent href="/blog" className="transition hover:text-white">
               Blog
             </LinkComponent>
@@ -135,7 +135,7 @@ function BlogChrome({
         </div>
       </header>
       <main className="mx-auto max-w-2xl px-6 py-12">{children}</main>
-      <footer className="mx-auto max-w-2xl px-6 pb-12 text-muted-foreground text-sm">
+      <footer className="mx-auto max-w-2xl px-6 pb-12 text-sm text-muted-foreground">
         <LinkComponent
           href="/"
           className="font-medium text-primary-dark underline underline-offset-2 dark:text-primary-light"
@@ -160,7 +160,7 @@ export function BlogIndexView({
 }) {
   return (
     <BlogChrome LinkComponent={LinkComponent}>
-      <h1 className="mb-2 font-bold font-serif text-4xl text-primary-dark dark:text-primary-light">
+      <h1 className="mb-2 font-serif text-4xl font-bold text-primary-dark dark:text-primary-light">
         Blog
       </h1>
       <p className="mb-10 text-muted-foreground">
@@ -171,10 +171,10 @@ export function BlogIndexView({
         {posts.map((post) => (
           <li key={post.slug}>
             <LinkComponent href={`/blog/${post.slug}`} className="group block">
-              <h2 className="font-semibold font-serif text-2xl group-hover:text-primary-dark dark:group-hover:text-primary-light">
+              <h2 className="font-serif text-2xl font-semibold group-hover:text-primary-dark dark:group-hover:text-primary-light">
                 {post.title}
               </h2>
-              <p className="mt-1 text-muted-foreground text-sm">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {post.dateDisplay}
               </p>
               <p className="mt-2 text-muted-foreground">{post.description}</p>
@@ -226,17 +226,17 @@ export function BlogPostView({
   return (
     <BlogChrome LinkComponent={LinkComponent}>
       <BlogPostJsonLd post={post} />
-      <p className="mb-3 text-muted-foreground text-sm">
+      <p className="mb-3 text-sm text-muted-foreground">
         <time dateTime={post.datePublished}>{post.dateDisplay}</time>
         <span className="mx-2" aria-hidden>
           ·
         </span>
         John M. Carmack
       </p>
-      <h1 className="mb-8 font-bold font-serif text-4xl text-primary-dark leading-tight dark:text-primary-light">
+      <h1 className="mb-8 font-serif text-4xl leading-tight font-bold text-primary-dark dark:text-primary-light">
         {post.title}
       </h1>
-      <div className="space-y-6 text-[17px] text-foreground leading-relaxed">
+      <div className="space-y-6 text-[17px] leading-relaxed text-foreground">
         {post.body
           .map((block, i) => ({ block, key: `block-${i}` }))
           .map(({ block, key }) => (
