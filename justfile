@@ -22,15 +22,16 @@ unused-deps:
     pnpm exec knip --dependencies
     cargo machete
 
-# One lint/format layer for the whole workspace (biome; config at the root).
-lint:
+# One lint/format layer for the whole workspace (biome; config at the root). The Tailwind class
+# order reads the theme's custom variants from theme.css, so the tokens are built first.
+lint: tokens
     pnpm exec biome check .
 
 # Table tests for the release scripts (.scripts/bump-level.sh + next-version.sh).
 scripts-test:
     .scripts/test.sh
 
-# Design tokens -> packages/tokens/dist/theme.css (gitignored; a prereq for the JS typecheck/build).
+# Design tokens -> packages/tokens/dist/theme.css (gitignored; a prereq for lint and the JS typecheck/build).
 tokens:
     pnpm --filter @vegify/tokens build
 
