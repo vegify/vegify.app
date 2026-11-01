@@ -12,7 +12,18 @@ db-urls = ["https://github.com/RustSec/advisory-db"]
 # we cannot act on.
 unmaintained = "workspace"
 yanked = "deny"
-ignore = []
+ignore = [
+    # glib 0.18's VariantStrIter unsoundness, via tauri's pinned Linux gtk
+    # stack. glib 0.18 is EOL upstream — gtk-rs/gtk-rs-core#1991 (the 0.18
+    # backport) was closed unmerged: "0.18 is long EOL and there won't be
+    # any new releases" — so no fixed release can exist for the line tauri
+    # pins. glib is the Linux webview backend only (macOS uses WebKit,
+    # Windows uses WebView2) and the unsound path is unexercised per the
+    # upstream assessment. Accepted 2026-11-01 in favor of tauri's stock
+    # stack; the private gtk-rs-core backport fork is retired. Clear when
+    # tauri ships on glib 0.20+.
+    { id = "RUSTSEC-2024-0429", reason = "tauri-pinned Linux webview backend only; unsound path unexercised per upstream assessment" },
+]
 
 [licenses]
 # Permissive set verified satisfiable across the estate's current Rust trees
