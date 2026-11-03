@@ -21,22 +21,8 @@ members = [
 # is used and the unsound path is unexercised per the upstream assessment. glib is
 # the Linux webview backend only — macOS uses WebKit, Windows uses WebView2 — so it
 # compiles only on Linux desktop builds. Encoded as an ignore in deny.toml; clear
-# when tauri ships on glib 0.20+. The johncarmack1984/gtk-rs-core patch fork that
-# used to live here is retired and deleted.
-[patch.crates-io]
-
-# specta 2.0.0-rc.26 + the 0.0.13 exporters are merged upstream but UNPUBLISHED (crates.io still
-# serves rc.25/0.0.12; the rc.26 release commit exists on main without a publish). The workspace
-# pins the rc.26 versions and resolves them from this upstream rev — which carries the OpenAPI
-# paths layer (specta-rs/specta#547/#548) and the specta-rust exporter that vegify-typegen
-# consumes. tauri-typed-ipc rides a branch bumped to the same pins (its crates.io release
-# exact-pins rc.25, which would split the graph into two spectas). When rc.26 publishes: drop
-# these five entries, swap typegen's git deps to versions, and move ttipc to its next release.
-specta = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
-specta-serde = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
-specta-typescript = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
-specta-util = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
-tauri-typed-ipc = { git = "https://github.com/johncarmack1984/tauri-typed-ipc", rev = "f9f4e74a38accb5a087d6ee3b72dbdc9d056a87d" }
+# when tauri ships on glib 0.20+. The johncarmack1984/gtk-rs-core fork this file
+# used to patch in is retired and deleted.
 
 # Workspace lint floor: no hand-written unsafe (deny, not forbid: FFI-adjacent
 # derive macros scope their own allows, which forbid would reject), and the

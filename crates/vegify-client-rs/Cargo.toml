@@ -23,7 +23,7 @@ tracing = "0.1"
 vegify-core = { path = "../vegify-core" }
 # Optional: specta Type derives on the wire types, so the desktop's ttipc bindings can register
 # them. Off by default — a plain consumer gets no specta in its tree.
-specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
+specta = { version = "=2.0.0-rc.27", features = ["derive"], optional = true }
 
 [features]
 specta = ["dep:specta"]

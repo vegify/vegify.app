@@ -10,13 +10,13 @@ description = "The vegify HTTP API's wire contract as data: every serde shape th
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Pinned to the workspace's ttipc-matching line; "serde_json" covers the payload/body Value fields.
-specta = { version = "=2.0.0-rc.26", features = ["derive", "serde_json"] }
+specta = { version = "=2.0.0-rc.27", features = ["derive", "serde_json"] }
 # Registered into the same TypeCollection (the shared DAL shapes the web consumes).
 vegify-core = { path = "../../../crates/vegify-core" }
 # Behind the `openapi` feature: the endpoint descriptions (paths object) for openapi.json.
-# Unpublished exporter — same rev the root [patch.crates-io] pins specta to. The server never
-# enables this feature; only vegify-typegen does, so the exporter stays out of the shipped binary.
-specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c", optional = true }
+# The server never enables this feature; only vegify-typegen does, so the exporter stays out of
+# the shipped binary.
+specta-openapi = { version = "=0.0.5", optional = true }
 
 [features]
 # The route table (api_operations) for openapi.json generation — typegen-only.

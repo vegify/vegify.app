@@ -10,17 +10,16 @@ description = "Generates packages/api-types/index.ts (the web's wire contract) f
 # The wire contract crate - its api_types() is the full HTTP contract, without the server's heft.
 # The openapi feature adds api_operations(), the paths object for openapi.json.
 vegify-api-types = { path = "../../services/api/types", features = ["openapi"] }
-# Types (the collection) for assembling the SDK slice; same patched rc.26 as the whole graph.
-specta = "=2.0.0-rc.26"
+# Types (the collection) for assembling the SDK slice; the same rc.27 as the whole graph.
+specta = "=2.0.0-rc.27"
 # Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
-specta-typescript = "=0.0.13"
-specta-serde = "=0.0.13"
+specta-typescript = "=0.0.14"
+specta-serde = "=0.0.14"
 # The bigint remapper for the JS-facing TS emission (the contract declares honest i64s).
-specta-util = "=0.0.13"
-# Unpublished exporters (no crates.io release yet) — same rev the root [patch.crates-io] pins
-# specta itself to, so the whole graph shares one specta build.
-specta-rust = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
-specta-openapi = { git = "https://github.com/specta-rs/specta", rev = "ef21f0544e153b944ff5d1b3afd20472afcf760c" }
+specta-util = "=0.0.14"
+# The exporters released with specta rc.27, pinned exact like the rest.
+specta-rust = "=0.0.2"
+specta-openapi = "=0.0.5"
 
 [lints]
 workspace = true

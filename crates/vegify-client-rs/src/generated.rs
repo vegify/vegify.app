@@ -7,6 +7,7 @@
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversationSummary {
     /// Conversation id.
     pub id: ::std::string::String,
@@ -26,6 +27,7 @@ pub struct ConversationSummary {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
     /// Message id.
     pub id: ::std::string::String,
@@ -41,6 +43,7 @@ pub struct Message {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Party {
     /// User id.
     pub id: ::std::string::String,
@@ -54,6 +57,7 @@ pub struct Party {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PullIngredient {
     /// Ingredient id (stable cross-replica).
     pub id: ::std::string::String,
@@ -94,6 +98,7 @@ pub struct PullIngredient {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PullItem {
     /// The ingredient the line references.
     pub ingredientId: ::std::string::String,
@@ -127,6 +132,7 @@ pub struct PullPayload {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PullReading {
     /// Nutrient name.
     pub name: ::std::string::String,
@@ -140,6 +146,7 @@ pub struct PullReading {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PullRecipe {
     /// Recipe id (stable cross-replica).
     pub id: ::std::string::String,
@@ -171,6 +178,7 @@ pub struct PullRecipe {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PullUser {
     /// User id (what PullRecipe/PullIngredient `user_id` points at).
     pub id: ::std::string::String,
@@ -187,6 +195,7 @@ pub struct PullUser {
 #[allow(deprecated, non_camel_case_types, non_snake_case)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Thread {
     /// The other party (resolved even for an empty thread).
     pub with: Party,
