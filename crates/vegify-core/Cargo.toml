@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 # Pinned to match the desktop's ttipc/specta so the `Type` impls are the SAME trait the
 # `#[procedures]` macro consumes (a version skew would make them distinct traits and fail to compile).
-specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta = { version = "=2.0.0-rc.27", features = ["derive"] }
 ulid = "3"
 
 [lints]
