@@ -11,15 +11,15 @@ description = "Generates packages/api-types/index.ts (the web's wire contract) f
 # The openapi feature adds api_operations(), the paths object for openapi.json.
 vegify-api-types = { path = "../../services/api/types", features = ["openapi"] }
 # Types (the collection) for assembling the SDK slice; the same rc.27 as the whole graph.
-specta = "=2.0.0-rc.27"
+specta = "=2.0.0-rc.28"
 # Emission at ttipc's exact internal pins, so both generated artifacts speak identical TS.
-specta-typescript = "=0.0.14"
-specta-serde = "=0.0.14"
+specta-typescript = "=0.0.15"
+specta-serde = "=0.0.15"
 # The bigint remapper for the JS-facing TS emission (the contract declares honest i64s).
-specta-util = "=0.0.14"
+specta-util = "=0.0.15"
 # The exporters released with specta rc.27, pinned exact like the rest.
-specta-rust = "=0.0.2"
-specta-openapi = "=0.0.5"
+specta-rust = "=0.0.3"
+specta-openapi = "=0.0.6"
 
 [lints]
 workspace = true
