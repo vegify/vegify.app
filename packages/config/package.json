@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-ssm": "^3.1161.0"
+    "@aws-sdk/client-ssm": "^3.1164.0"
   },
   "devDependencies": {
     "@types/node": "^26",
