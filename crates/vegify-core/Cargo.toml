@@ -8,7 +8,7 @@ description = "Vegify shared DAL — SQLite-backed content model (recipes/ingred
 
 [dependencies]
 # `bundled` compiles SQLite in. Same version the desktop pins, so Cargo unifies to one libsqlite3-sys.
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 # The branded store keeps its per-100g readings as ONE JSON column rather than a child table, so the
 # whole cache is a single droppable table with no orphan set (see branded.rs's separability notes).

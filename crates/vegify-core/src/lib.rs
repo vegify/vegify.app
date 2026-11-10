@@ -3129,7 +3129,7 @@ pub fn public_sitemap(conn: &Connection) -> Result<SitemapData, Error> {
 /// triggers that keep it synced with `ingredients` inserts/renames/deletes. Called from both the
 /// server's `ensure_schema` and the desktop's `ensure_content_schema` (the shared-DAL pattern — ONE
 /// implementation, never two schemas to keep in sync). FTS5 support on the pinned bundled SQLite
-/// (rusqlite 0.40 / libsqlite3-sys 0.38) is verified by `fts5_index_is_available` below, against a
+/// (rusqlite 0.41 / libsqlite3-sys 0.39) is verified by `fts5_index_is_available` below, against a
 /// real bundled connection — not assumed.
 ///
 /// Deliberately NOT an external-content table: `id`/`name` are plainly duplicated into the FTS5 row
@@ -3495,7 +3495,7 @@ mod search_tests {
         .unwrap()
     }
 
-    /// FTS5 is compiled into the pinned bundled SQLite (rusqlite 0.40 / libsqlite3-sys 0.38) — do NOT
+    /// FTS5 is compiled into the pinned bundled SQLite (rusqlite 0.41 / libsqlite3-sys 0.39) — do NOT
     /// assume it; the P2.4 spec explicitly calls for verifying this. A real virtual-table create +
     /// prefix MATCH against a real bundled connection is the only trustworthy check.
     #[test]
